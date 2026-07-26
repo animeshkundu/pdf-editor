@@ -41,7 +41,20 @@ const PREFIXES = new Set([
   'AUTO',
 ]);
 
-const text = readFileSync(inventoryPath, 'utf8');
+const raw = readFileSync(inventoryPath, 'utf8');
+
+// Line endings are their own failure, and a noisy one.
+//
+// .gitattributes normalises the repository to LF, and check-wasm-fresh.mjs compares
+// artifacts byte for byte, so CRLF in the working tree is a real problem rather than a
+// cosmetic one. It also arrives easily: any script that edits these files on Windows
+// without asking for LF will write CRLF, which is exactly how it happened here.
+//
+// Parse anyway, so a line-ending slip does not masquerade as a missing inventory, but
+// say plainly what it is. The first version of this gate reported "the item format has
+// changed" for a CRLF file, which sent the diagnosis in the wrong direction.
+const hasCrlf = raw.includes('\r\n');
+const text = raw.replace(/\r\n/g, '\n');
 const lines = text.split('\n');
 
 // An item begins a checkbox line and owns every continuation line until the next item
@@ -141,8 +154,18 @@ const MINIMUM_PLAUSIBLE_ITEMS = 100;
 
 if (items.length === 0) {
   console.error('[check-spec] Parsed zero items from a non-empty inventory.');
-  console.error('[check-spec] The item format has changed, or the file was read mid-write.');
+  console.error('[check-spec] Either the item format has changed, or the file was read');
+  console.error('[check-spec] mid-write by another process.');
   process.exit(1);
+}
+
+if (hasCrlf) {
+  errors.push(
+    `${inventoryPath}  contains CRLF line endings. .gitattributes normalises this ` +
+      'repository to LF, and check-wasm-fresh.mjs compares bytes, so CRLF in the working ' +
+      'tree breaks that gate. Run `npx prettier -w` on the file, or configure whatever ' +
+      'wrote it to emit LF.',
+  );
 }
 
 if (total < MINIMUM_PLAUSIBLE_ITEMS) {
