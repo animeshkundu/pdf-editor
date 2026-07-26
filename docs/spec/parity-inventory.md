@@ -455,6 +455,18 @@ unambiguous parity in the product.
       on Spike A. **If Spike A shows the filter is unsafe, redaction is withdrawn rather
       than shipped as an overlay.** A black rectangle drawn over text is not redaction and
       will never be described as such here.
+      **Applying a redaction always forces a full, non-incremental save.** An incremental
+      save appends, leaving the original unredacted objects physically present in an
+      earlier revision of the same file, where a hex editor recovers them even though
+      every extraction tool reports them gone. There is no configuration in which a
+      redaction is written incrementally.
+- [ ] `SIGN-035` **Warn before redacting a signed document, and require confirmation**
+      `LOCAL`. The full rewrite that `SIGN-031` requires invalidates every existing
+      signature, because the bytes those signatures covered no longer exist. That is
+      correct behaviour and Acrobat does the same. The user is told before it happens.
+      Silently invalidating a signature, or silently declining to redact in order to
+      preserve one, would both be worse than the warning. See
+      [the C7 and C6 conflict](../PRODUCT-SPEC.md#c7-and-c6-cannot-both-hold-on-the-same-save).
 - [ ] `SIGN-032` **Redact page ranges wholesale** `LOCAL`
 - [ ] `SIGN-033` **Sanitize: remove metadata, embedded files, scripts, hidden layers, deleted
       content, and form field values** `LOCAL`
@@ -700,11 +712,11 @@ tree is easier, since `stext` carries structure
 
 ## Coverage summary
 
-309 items in total.
+310 items in total.
 
 | Label      | Count | Where it concentrates                                                                                                                                                                                                                                                       |
 | ---------- | ----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LOCAL`    |   262 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                                                                             |
+| `LOCAL`    |   263 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                                                                             |
 | `DEGRADED` |    17 | Office export, OCR, signature revocation status, field auto-detection, autotag, HTML conversion, barcode fields, RC4, scan comparison                                                                                                                                       |
 | `EXCLUDED` |    16 | Cloud review, request e-signatures, rights management, cloud sync, XFA, scanner input, web-page capture, form submit to URL, timestamping, revocation checking, LTV, folder-level JavaScript, prepress, Preflight authoring, sound annotations, Action Wizard compatibility |
 | `OPEN`     |    10 | Editing existing text and existing page objects, pending Spikes A and B                                                                                                                                                                                                     |
@@ -721,7 +733,7 @@ By section:
 | 5. Edit content (`EDIT`)              |    25 |
 | 6. Organize pages (`PAGE`)            |    20 |
 | 7. Forms (`FORM`)                     |    30 |
-| 8. Sign and security (`SIGN`)         |    34 |
+| 8. Sign and security (`SIGN`)         |    35 |
 | 9. Convert (`CONV`)                   |    26 |
 | 10. Compare (`CMPR`)                  |     9 |
 | 11. Accessibility (`A11Y`)            |    44 |
@@ -746,7 +758,7 @@ each is weak in a different way.
 
 ## Scope, honestly
 
-309 items is a very large surface. Two things follow, and neither is softened here.
+310 items is a very large surface. Two things follow, and neither is softened here.
 
 **This is a multi-year contract, not a release plan.** Acrobat is thirty years of
 accumulated work. Nothing about writing the list down shortens that. The phase order in

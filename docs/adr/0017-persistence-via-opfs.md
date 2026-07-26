@@ -57,6 +57,16 @@ Persist to OPFS, written from the document worker through `createSyncAccessHandl
 - **Eviction.** Entries for documents the user has closed are removed. Persistence is
   crash insurance, not an archive, and OPFS is not a place to accumulate hundreds of
   megabytes on someone's behalf.
+- **The startup sweep is not optional.** Close-time eviction provably does not run in the
+  case where it matters most. A WASM trap is uncatchable, it kills the instance, and there
+  is no `FinalizationRegistry` to fall back on
+  ([ADR 0009](0009-wasm-memory-and-handle-discipline.md)), so a crashed session leaves its
+  entry behind by construction. Without a sweep, document-sized files accumulate invisibly
+  until the user's disk fills, and the user has no way to see why. On startup, therefore,
+  entries belonging to no live session are enumerated: those the user declines to recover
+  are deleted, and those from a session older than a bounded age are deleted without
+  asking. This is a distinct mechanism from Recovery above, which offers a crashed
+  document back; the sweep is what removes the ones nobody wants.
 - **Privacy.** OPFS is origin-private and never leaves the device, which keeps
   [ADR 0002](0002-client-side-only-zero-egress.md) intact. It is still user data on their
   machine, so there is an explicit, discoverable way to clear it.
