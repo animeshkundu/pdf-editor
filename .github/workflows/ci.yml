@@ -1,0 +1,147 @@
+name: CI
+
+# The single required check for every change. It runs the same gates a developer runs
+# locally, in an order chosen so each one has what it needs:
+#
+#   * the WASM freshness proof runs BEFORE anything mutates dist/, so it judges the
+#     committed artifacts rather than something this job just produced;
+#   * typecheck, lint and test run before the build, because they are the fastest way
+#     to reject a bad change and none of them needs build output;
+#   * the egress and size gates run AFTER the build, because both walk dist/ and both
+#     refuse to pass vacuously when it is missing;
+#   * the browser acceptance run drives the production preview server, so it also has
+#     to follow the build.
+#
+# .github/workflows/** is immutable to the autonomous build pipeline, so the logic each
+# step invokes deliberately lives in package.json scripts and scripts/*.mjs, which are
+# not. This file orchestrates; it should rarely need to change.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# A superseded push has nothing useful to say. Runs on main are not cancelled, because
+# the release and deployment story keys off main's history being fully checked.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify and build
+    runs-on: [self-hosted, linux, x64]
+    # Generous enough for a cold cargo cache and a Playwright browser download, tight
+    # enough that a runner which has lost its coordinator fails visibly instead of
+    # holding the queue. Everything genuinely slow (Emscripten, wasm-opt) is in wasm.yml.
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Full history is not needed and costs real time on a large repo, but the
+          # default single commit is enough for every gate here.
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          # A major line, not package.json's `engines` range: resolving ">=22.13.0"
+          # would silently follow Node onto a new major the moment one ships.
+          node-version: 22
+          cache: npm
+
+      # `--include=dev` rather than a bare `npm ci`: some shells export NODE_ENV=production,
+      # which makes npm omit devDependencies, and a self-hosted runner can carry that in
+      # from its service environment. Without this the install would quietly produce a tree
+      # with no TypeScript, Vite or Vitest in it. NODE_ENV itself is left alone so Vite's
+      # own production build semantics are not disturbed.
+      - name: Install exact Node dependencies
+        run: npm ci --include=dev
+
+      # Needed by `npm run lint` and `npm run test`, both of which fan out to cargo.
+      # scripts/cargo.mjs hard-fails when CI is set and the toolchain is missing, so this
+      # step is what keeps the Rust half of those gates real rather than skipped.
+      - name: Set up Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          # wasm32 is not strictly required to clippy or test on the host, but adding it
+          # is a cheap no-op and stops a future .cargo/config.toml that defaults the
+          # target from turning a green run red.
+          targets: wasm32-unknown-unknown
+          audit: 'true'
+
+      # A fresh clone has no vendored MuPDF source (.gitignore excludes it), so this is a
+      # deliberate no-op here that simply asserts the committed-artifact path still holds.
+      # The expensive Emscripten build lives in wasm.yml and is keyed on its inputs, which
+      # is what keeps a slow toolchain off every pull request.
+      - name: Build WASM engine (no-op unless the source is vendored)
+        run: npm run build:wasm
+
+      - name: Verify committed WASM artifacts match their manifest
+        run: npm run check:wasm:fresh
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build production web app
+        run: npm run build
+
+      # Vercel does not run `npm run build`. It runs `build:vercel`, which verifies the
+      # committed WASM manifest and then builds the web app WITHOUT ever invoking a native
+      # toolchain. Nothing else in CI exercises that path, so a change that breaks only the
+      # deploy build would go green here and fail in production. Running it after the
+      # ordinary build also means the gates below judge the tree Vercel actually ships.
+      - name: Verify the Vercel build path still works
+        run: npm run build:vercel
+
+      - name: Verify no third-party URL reaches the shipped bundle
+        run: npm run check:egress
+
+      - name: Enforce bundle budgets
+        run: npm run check:size
+
+      # Blocking on purpose. A new advisory in a shipped dependency is a real problem
+      # even when the pull request that surfaced it is innocent, and a warning-only
+      # supply-chain gate is one nobody reads.
+      - name: Supply-chain gate
+        run: npm run check:supply
+
+      - name: Install browser families
+        run: npx playwright install --with-deps chromium firefox
+
+      # Drives the production preview server, not the dev server: WASM instantiation,
+      # worker startup and chunk splitting all behave differently under Vite's dev
+      # transform, and those are the paths most likely to break.
+      - name: Browser acceptance against the production build
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload production artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pdf-editor-web
+          path: dist/
+          include-hidden-files: true
+          retention-days: 14

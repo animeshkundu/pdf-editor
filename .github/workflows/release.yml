@@ -1,0 +1,118 @@
+name: Release
+
+# Cuts a release from a `v*` tag.
+#
+# The full gate runs again here rather than trusting CI's green tick on the same commit.
+# A tag can be moved, and it can be pushed to a commit that never went through a pull
+# request, so the only honest way to claim a release passed the checks is to run them
+# against the exact tree being packaged.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+# Never cancel a release in progress: an interrupted run can leave a tag with a partial
+# set of assets attached, which is worse than a queued second run.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Verify, package and publish
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact Node dependencies
+        run: npm ci --include=dev
+
+      - name: Set up Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: wasm32-unknown-unknown
+          audit: 'true'
+
+      # Same ordering as ci.yml and for the same reasons: the freshness proof judges the
+      # committed artifacts before anything rebuilds them, the fast gates reject early,
+      # and the gates that walk dist/ come after the build that fills it.
+      - name: Verify committed WASM artifacts match their manifest
+        run: npm run check:wasm:fresh
+
+      - name: Typecheck, lint and test
+        run: npm run check
+
+      - name: Build production web app
+        run: npm run build
+
+      # Deploy parity: Vercel builds with `build:vercel`, not `build`. A release that
+      # cannot be deployed is not a release.
+      - name: Verify the Vercel build path still works
+        run: npm run build:vercel
+
+      - name: Verify no third-party URL reaches the shipped bundle
+        run: npm run check:egress
+
+      - name: Enforce bundle budgets
+        run: npm run check:size
+
+      - name: Supply-chain gate
+        run: npm run check:supply
+
+      - name: Install browser families
+        run: npx playwright install --with-deps chromium firefox
+
+      - name: Browser acceptance against the production build
+        run: npm run test:e2e
+
+      - name: Package the static release
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .output
+          mkdir -p .output
+
+          version="${GITHUB_REF_NAME#v}"
+          archive="pdf-editor-${version}-web.zip"
+
+          # Zipped from inside dist/ so the archive expands into a servable root rather
+          # than a nested dist/ directory.
+          (cd dist && zip -qr "../.output/${archive}" .)
+          (cd .output && sha256sum ./*.zip > SHA256SUMS)
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "archive=${archive}" >> "$GITHUB_OUTPUT"
+          cat .output/SHA256SUMS
+
+      - name: Create the GitHub release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          files: |
+            .output/*.zip
+            .output/SHA256SUMS
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            A private, local-first PDF viewer and editor for the web.
+
+            `${{ steps.package.outputs.archive }}` contains the built application as
+            static files. Serve it from any origin: documents are opened, rendered and
+            edited entirely in the browser, and nothing is uploaded. There are no
+            accounts, no telemetry, and no remote code.
+
+            Verify the download against `SHA256SUMS` before serving it.

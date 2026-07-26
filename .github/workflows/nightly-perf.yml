@@ -1,0 +1,96 @@
+name: Nightly performance
+
+# Timing assertions are deliberately NOT a pull-request gate.
+#
+# These runners are shared and self-hosted. A neighbouring job moves first contentful
+# paint further than most code changes do, so a blocking perf check would go red for
+# reasons that have nothing to do with the change under review. The predictable result is
+# that people learn to click past it, and then the signal is worth less than no signal.
+#
+# So the numbers are measured on a schedule, against a baseline a human blessed, and a
+# real regression opens an issue that a person triages. Byte metrics get a tight budget
+# because they are deterministic; timings get a wide one because they are not. Bundle
+# size still has a hard blocking gate of its own in CI via `npm run check:size`; this
+# workflow watches the trend, not the ceiling.
+
+on:
+  schedule:
+    # 04:17 UTC. Off the hour and off the half hour on purpose: GitHub's scheduler queues
+    # a very large number of jobs at :00 and :30, and a schedule that lands in that crowd
+    # is both delayed and measured against a busier machine.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-perf
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  measure:
+    name: Measure and compare against the baseline
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact Node dependencies
+        run: npm ci --include=dev
+
+      # Only Chromium: a second engine doubles the runtime and the numbers are only ever
+      # compared against a baseline recorded on the same engine.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Timings are taken against the production preview server, so there has to be a
+      # production build to serve.
+      - name: Build production web app
+        run: npm run build
+
+      - name: Measure
+        run: node scripts/perf-measure.mjs --out perf/report.json --runs 5
+
+      # continue-on-error rather than a failing step: the issue has to be filed before the
+      # job is allowed to end, and the job still fails afterwards so the run is red.
+      - name: Compare against the baseline
+        id: compare
+        continue-on-error: true
+        run: node scripts/check-perf-baseline.mjs perf/report.json --summary perf/summary.md
+
+      - name: Upload the measurement
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: perf-${{ github.run_id }}
+          path: |
+            perf/report.json
+            perf/summary.md
+          if-no-files-found: warn
+          retention-days: 90
+
+      # One issue per regression, not one per night: the script comments on the existing
+      # open thread when it finds one.
+      - name: File a regression issue
+        if: steps.compare.outcome == 'failure'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/open-regression-issue.mjs \
+            --title "Nightly performance regression" \
+            --body-file perf/summary.md \
+            --label performance
+
+      - name: Fail the run if a metric regressed
+        if: steps.compare.outcome == 'failure'
+        run: |
+          echo "A metric exceeded its budget. See the issue and perf/summary.md." >&2
+          exit 1

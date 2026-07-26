@@ -1,0 +1,97 @@
+name: Set up Emscripten
+description: >-
+  Installs and activates emsdk idempotently outside the workspace, so the toolchain
+  survives the `git clean -ffdx` that actions/checkout performs on a persistent
+  self-hosted runner.
+
+inputs:
+  version:
+    description: >-
+      Emscripten version to activate. Overridden by vendor/mupdf-wasm/.emscripten-version
+      when that file exists, so the vendored fork owns its own toolchain pin and this
+      default never has to be edited to follow it. That matters because
+      .github/actions/** is immutable to the build pipeline.
+
+      Deliberately one release behind the newest: this toolchain compiles bytes that ship
+      to users, and an Emscripten release published days ago has had no soak time. The
+      fork's own pin file is the right place to move faster when there is a reason to.
+    required: false
+    default: '6.0.3'
+  path:
+    description: >-
+      Where to keep the SDK. Deliberately outside the workspace: .gitignore reserves
+      vendor/mupdf-wasm/emsdk/ for local development, but checkout wipes ignored files
+      between runs, which would re-download ~1 GB of toolchain on every job.
+    required: false
+    default: ''
+
+outputs:
+  version:
+    description: The Emscripten version that was actually activated.
+    value: ${{ steps.activate.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install and activate emsdk
+      id: activate
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        INPUT_PATH: ${{ inputs.path }}
+      run: |
+        set -euo pipefail
+
+        emsdk_dir="${INPUT_PATH:-$HOME/.cache/emsdk}"
+
+        version="$INPUT_VERSION"
+        if [ -f vendor/mupdf-wasm/.emscripten-version ]; then
+          version="$(tr -d '[:space:]' < vendor/mupdf-wasm/.emscripten-version)"
+          echo "Using vendored pin: $version"
+        fi
+
+        # One machine can host several runner processes sharing a $HOME, and this
+        # directory is mutated with `git reset --hard` and `emsdk install`. Two jobs
+        # entering here at once would corrupt the checkout or the toolchain, and the
+        # symptom would be an unreproducible compiler failure. Serialise instead.
+        mkdir -p "$(dirname "$emsdk_dir")"
+        exec 9>"${emsdk_dir}.lock"
+        flock 9
+
+        if [ ! -d "$emsdk_dir/.git" ]; then
+          echo "Cloning emsdk into $emsdk_dir"
+          rm -rf "$emsdk_dir"
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$emsdk_dir"
+        else
+          echo "Reusing emsdk checkout at $emsdk_dir"
+          git -C "$emsdk_dir" fetch --depth 1 origin main
+          git -C "$emsdk_dir" reset --hard FETCH_HEAD
+        fi
+
+        # `emsdk install` short-circuits when the version is already unpacked, so the
+        # expensive download happens once per runner per version rather than per job.
+        cd "$emsdk_dir"
+        EMSDK_QUIET=1 ./emsdk install "$version"
+        EMSDK_QUIET=1 ./emsdk activate "$version"
+
+        # emsdk_env.sh exports into the current shell only. Replaying the environment
+        # deltas into GITHUB_ENV / GITHUB_PATH is what makes emcc visible to later steps.
+        set +u
+        # shellcheck disable=SC1091
+        . ./emsdk_env.sh
+        set -u
+
+        {
+          echo "EMSDK=$EMSDK"
+          echo "EM_CONFIG=${EM_CONFIG:-$EMSDK/.emscripten}"
+          echo "EMSDK_NODE=${EMSDK_NODE:-}"
+        } >> "$GITHUB_ENV"
+
+        echo "$EMSDK" >> "$GITHUB_PATH"
+        echo "$EMSDK/upstream/emscripten" >> "$GITHUB_PATH"
+
+        # No `| head -1`: emcc is a Python program, and closing the pipe early makes it
+        # exit non-zero on a broken pipe, which `set -o pipefail` would turn into a
+        # spurious job failure. The full output is four lines.
+        emcc --version
+        echo "version=$version" >> "$GITHUB_OUTPUT"

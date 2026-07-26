@@ -1,0 +1,103 @@
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------------------
+  # npm
+  # ---------------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+    commit-message:
+      prefix: 'deps'
+      prefix-development: 'deps(dev)'
+    groups:
+      # Runtime dependencies ship to users, so a major here changes what the browser
+      # executes. Minor and patch are grouped into one reviewable pull request; majors
+      # are deliberately left out of the group so each arrives on its own with its own
+      # changelog to read. React 20 and MuPDF 2 should never land in a batch.
+      production:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      # Build and test tooling never reaches a user, so the calculus is different: the
+      # risk is a broken build, which CI catches on the pull request itself. Majors are
+      # grouped in with the rest because a Vite or Vitest major is best taken whole
+      # rather than interleaved with half its plugin ecosystem.
+      development:
+        dependency-type: development
+        update-types:
+          - major
+          - minor
+          - patch
+
+  # ---------------------------------------------------------------------------------
+  # GitHub Actions
+  # ---------------------------------------------------------------------------------
+  # Every `uses:` in this repository is pinned to a full commit SHA. Dependabot
+  # understands that and rewrites both the SHA and the trailing version comment, which is
+  # the only maintainable way to keep SHA pinning honest: a pinned action nobody updates
+  # is a pinned known-vulnerable action.
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/setup-rust
+      - /.github/actions/setup-emsdk
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: 'ci'
+    groups:
+      actions:
+        patterns:
+          - '*'
+
+  # ---------------------------------------------------------------------------------
+  # Cargo
+  # ---------------------------------------------------------------------------------
+  # crates/pdftext/ does not exist yet. `directories` with a glob is what makes that
+  # harmless: a pattern that matches nothing yields no update run at all, whereas a plain
+  # `directory: /crates/pdftext` would error on every scheduled run until the crate
+  # lands. The entry starts working by itself the moment the directory appears.
+  - package-ecosystem: cargo
+    directories:
+      - /crates/*
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - rust
+    commit-message:
+      prefix: 'deps'
+    groups:
+      cargo:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # scripts/check-supply-chain.mjs refuses these three by name, each for a specific
+      # advisory recorded in docs/THIRD-PARTY.md. Telling Dependabot not to propose them
+      # keeps the denial from being rediscovered as a failing gate every week.
+      - dependency-name: rustybuzz
+      - dependency-name: ttf-parser
+      - dependency-name: rsa

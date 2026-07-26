@@ -1,0 +1,158 @@
+name: WASM artifacts
+
+# Rebuilds the two native artifacts and publishes them for a human to commit.
+#
+# This is a separate workflow from CI on purpose. Emscripten and Binaryen are slow, and
+# the artifacts they produce change only when their inputs do. Running them on every
+# pull request would add many minutes to the feedback loop of changes that cannot
+# possibly affect them. So CI verifies the COMMITTED artifacts against
+# vendor/wasm-manifest.json instead, and this workflow is what regenerates them.
+#
+# It deliberately does not commit anything. The artifacts are binaries that ship to
+# users; a bot pushing them to main without a person looking would be the wrong trade,
+# and a token with contents:write on a workflow triggered by path changes is a wider
+# blast radius than this is worth. Download, verify, commit.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # vendor/mupdf-wasm/src/ is gitignored, so a source change never reaches here
+      # directly. What does reach here is the vendoring script and the patch set that
+      # produce that tree, which is the thing actually under version control.
+      #
+      # The lockfile is in the list because this workflow is the only place the native
+      # build runs at all: if a dependency bump breaks it, nothing else would notice
+      # until someone tried to regenerate the artifacts.
+      - 'vendor/**'
+      - 'crates/**'
+      - 'scripts/build-wasm.mjs'
+      - 'scripts/build-rust-wasm.mjs'
+      - 'scripts/setup-wasm-tools.mjs'
+      - 'scripts/vendor-mupdf.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/wasm.yml'
+      - '.github/actions/setup-emsdk/action.yml'
+      - '.github/actions/setup-rust/action.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'vendor/**'
+      - 'crates/**'
+      - 'scripts/build-wasm.mjs'
+      - 'scripts/build-rust-wasm.mjs'
+      - 'scripts/setup-wasm-tools.mjs'
+      - 'scripts/vendor-mupdf.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/wasm.yml'
+      - '.github/actions/setup-emsdk/action.yml'
+      - '.github/actions/setup-rust/action.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: wasm-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The two engines are independent, so they run in parallel. Splitting them also keeps
+  # each job short: a self-hosted runner losing contact with its coordinator is a real
+  # failure mode on long jobs, and two 40-minute jobs recover better than one 80-minute
+  # one.
+  mupdf:
+    name: MuPDF (Emscripten)
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact Node dependencies
+        run: npm ci --include=dev
+
+      # The vendored MuPDF source is fetched on demand rather than committed, so it has
+      # to be materialised before anything else can see it. This runs BEFORE the emsdk
+      # setup on purpose: the fork pins its own Emscripten version in
+      # vendor/mupdf-wasm/.emscripten-version, and that file does not exist until
+      # vendoring has written it. Setting up the SDK first would silently install the
+      # action's default version and ignore the pin.
+      #
+      # Guarded because the vendoring script lands with the fork itself; until then
+      # build-wasm.mjs takes its documented no-op path.
+      - name: Vendor and patch the MuPDF source
+        run: |
+          set -euo pipefail
+          if [ -f scripts/vendor-mupdf.mjs ]; then
+            node scripts/vendor-mupdf.mjs
+          else
+            echo "scripts/vendor-mupdf.mjs does not exist yet; nothing to vendor."
+          fi
+
+      - name: Set up Emscripten
+        uses: ./.github/actions/setup-emsdk
+
+      - name: Build the forked MuPDF WASM engine
+        run: npm run build:wasm
+
+      # Proves the freshly built artifacts agree with the manifest the build wrote, so a
+      # manifest that was not regenerated fails here rather than on the next CI run.
+      - name: Verify the artifacts against their manifest
+        run: npm run check:wasm:fresh
+
+      - name: Upload MuPDF artifacts for review
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mupdf-wasm-${{ github.sha }}
+          path: |
+            vendor/mupdf-wasm/dist/
+            vendor/wasm-manifest.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  pdftext:
+    name: pdftext (Rust)
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install exact Node dependencies
+        run: npm ci --include=dev
+
+      - name: Set up Rust
+        uses: ./.github/actions/setup-rust
+        with:
+          targets: wasm32-unknown-unknown
+
+      # wasm-bindgen-cli must match the crate's wasm-bindgen version exactly, so the
+      # version is resolved from the lockfile rather than pinned in the immutable action.
+      - name: Install wasm-bindgen-cli and wasm-opt
+        run: node scripts/setup-wasm-tools.mjs
+
+      - name: Build the Rust text module
+        run: node scripts/build-rust-wasm.mjs
+
+      - name: Upload pdftext artifacts for review
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pdftext-wasm-${{ github.sha }}
+          path: vendor/pdftext-wasm/dist/
+          if-no-files-found: warn
+          retention-days: 30
