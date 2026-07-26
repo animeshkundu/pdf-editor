@@ -57,7 +57,7 @@ int create_digest(unsigned char *digest, int digest_len) {
 Built with `-sASYNCIFY`, then the same flag applied to a full MuPDF build to measure what
 it costs on the binary we actually ship.
 
-## Result 1: the bridge works
+## Result 1: the mechanism suspends and resumes correctly
 
 ```
 callback returned 5 bytes, contents correct
@@ -69,7 +69,7 @@ The bytes arrive in the caller-supplied buffer, correct, and the synchronous fun
 returns them normally. Asyncify unwinds the WASM stack at the suspend point and rewinds
 it when the promise settles, which the C code cannot observe.
 
-## Result 2: the cost is 8.9%, not 157%
+## Result 2: binary size, and why the toy figure does not extrapolate
 
 Measured on the real binary rather than the reduction, because the reduction is
 misleading:
@@ -86,11 +86,9 @@ dominates a 6 KB binary and disappears into a 10 MB one. **Anyone sizing this fr
 minimal example would have concluded the design was unaffordable.** The delta on the
 shipped artifact is 922,563 bytes, about 8.9%.
 
-That figure is for **blanket** instrumentation, where every function is made suspendable.
-`ASYNCIFY_ONLY` restricts it to the functions on the actual suspend path, and the signer
-path is a narrow slice of MuPDF. The real cost is therefore an upper bound of 900 KB and
-probably far less. Measuring the restricted build is follow-up work; the blanket number
-already clears the decision.
+**Read no further than that.** This is raw binary size for one build configuration. It is
+not "the cost", it is not an upper bound, and it does not clear any decision. See the
+correction below, which withdraws both of those claims.
 
 ## The amendment ADR 0018 needs
 

@@ -38,9 +38,9 @@ void wasm_pdf_null_filter_page(pdf_page *page)
 ```
 
 Thirty-six lines appended to `platform/wasm/lib/mupdf.c`, built clean with the existing
-toolchain. **This is the first evidence that the fork strategy works end to end**: a C
-function added to the shim, compiled, and callable. ADR 0004 rested on that being
-straightforward, and it is.
+toolchain. What that establishes is narrow but real: **a C function can be added to the
+shim, compiled and called from JavaScript.** ADR 0004 assumed that was straightforward
+and it is. It says nothing about whether what the function does is correct.
 
 ## Result
 
@@ -140,10 +140,15 @@ extractor keeps returning the same character sequence and reports nothing.
 
 ## Where this leaves Spike A
 
-Stage 1 has a first green signal on the easiest kind of document, and the substrate the
-whole content-stream editing path depends on is demonstrably reachable and functioning.
-That is a meaningful de-risking of ADR 0004 and ADR 0012.
+Two things are established. The filter API is reachable from the shim and returns without
+error on 19 real pages, and filtering costs about one percent on a full compressed save.
+Neither is a fidelity result.
 
-The remaining work is unchanged in shape and now has a working harness to run it in:
-assemble the corpus, run this same filter across it, and compare with pdf.js rather than
-with MuPDF. The sixteen `OPEN` features stay `OPEN`.
+Nothing is de-risked about ADR 0012, which is the one that matters, because no independent
+reader has looked at the output. The value delivered here is a **working harness**: the
+export exists, the patch is captured, and the loop from PDF to filtered output runs in
+about a second. Pointing it at the corpus and at pdf.js is now configuration rather than
+construction.
+
+The sixteen `OPEN` features stay `OPEN`, and stage 1 is not yet passed. It has one
+encouraging data point from the easiest available document, judged by the wrong reader.
