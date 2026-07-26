@@ -1,5 +1,15 @@
 @import 'tailwindcss';
 
+/* Tailwind v4 detects sources relative to THIS file. It lives in assets/ while the
+   components live elsewhere, and the Vite root is web/, so automatic detection finds
+   nothing and silently emits a stylesheet with no utilities in it. The class names
+   still appear in the JavaScript, so the page renders and looks merely unstyled rather
+   than broken, which is why the unit tests and the build stayed green and only the
+   browser acceptance run caught it. */
+@source "../entrypoints";
+@source "../components";
+@source "../web";
+
 /* ---------------------------------------------------------------------------
    Design tokens.
 

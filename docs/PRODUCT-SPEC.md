@@ -112,7 +112,13 @@ CRL revocation checking, and PAdES B-LT and B-LTA all require network access.
 ### `OPEN`, blocked on a spike
 
 The feature's shape is not yet decidable. Every `OPEN` item names the spike that decides
-it. There is exactly one cluster, below.
+it, and the spec-integrity gate (`scripts/check-spec-integrity.mjs`) fails if one does not,
+so "blocked" cannot become a place things go to be forgotten.
+
+All ten `OPEN` items depend on the same mechanism, content-stream rewriting, and so on the
+same two spikes below. That is not only text: editing an existing image, and the
+resource-rewriting half of optimization, go through the same filter and carry the same
+risk.
 
 ## Open: text-editing depth
 
@@ -230,53 +236,53 @@ overclaim this specification is structured to prevent.
 
 ### Correctness
 
-| #   | Criterion                                                                                                                              | Check                                                                                                                |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| C1  | Every document the product writes is structurally valid per qpdf, including after an incremental save                                  | `exec`                                                                                                               |
-| C2  | Every document the product writes parses and renders in pdf.js                                                                         | `exec`                                                                                                               |
-| C3  | No acceptance assertion reads our own output back through MuPDF                                                                        | `exec`, by a lint rule over the test tree                                                                            |
-| C4  | A save specified to change nothing produces a document the oracles find equivalent                                                     | `exec`                                                                                                               |
-| C5  | An operation that fails leaves the document byte-identical to its pre-operation state                                                  | `exec`                                                                                                               |
-| C6  | Existing signatures still validate, outside our stack, after an unrelated incremental save                                             | `exec`                                                                                                               |
-| C7  | Redaction removes the content from the content stream: text and image extraction from the saved bytes, by both oracles, finds no trace | `exec`. Honest limit: this proves absence from what the oracles reach, not unrecoverability against every technique. |
-| C8  | Rendered output matches pdf.js within a stated per-page tolerance across the corpus                                                    | `exec`                                                                                                               |
+| #   | Criterion                                                                                                                              | Check                                                                                                                                                                               |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1  | Every document the product writes is structurally valid per qpdf, including after an incremental save                                  | `exec`, over the test corpus. "Every document" means every document a test produces, not every document a user could ever produce.                                                  |
+| C2  | Every document the product writes parses and renders in pdf.js                                                                         | `exec`, same corpus scope as C1.                                                                                                                                                    |
+| C3  | No acceptance assertion reads our own output back through MuPDF                                                                        | `exec`, by a lint rule over the test tree                                                                                                                                           |
+| C4  | A save specified to change nothing produces a document the oracles find equivalent                                                     | `exec`                                                                                                                                                                              |
+| C5  | An operation that fails leaves the document byte-identical to its pre-operation state                                                  | `exec` for failures a test can inject. A WASM trap kills the instance, so the guarantee there is that the on-disk document is untouched, not that the in-memory one is recoverable. |
+| C6  | Existing signatures still validate, outside our stack, after an unrelated incremental save                                             | `exec`                                                                                                                                                                              |
+| C7  | Redaction removes the content from the content stream: text and image extraction from the saved bytes, by both oracles, finds no trace | `exec`. Honest limit: this proves absence from what the oracles reach, not unrecoverability against every technique.                                                                |
+| C8  | Rendered output matches pdf.js within a stated per-page tolerance across the corpus                                                    | `exec`. The tolerance is set once the two renderers have been compared on the corpus; a tolerance chosen before measurement would be a number invented to pass.                     |
 
 ### Resources and stability
 
-| #   | Criterion                                                                                                              | Check                                        |
-| --- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| R1  | Every ceiling in `lib/core/limits.ts` rejects at the boundary with its documented `LimitCode`                          | `exec`                                       |
-| R2  | A rejection happens before any mutation                                                                                | `exec`                                       |
-| R3  | Rendering a document end to end and closing it returns the engine heap to its starting level within a stated tolerance | `exec`                                       |
-| R4  | A document worker killed mid-request rejects its in-flight promises and leaves other documents working                 | `exec`                                       |
-| R5  | A fuzzed corpus produces contained failures, never a stuck UI                                                          | `exec`                                       |
-| R6  | No single `toPixmap()` call exceeds `maxRenderPixels`                                                                  | `exec`                                       |
-| R7  | Scrolling a heavy 500-page document holds its frame budget on reference hardware                                       | `review`, until a stable perf harness exists |
-| R8  | iOS Safari survives the `IOS_BUDGET` ceilings on a real device                                                         | `review`, no automated iOS coverage          |
+| #   | Criterion                                                                                                              | Check                                                                                                                                                              |
+| --- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R1  | Every ceiling in `lib/core/limits.ts` rejects at the boundary with its documented `LimitCode`                          | `exec`                                                                                                                                                             |
+| R2  | A rejection happens before any mutation                                                                                | `exec`                                                                                                                                                             |
+| R3  | Rendering a document end to end and closing it returns the engine heap to its starting level within a stated tolerance | `exec`, against MuPDF's reported heap. Allocator fragmentation means exact return is not expected, which is why the criterion says tolerance rather than equality. |
+| R4  | A document worker killed mid-request rejects its in-flight promises and leaves other documents working                 | `exec`                                                                                                                                                             |
+| R5  | A fuzzed corpus produces contained failures, never a stuck UI                                                          | `exec`. Proves containment over the corpus that was run, not absence of a crashing input.                                                                          |
+| R6  | No single `toPixmap()` call exceeds `maxRenderPixels`                                                                  | `exec`                                                                                                                                                             |
+| R7  | Scrolling a heavy 500-page document holds its frame budget on reference hardware                                       | `review`, until a stable perf harness exists                                                                                                                       |
+| R8  | iOS Safari survives the `IOS_BUDGET` ceilings on a real device                                                         | `review`, no automated iOS coverage                                                                                                                                |
 
 ### Privacy
 
-| #   | Criterion                                                                                      | Check                                    |
-| --- | ---------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| P1  | No third-party URL in shipped output                                                           | `exec` (`check:egress`)                  |
-| P2  | No foreign-origin request while the app runs                                                   | `exec` (E2E)                             |
-| P3  | The CSP in `web/index.html` is unchanged                                                       | `exec`                                   |
-| P4  | No serverless function, edge middleware, or same-origin endpoint that could receive a document | `review`, and stated as such in ADR 0002 |
-| P5  | OPFS entries are evicted when a document closes, and are clearable by the user                 | `exec`                                   |
+| #   | Criterion                                                                                      | Check                                                                                                |
+| --- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| P1  | No third-party URL in shipped output                                                           | `exec` (`check:egress`)                                                                              |
+| P2  | No foreign-origin request while the app runs                                                   | `exec` (E2E)                                                                                         |
+| P3  | The CSP in `web/index.html` is unchanged                                                       | `exec`                                                                                               |
+| P4  | No serverless function, edge middleware, or same-origin endpoint that could receive a document | `review`, and stated as such in ADR 0002                                                             |
+| P5  | OPFS entries are evicted when a document closes, and are clearable by the user                 | `exec`. Browser-initiated eviction under storage pressure is outside our control and is not claimed. |
 
 ### Accessibility
 
-| #   | Criterion                                                                                             | Check                                                                                     |
-| --- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| A1  | Every command in the palette is invocable by keyboard alone                                           | `exec`                                                                                    |
-| A2  | Landmarks, skip link, and a single `h1` are present                                                   | `exec`                                                                                    |
-| A3  | The hidden reading-order element follows the structure tree where one exists                          | `exec`                                                                                    |
-| A4  | `--row-height` resolves differently in each density                                                   | `exec`                                                                                    |
-| A5  | Every semantic token pair used as foreground on background meets WCAG 2.2 AA contrast, in both themes | `exec`, at the token level. Whether components actually pair tokens that way is `review`. |
-| A6  | `touch` density resolves `--control-height` at or above the WCAG 2.2 target-size minimum              | `exec`, at the token level. Whether each rendered control honours it is `review`.         |
-| A7  | Reduced motion and forced colors behave correctly                                                     | `review`, driven not inferred                                                             |
-| A8  | A screen reader reads a two-column page in logical order                                              | `review`                                                                                  |
-| A9  | Reflow at 200% zoom and 320 px loses no function                                                      | `review`                                                                                  |
+| #   | Criterion                                                                                             | Check                                                                                                                                            |
+| --- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A1  | Every command in the palette is invocable by keyboard alone                                           | `exec`, driven from the command registry so the test enumerates commands rather than hard-coding a list.                                         |
+| A2  | Landmarks, skip link, and a single `h1` are present                                                   | `exec`                                                                                                                                           |
+| A3  | The hidden reading-order element follows the structure tree where one exists                          | `exec` against fixtures with a known-correct expected order. Whether the order is right for an arbitrary real document is A8, which is `review`. |
+| A4  | `--row-height` resolves differently in each density                                                   | `exec`                                                                                                                                           |
+| A5  | Every semantic token pair used as foreground on background meets WCAG 2.2 AA contrast, in both themes | `exec`, at the token level. Whether components actually pair tokens that way is `review`.                                                        |
+| A6  | `touch` density resolves `--control-height` at or above the WCAG 2.2 target-size minimum              | `exec`, at the token level. Whether each rendered control honours it is `review`.                                                                |
+| A7  | Reduced motion and forced colors behave correctly                                                     | `review`, driven not inferred                                                                                                                    |
+| A8  | A screen reader reads a two-column page in logical order                                              | `review`                                                                                                                                         |
+| A9  | Reflow at 200% zoom and 320 px loses no function                                                      | `review`                                                                                                                                         |
 
 ### Honesty
 

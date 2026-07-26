@@ -14,10 +14,16 @@
 
       `'wasm-unsafe-eval'` is required to compile WebAssembly and does NOT permit
       eval() of JavaScript.
+
+      `frame-ancestors` is deliberately absent. It is ignored by specification when a
+      policy arrives in a <meta> element, and declaring it anyway makes every browser
+      log an error on every page load. Clickjacking protection comes from the
+      `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY`
+      response headers in vercel.json, which are the only place it can work.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' blob: data:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'"
+      content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' blob: data:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'"
     />
     <title>PDF Editor</title>
     <meta

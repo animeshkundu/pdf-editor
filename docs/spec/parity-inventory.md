@@ -269,13 +269,23 @@ described in [`../PRODUCT-SPEC.md`](../PRODUCT-SPEC.md#open-text-editing-depth).
 - [ ] `EDIT-018` **Add, edit, and delete links** `LOCAL`
 - [ ] `EDIT-019` **Create links from URLs detected in the text** `LOCAL`
 - [ ] `EDIT-020` **Create, rename, reorder, nest, and delete bookmarks** `LOCAL`
-- [ ] `EDIT-021` **Generate bookmarks from the structure tree's headings** `LOCAL`
+- [ ] `EDIT-021` **Generate bookmarks from the structure tree's headings** `LOCAL`. Reads
+      structure via `stext`, and writes through the exported outline iterator
+      (`wasm_outline_iterator_insert`), so unlike the tagging tools in section 11 this
+      one needs no raw-dictionary work.
 - [ ] `EDIT-022` **Edit document properties**: title, author, subject, keywords, and custom metadata
       `LOCAL`
 - [ ] `EDIT-023` **Edit XMP metadata** `LOCAL`
-- [ ] `EDIT-024` **Optimize (reduce file size)**: image downsampling and recompression, font
-      subsetting, object deduplication, and unused-object removal `LOCAL`, with a
-      before-and-after size report and per-category control rather than a single slider.
+- [ ] `EDIT-024` **Optimize: object deduplication and unused-object removal** `LOCAL`, via
+      MuPDF's own garbage collection on save. Ships with a before-and-after size report
+      that names which categories actually ran, and per-category control rather than a
+      single slider.
+- [ ] `EDIT-025` **Optimize: image downsampling and recompression, and font subsetting**
+      `OPEN`, Spike A. Both rewrite the page's resources and the content stream that
+      references them, so they carry exactly the fidelity risk the null-filter spike
+      measures. Split from `EDIT-024` because the two halves of Acrobat's "optimize" have
+      different risk profiles, and labelling them together would let the safe half carry
+      the unsafe one.
 
 These document-level items are all additive or annotation-based, so none depends on the
 content-stream spikes.
@@ -395,11 +405,17 @@ unambiguous parity in the product.
 - [ ] `SIGN-007` **Signature appearance**: name, date, reason, location, and logo `LOCAL`
 - [ ] `SIGN-008` **Sign an existing signature field** `LOCAL`
 - [ ] `SIGN-009` **Incremental save so existing signatures stay valid** `LOCAL`
-- [ ] `SIGN-010` **Validate signatures**: integrity, ByteRange coverage, and certificate chain to a
-      user-supplied trust list `DEGRADED`. Chain validation is real; revocation status is
-      not checkable offline, so validation reports "valid, revocation not checked" rather
-      than "valid". Overstating this would be the worst honesty failure available to this
-      product.
+- [ ] `SIGN-010` **Validate signatures**: integrity, ByteRange coverage, and certificate
+      chain to a user-supplied trust list `DEGRADED`. Two separate weaknesses, and both
+      belong in the disclosure. First, **the WASM shim exports no verification surface at
+      all**: `pdf_check_digest` and `pdf_check_certificate` exist in the C API
+      (`include/mupdf/pdf/form.h:268-269`) but grepping `platform/wasm/lib/mupdf.c` for
+      `pkcs7` or `signer` returns zero matches, so verification requires a
+      `pdf_pkcs7_verifier` added by the fork alongside the signer in
+      [ADR 0018](../adr/0018-signing-via-custom-signer-vtable.md). Second, revocation
+      status is not checkable offline, so a validated signature reports "valid,
+      revocation not checked" rather than "valid". Overstating either would be the worst
+      honesty failure available to this product.
 - [ ] `SIGN-011` **Signature panel** showing what each signature covers and what changed after it
       `LOCAL`
 - [ ] `SIGN-012` **Import certificates and build a trust list** `LOCAL`
@@ -512,12 +528,21 @@ unambiguous parity in the product.
 
 ## 10. Compare
 
-- [ ] `CMPR-001` **Compare two documents and report the differences** `LOCAL`
+- [ ] `CMPR-001` **Compare two documents and report the differences** `LOCAL`. Written
+      by us over `stext` and rendered output; MuPDF has no comparison API. `LOCAL` means
+      it needs nothing the engine cannot supply, not that the engine supplies it.
 - [ ] `CMPR-002` **Side-by-side view with synchronised scrolling** `LOCAL`
 - [ ] `CMPR-003` **Text differences at word granularity** `LOCAL`
-- [ ] `CMPR-004` **Image and graphic differences** `LOCAL`
-- [ ] `CMPR-005` **Page insertions, deletions, and moves detected as such** `LOCAL`, rather than
-      reported as "everything after page 4 changed".
+- [ ] `CMPR-004` **Image and graphic differences** `DEGRADED`. Detected by comparing
+      rendered tiles, so it reports that a region changed, not which object changed or
+      how. Anti-aliasing and resampling differences have to be tolerated, which means a
+      threshold, which means both false positives and missed subtle changes. The report
+      says it is raster-based rather than implying object-level understanding.
+- [ ] `CMPR-005` **Page insertions, deletions, and moves detected as such** `DEGRADED`,
+      by content similarity rather than identity, since a moved page is rarely
+      byte-identical after a round trip through another producer. Still far better than
+      reporting "everything after page 4 changed", but similarity needs a threshold, and a
+      threshold misclassifies at the margin.
 - [ ] `CMPR-006` **A navigable difference list** `LOCAL`
 - [ ] `CMPR-007` **Filter by change type** `LOCAL`
 - [ ] `CMPR-008` **Compare report as a document** `LOCAL`
@@ -588,8 +613,23 @@ passing.
 
 ### Repair tools
 
+Every write-side item in this group carries a shared constraint, stated once here rather
+than repeated on each line. **The WASM shim exports no structure-tree API.** Grepping
+`platform/wasm/lib/mupdf.c` for `struct_tree` returns zero matches, and MuPDF's own
+`pdf_structure_type` (`include/mupdf/pdf/document.h:887`) is not bridged. The raw object
+API **is** exported (`pdf_dict_put`, `pdf_dict_get`, `pdf_array_push`, `pdf_new_dict`,
+`pdf_add_object`, `pdf_new_indirect`), so the structure tree is reachable by manipulating
+`/StructTreeRoot` directly.
+
+That is a real capability and these items are therefore `LOCAL` rather than `OPEN`. It is
+also materially more work and more risk than the labels alone suggest: we would be
+building the tagging layer on raw dictionaries rather than calling into one. Reading the
+tree is easier, since `stext` carries structure
+(`fz_new_stext_struct`, `include/mupdf/fitz/structured-text.h:1146`).
+
 - [ ] `A11Y-033` **Accessibility report**, with each failure linked to the offending object `LOCAL`
-- [ ] `A11Y-034` **Tags panel**: inspect, reorder, retype, and delete tags `LOCAL`
+- [ ] `A11Y-034` **Tags panel**: inspect, reorder, retype, and delete tags `LOCAL`, over
+      the raw `/StructTreeRoot` per the note above.
 - [ ] `A11Y-035` **Reading order tool**: assign regions to tag types by drawing on the page `LOCAL`
 - [ ] `A11Y-036` **Autotag document** `DEGRADED`. Structure inference is heuristic in every tool
       including Acrobat's. Presented as a proposal to review, never applied silently.
@@ -660,14 +700,14 @@ passing.
 
 ## Coverage summary
 
-308 items in total.
+309 items in total.
 
 | Label      | Count | Where it concentrates                                                                                                                                                                                                                                                       |
 | ---------- | ----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LOCAL`    |   264 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                                                                             |
-| `DEGRADED` |    15 | Office export, OCR, signature revocation status, field auto-detection, autotag, HTML conversion, barcode fields, RC4, scan comparison                                                                                                                                       |
+| `LOCAL`    |   262 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                                                                             |
+| `DEGRADED` |    17 | Office export, OCR, signature revocation status, field auto-detection, autotag, HTML conversion, barcode fields, RC4, scan comparison                                                                                                                                       |
 | `EXCLUDED` |    16 | Cloud review, request e-signatures, rights management, cloud sync, XFA, scanner input, web-page capture, form submit to URL, timestamping, revocation checking, LTV, folder-level JavaScript, prepress, Preflight authoring, sound annotations, Action Wizard compatibility |
-| `OPEN`     |     9 | Editing existing text and existing page objects, pending Spikes A and B                                                                                                                                                                                                     |
+| `OPEN`     |    10 | Editing existing text and existing page objects, pending Spikes A and B                                                                                                                                                                                                     |
 | `EQUIV`    |     4 | Find, clipboard, save and save as, Read Out Loud                                                                                                                                                                                                                            |
 
 By section:
@@ -678,7 +718,7 @@ By section:
 | 2. Search and text selection (`FIND`) |    14 |
 | 3. Comment and markup (`MARK`)        |    35 |
 | 4. Comment management (`CMNT`)        |    13 |
-| 5. Edit content (`EDIT`)              |    24 |
+| 5. Edit content (`EDIT`)              |    25 |
 | 6. Organize pages (`PAGE`)            |    20 |
 | 7. Forms (`FORM`)                     |    30 |
 | 8. Sign and security (`SIGN`)         |    34 |
@@ -692,13 +732,21 @@ The counts are maintained by hand and are a summary, not a gate. If they drift f
 items above, the items are correct.
 
 The concentration is the point. `EXCLUDED` is almost entirely workflows that need a server,
-which is the trade the product exists to make. `OPEN` is confined to one mechanism, which
-is exactly where the risk was always known to be
-([ADR 0012](../adr/0012-content-stream-text-editing.md)).
+which is the trade the product exists to make. `OPEN` is confined to a single mechanism,
+content-stream rewriting, which is exactly where the risk was always known to be
+([ADR 0012](../adr/0012-content-stream-text-editing.md)). It reaches further than text:
+image editing and the resource-rewriting half of optimization depend on the same filter.
+
+`DEGRADED` is worth reading as a group. It is not one kind of weakness. Three come from
+reconstructing a model the PDF does not contain (Office export, autotag, field detection),
+three from working at the raster level rather than the object level (graphic diff,
+page-move detection, scan comparison), two from a missing network (revocation status), and
+the rest from specific engine or format limits. Each ships with its own disclosure because
+each is weak in a different way.
 
 ## Scope, honestly
 
-308 items is a very large surface. Two things follow, and neither is softened here.
+309 items is a very large surface. Two things follow, and neither is softened here.
 
 **This is a multi-year contract, not a release plan.** Acrobat is thirty years of
 accumulated work. Nothing about writing the list down shortens that. The phase order in
