@@ -842,7 +842,7 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 | `LOCAL`    |   256 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                                                                             |
 | `DEGRADED` |    18 | Office export, OCR, signature revocation status, field auto-detection, autotag, HTML conversion, barcode fields, RC4, scan comparison                                                                                                                                       |
 | `EXCLUDED` |    15 | Cloud review, request e-signatures, rights management, cloud sync, XFA, scanner input, web-page capture, form submit to URL, timestamping, revocation checking, LTV, folder-level JavaScript, prepress, Preflight authoring, sound annotations, Action Wizard compatibility |
-| `OPEN`     |    18 | Editing existing text and existing page objects (Spikes A and B), redaction and marked-content tagging (Spike A), signing (Spike C), signature validation (Spike D), certificate encryption (Spike E) |
+| `OPEN`     |    18 | Editing existing text and existing page objects (Spikes A and B), redaction and marked-content tagging (Spike A), signing (Spike C), signature validation (Spike D), certificate encryption (Spike E)                                                                       |
 | `EQUIV`    |     4 | Find, clipboard, save and save as, Read Out Loud                                                                                                                                                                                                                            |
 
 By section:
@@ -867,10 +867,17 @@ The counts are maintained by hand and are a summary, not a gate. If they drift f
 items above, the items are correct.
 
 The concentration is the point. `EXCLUDED` is almost entirely workflows that need a server,
-which is the trade the product exists to make. `OPEN` is confined to a single mechanism,
-content-stream rewriting, which is exactly where the risk was always known to be
-([ADR 0012](../adr/0012-content-stream-text-editing.md)). It reaches further than text:
-image editing and the resource-rewriting half of optimization depend on the same filter.
+which is the trade the product exists to make.
+
+`OPEN` grew from 10 to 18 under adversarial review, and the growth is the document working
+rather than failing. Content-stream rewriting (Spike A) accounts for most of it and reaches
+well beyond text into image editing, redaction, half of optimize, and marked-content
+tagging ([ADR 0012](../adr/0012-content-stream-text-editing.md)). The rest came from
+finding that three capabilities had no demonstrated engine path at all: signing depends on
+bridging a synchronous C callback to asynchronous WebCrypto (Spike C), signature validation
+needs a verifier the shim does not export (Spike D), and certificate-based encryption needs
+PDF's public-key security handler (Spike E). Each was previously labelled as though it
+worked.
 
 `DEGRADED` is worth reading as a group. It is not one kind of weakness. Three come from
 reconstructing a model the PDF does not contain (Office export, autotag, field detection),

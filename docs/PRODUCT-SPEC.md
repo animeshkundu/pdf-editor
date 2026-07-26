@@ -115,10 +115,23 @@ The feature's shape is not yet decidable. Every `OPEN` item names the spike that
 it, and the spec-integrity gate (`scripts/check-spec-integrity.mjs`) fails if one does not,
 so "blocked" cannot become a place things go to be forgotten.
 
-All ten `OPEN` items depend on the same mechanism, content-stream rewriting, and so on the
-same two spikes below. That is not only text: editing an existing image, and the
-resource-rewriting half of optimization, go through the same filter and carry the same
-risk.
+Most `OPEN` items depend on one mechanism, content-stream rewriting, and so on Spikes A and
+B below. That is not only text: editing an existing image, redaction, the
+resource-rewriting half of optimization, and writing marked-content tags all go through the
+same filter and carry the same risk.
+
+Three further spikes were added after adversarial review found capabilities with no
+demonstrated engine path, each previously labelled as though it worked. They are named
+here; their detail is in the inventory item that depends on each.
+
+| Spike | Question                                                                                                          | Blocks                                                 |
+| ----- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| **C** | Can a synchronous `pdf_pkcs7_signer.create_digest` callback drive asynchronous WebCrypto in single-threaded WASM? | `SIGN-005`, `SIGN-006`, `SIGN-008`, part of `SIGN-007` |
+| **D** | Can a `pdf_pkcs7_verifier` be added to the shim, which exports no verification surface at all?                    | `SIGN-010`                                             |
+| **E** | Can we interoperate with Acrobat on PDF's public-key security handler?                                            | `SIGN-026`                                             |
+
+Spike C is the most serious: [ADR 0018](adr/0018-signing-via-custom-signer-vtable.md) rests
+entirely on that bridge and never addressed the synchrony mismatch.
 
 ## Open: text-editing depth
 
@@ -184,11 +197,11 @@ compare before and after.
 **A page passes** when qpdf reports the output structurally valid, extracted text is
 identical, and the pdf.js render differs by no more than the C8 per-page tolerance.
 
-| Result | Consequence |
-| --- | --- |
-| Every page passes | Spike A is **green**. Content-stream rewriting is the primary editing path. Items blocked only on Spike A are promoted to their target labels. |
+| Result                                                                                                                     | Consequence                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every page passes                                                                                                          | Spike A is **green**. Content-stream rewriting is the primary editing path. Items blocked only on Spike A are promoted to their target labels.                                                                                                                                                                                               |
 | Failures are confined to a characterisable class (for example, only Type 3 fonts, or only documents MuPDF repairs on open) | Spike A is **conditional**. Rewriting ships, and documents in the failing class are **detected and refused before the edit**, never edited approximately. `SIGN-031` redaction ships only if the failing class can be detected reliably, because a redaction that silently fails on an undetected class is the worst outcome available here. |
-| Failures are diffuse and not characterisable | Spike A is **red**. Content-stream rewriting is withdrawn. Text editing becomes the annotation-overlay backend, `EDIT-025` is withdrawn, and **`SIGN-031` redaction is withdrawn entirely** rather than shipped as an overlay. |
+| Failures are diffuse and not characterisable                                                                               | Spike A is **red**. Content-stream rewriting is withdrawn. Text editing becomes the annotation-overlay backend, `EDIT-025` is withdrawn, and **`SIGN-031` redaction is withdrawn entirely** rather than shipped as an overlay.                                                                                                               |
 
 **What the null filter does and does not establish.** This is a real limit of the
 experiment and it is stated rather than glossed. A null filter proves that the
@@ -199,7 +212,7 @@ exercises.
 
 Spike A is therefore a **necessary condition, not a sufficient one**. A red result is
 conclusive and kills the approach. A green result licenses proceeding to a second stage,
-in which the same comparison runs over a *non-null* rewrite (replace one word, delete one
+in which the same comparison runs over a _non-null_ rewrite (replace one word, delete one
 run) and every changed page is inspected for collateral damage. Promotion to a shipped
 label requires both stages, and the finding must report them separately.
 
@@ -211,14 +224,14 @@ is the proportion of runs where every character inverts, and it is reported per 
 as well as overall.
 
 There is no threshold at which text editing is withdrawn, because **Path B is a working
-fallback rather than a failure**. The hit rate decides what the product *says*, not
+fallback rather than a failure**. The hit rate decides what the product _says_, not
 whether it ships:
 
-| Hit rate | What shipped copy says |
-| --- | --- |
-| At or above 95% | "Edits reuse the document's own fonts." The Path B case is a rare footnote. |
-| 70% to 95% | "Edits usually reuse the document's own fonts; some embed a new subset." Both paths are described up front, and the UI names which one an edit took. |
-| Below 70% | Path B is the common case and must be described as the normal behaviour, not the exception. The value of in-place editing is materially lower and the product says so. |
+| Hit rate        | What shipped copy says                                                                                                                                                 |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| At or above 95% | "Edits reuse the document's own fonts." The Path B case is a rare footnote.                                                                                            |
+| 70% to 95%      | "Edits usually reuse the document's own fonts; some embed a new subset." Both paths are described up front, and the UI names which one an edit took.                   |
+| Below 70%       | Path B is the common case and must be described as the normal behaviour, not the exception. The value of in-place editing is materially lower and the product says so. |
 
 Two results **do** withdraw a capability regardless of hit rate:
 

@@ -83,6 +83,57 @@ support basic and certification signatures and must **say plainly** what it does
 Claiming LTV without providing it would be exactly the kind of misleading capability
 claim this project treats as a merge blocker.
 
+## Unresolved: the callback is synchronous, WebCrypto is not
+
+**This ADR's central mechanism has an unaddressed problem, found in adversarial review of
+the product specification, and it is recorded here rather than left in a review thread.**
+
+`pdf_pkcs7_signer.create_digest` is synchronous. Its signature
+(`include/mupdf/pdf/form.h:226`) is:
+
+```c
+typedef int (pdf_pkcs7_create_digest_fn)(fz_context *ctx, pdf_pkcs7_signer *signer,
+                                         fz_stream *in, unsigned char *digest,
+                                         size_t digest_len);
+```
+
+It returns an `int` and writes into a caller-supplied buffer. MuPDF calls it and expects
+the bytes to be there when it returns.
+
+`SubtleCrypto` is asynchronous. Every operation returns a promise. The engine is
+single-threaded WebAssembly with no pthreads
+([ADR 0013](0013-supported-browser-matrix.md)), so there is no second thread to block on,
+and no `SharedArrayBuffer` plus `Atomics.wait` arrangement available to synchronise
+against. **There is no obvious way to await a promise inside a synchronous C callback that
+was itself called from WASM.**
+
+The C API comment above that typedef says the callback creates "a signature based on
+ranges of bytes", not merely a digest, so the whole CMS operation may need to complete
+synchronously. That makes the problem larger, not smaller.
+
+Possible resolutions, none yet demonstrated:
+
+- **Asyncify**, an Emscripten transform that lets synchronous C call asynchronous
+  JavaScript. It works, and it costs binary size and speed across the whole module, which
+  matters against a 10.4 MB baseline.
+- **JSPI**, the JavaScript Promise Integration proposal. Cleaner, but its availability
+  across our browser floor needs checking and would likely raise that floor.
+- **Precompute the digest.** Run the hash before entering the callback, so the callback
+  only returns bytes already in hand. Whether MuPDF's ByteRange handling permits this is
+  exactly what the spike must establish.
+- **Hash synchronously outside WebCrypto** and use WebCrypto only for the signing
+  operation, if the two can be separated at the vtable boundary.
+
+Until one is demonstrated, **signing is `OPEN` on Spike C** in
+[`../spec/parity-inventory.md`](../spec/parity-inventory.md), and this ADR should be read
+as a design whose feasibility is unproven at its most important joint. The same problem
+affects the verifier vtable, whose callbacks are equally synchronous, so Spike D inherits
+it.
+
+Nothing else in this ADR changes. The division of responsibility, the reasons for avoiding
+RustCrypto `rsa` and `cms`, and the exclusions around timestamping and LTV all stand. What
+is unproven is the bridge.
+
 ## Consequences
 
 ### Positive
