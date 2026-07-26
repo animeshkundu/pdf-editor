@@ -23,7 +23,7 @@
    --------------------------------------------------------------------------- */
 
 @theme {
-  /* Palette — referenced by the semantic layer below, never by components. */
+  /* Palette, referenced by the semantic layer below, never by components. */
   --color-ink-50: #f6f7f9;
   --color-ink-100: #eceef2;
   --color-ink-200: #d5d9e2;
@@ -65,7 +65,7 @@
   --accent-hover: var(--color-accent-600);
   --focus-ring: var(--color-accent-500);
   --page-paper: #ffffff;
-  --page-shadow: 0 1px 3px rgb(0 0 0 / 0.10), 0 8px 24px rgb(0 0 0 / 0.08);
+  --page-shadow: 0 1px 3px rgb(0 0 0 / 0.1), 0 8px 24px rgb(0 0 0 / 0.08);
 
   /* Density: one name, three values. Set data-density on <html>. */
   --space-25: 1px;

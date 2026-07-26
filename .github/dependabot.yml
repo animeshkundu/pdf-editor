@@ -121,4 +121,3 @@ updates:
   #     - dependency-name: rustybuzz    # RUSTSEC-2026-0206 unmaintained; use harfrust
   #     - dependency-name: ttf-parser   # RUSTSEC-2026-0192 unmaintained; use skrifa
   #     - dependency-name: rsa          # RUSTSEC-2023-0071 unpatched; sign via WebCrypto
-
