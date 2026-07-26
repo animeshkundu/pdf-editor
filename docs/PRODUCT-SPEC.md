@@ -1,68 +1,285 @@
 # PDF Editor product specification
 
-> **Status: stub. Deliberately not written yet.**
->
-> This document will state exactly what the product does: every supported operation, its
-> inputs and outputs, its failure modes, and its limits. It is authored **after** the
-> de-risking spikes, not before.
+> **Status: partial draft.** Everything except text-editing depth is drafted. That one
+> section is deliberately open, because two spikes decide it and guessing the outcome
+> would reproduce exactly the overclaim this project exists to avoid. See
+> [Open: text-editing depth](#open-text-editing-depth).
 
-## Why this document is empty
+This specification is the parity contract. It is what review is measured against and what
+the build pipeline consumes. It is long on purpose: an undifferentiated "Acrobat parity"
+claim is worthless, and the only way to make the claim honest is to say, feature by
+feature, exactly which kind of parity is on offer.
 
-A product specification is a promise. This project has three open questions whose answers
-determine what can honestly be promised, and writing the specification first would mean
-committing to capabilities before knowing whether they are achievable.
+## Contents
 
-### 1. The font encoding inversion
+| Document                                               | What it holds                                                                                     |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| This file                                              | Classification, scope boundaries, what is open, acceptance criteria                               |
+| [`spec/parity-inventory.md`](spec/parity-inventory.md) | Every feature, by Acrobat's own categories, each labelled                                         |
+| [`spec/competitor-wins.md`](spec/competitor-wins.md)   | Capabilities taken from tools other than Acrobat, and why each beats Adobe's version              |
+| [`spec/ui-ux.md`](spec/ui-ux.md)                       | Chrome layout, tool switching, comment workflow, Organize Pages, Prepare Form, the keyboard model |
 
-[ADR 0012](adr/0012-content-stream-text-editing.md) describes going from a Unicode
-codepoint back to the character code an embedded font uses, reconciling `/Encoding` and
-`/Differences`, `/ToUnicode`, `/W`, and `/CIDToGIDMap`. **No library in any language does
-this.** Until a spike measures how often Path A (in-place, reusing the embedded font)
-succeeds across a real corpus, we cannot say whether text editing is "edit any text" or
-"edit text, usually preserving the original font, sometimes embedding a new subset". Those
-are different products and the difference matters to the user.
+Design tokens, density, motion, and focus treatment are in [`DESIGN.md`](DESIGN.md) and are
+not restated here.
 
-### 2. The fork's four additions
+## The classification, and why it exists
 
-[ADR 0004](adr/0004-fork-the-mupdf-wasm-build.md) is based on reading MuPDF's WASM
-binding source and its C API. The reasoning is sound and the exports exist, but no line of
-the fork has been built and run yet. Until `js_processor`,
-`pdf_filter_page_contents`, `mujs=yes`, and the custom `pdf_pkcs7_signer` are working
-against real documents, the features that depend on them (in-place text editing, tagged
-structure preservation, form JavaScript, signing) are designed rather than proven.
+"Adobe parity" and "100% client-side" are in direct tension. Some Acrobat features are
+straightforwardly reproducible locally. Some need a different mechanism to reach the same
+outcome. Some are reachable but worse. Some are impossible without a server and always
+will be.
 
-### 3. Real-document behaviour under the ceilings
+Collapsing those four into one list would be a lie of exactly the kind
+[ADR 0002](adr/0002-client-side-only-zero-egress.md) already had to be corrected for. So
+every feature in [`spec/parity-inventory.md`](spec/parity-inventory.md) carries one of five
+labels.
 
-[ADR 0014](adr/0014-resource-ceilings.md) sets the ceilings from platform limits and
-reasoning. What has not been measured is how a 2,000-page scanned document, a heavily
-tagged government form, or a 400 MB engineering drawing actually behaves inside them, and
-in particular where iOS Safari kills the tab.
+### `LOCAL`, exact local parity
 
-## What is already fixed
+The feature works the same way, with the same result, entirely on the device. No disclosure
+is needed and none is offered, because there is nothing to disclose.
 
-These are settled and will not be renegotiated by the specification.
+This covers the bulk of the product: viewing, navigation, search, comment and markup,
+organize pages, forms, redaction, compare, and print.
 
-- Zero egress, proved by an executable gate
+### `EQUIV`, browser-equivalent
+
+The same user outcome through a different mechanism. The mechanism difference is
+user-visible, so it is documented, but the user is not worse off. In several cases they are
+better off.
+
+The three that matter:
+
+- **Find.** Acrobat uses the application's own find. We intercept Ctrl+F and route it to
+  engine search ([ADR 0015](adr/0015-accessibility-and-no-positioned-dom-text.md)), because
+  with no positioned DOM text the browser's native find has nothing to search. This is
+  strictly better: native browser find would only ever see the mounted pages, while engine
+  search covers the whole document, including a 10,000-page one.
+- **Clipboard.** Acrobat maintains an internal clipboard alongside the system one. We use
+  the system clipboard only, through the async Clipboard API. Copying a page in one
+  document and pasting it into another works; the intermediate representation is ours, and
+  it is not interchangeable with Acrobat's.
+- **Save and Save As.** On Chromium the File System Access API gives a real Save (write
+  back to the handle the user opened) and Save As (`showSaveFilePicker`). Firefox and
+  Safari do not implement it, so both degrade to a download. The degradation is announced,
+  not discovered: a browser without the API shows "Download" rather than a "Save" that
+  silently does something else.
+
+### `DEGRADED`, reachable but worse, and said so
+
+The capability exists and is materially weaker than Acrobat's. It ships only with an
+in-product disclosure at the point of use, not a footnote in a help page. Two cases:
+
+- **Office export fidelity.** Producing `.docx` or `.xlsx` from a PDF means reconstructing
+  a document model the PDF does not contain. Adobe's is the best in the industry and is
+  server-side. Ours will be worse, and the export dialog says what is likely to be lost
+  before the user commits.
+- **OCR quality.** Adobe's OCR runs on their infrastructure with models we cannot match in
+  a browser. Ours runs in the lazy `ocr.worker`
+  ([ADR 0008](adr/0008-worker-topology-and-crash-isolation.md)) and will be worse on poor
+  scans, unusual fonts, and non-Latin scripts. Confidence is surfaced rather than hidden,
+  and OCR output is never silently substituted for real text.
+
+A `DEGRADED` feature that cannot carry an honest disclosure does not ship.
+
+### `EXCLUDED`, impossible without a server, and named
+
+These are not gaps to be filled later. They follow from
+[ADR 0002](adr/0002-client-side-only-zero-egress.md), and admitting any of them dissolves
+the product. They are listed by name so a user comparing against Acrobat finds an answer
+rather than silence.
+
+- **Adobe cloud review and shared reviews.** Multi-party review requires a server to hold
+  the shared comment stream.
+- **Request e-signatures.** Sending a document to another party for signature is a hosted
+  workflow by definition. Note the asymmetry that matters: we can _sign_ a document
+  ([ADR 0018](adr/0018-signing-via-custom-signer-vtable.md)); we cannot _ask someone else
+  to_.
+- **LiveCycle and Adobe Experience Manager rights management.** Policy-protected documents
+  contact a rights server on every open. That is the opposite of this product.
+- **Cloud storage and cross-device sync.** Document Cloud, recent-files sync, and shared
+  links. Persistence is OPFS on the device ([ADR 0017](adr/0017-persistence-via-opfs.md)).
+- **XFA forms.** Different from the rest: excluded by the engine, not by the server
+  decision. MuPDF has never implemented XFA and has no plan to. Adobe itself deprecated
+  XFA, and no modern viewer outside Acrobat renders it. An XFA document is detected on open
+  and refused with an explanation naming XFA, rather than rendering the "please update your
+  reader" fallback page and letting the user believe the form is broken.
+
+Signature-related exclusions have their own line in
+[ADR 0018](adr/0018-signing-via-custom-signer-vtable.md): RFC 3161 timestamping, OCSP and
+CRL revocation checking, and PAdES B-LT and B-LTA all require network access.
+
+### `OPEN`, blocked on a spike
+
+The feature's shape is not yet decidable. Every `OPEN` item names the spike that decides
+it. There is exactly one cluster, below.
+
+## Open: text-editing depth
+
+Two spikes decide the entire shape of text editing. Neither has run. The outcome is not
+guessed here.
+
+### Spike A: the null filter
+
+Run `pdf_filter_page_contents` with a pass-through filter specified to change nothing,
+across a real corpus, and compare before and after with the independent oracles
+([ADR 0019](adr/0019-correctness-oracles.md)).
+
+This is the cheapest possible question with the largest possible consequence. **If a filter
+that changes nothing still perturbs the document, content-stream rewriting cannot be the
+primary editing path**, and the product's text editing is an annotation-overlay backend
+instead. Those are different products:
+
+|                                        | Content-stream rewriting                  | Annotation overlay                    |
+| -------------------------------------- | ----------------------------------------- | ------------------------------------- |
+| What changes                           | The page's own content stream             | An overlay drawn above it             |
+| Reflow                                 | Possible in principle                     | Not possible                          |
+| Result in another viewer               | The document genuinely says the new words | The original text is still underneath |
+| Redaction                              | Real removal                              | Not redaction at all                  |
+| Risk to the untouched rest of the page | Real, and this spike measures it          | None                                  |
+
+The honest position today is that the overlay backend is the fallback, not the plan, and
+that this spike decides which one the product is.
+
+### Spike B: the encoding-inversion hit rate
+
+Given content-stream rewriting is viable, the second question is how much of a real corpus
+can be edited **in place, reusing the embedded font** (Path A in
+[ADR 0012](adr/0012-content-stream-text-editing.md)) rather than by embedding a new subset
+(Path B).
+
+This is measured, not estimated, across a corpus spanning producers, font types, CID and
+simple fonts, and subsetted and full embeddings. No library in any language performs this
+inversion, so there is no prior art to borrow a number from.
+
+### What cannot be written until both report
+
+- Whether text editing is described as "edit the text" or "edit the text, with a new font
+  embedded in some documents".
+- Whether reflow within a text block is offered at all.
+- Whether redaction is real removal, or is restricted to the cases where it can be.
+- What proportion of documents are refused for text editing, and on what grounds.
+- Every item in [`spec/parity-inventory.md`](spec/parity-inventory.md) currently labelled
+  `OPEN`.
+
+Findings land under [`research/`](research/) as `YYYY-MM-DD-null-filter-fidelity.md` and
+`YYYY-MM-DD-encoding-inversion-corpus.md`, and this section is replaced by what they say.
+
+## Still unproven, beyond text editing
+
+Two items from the original stub remain true and are recorded here so this draft does not
+read as more settled than it is.
+
+- **The fork has not been built and run.** `scripts/vendor-mupdf.mjs` fetches and patches
+  the source, and every claim ADR 0004 rests on has been verified against the real C
+  sources. But `js_processor`, `pdf_filter_page_contents`, `mujs=yes`, and the custom
+  `pdf_pkcs7_signer` have not yet executed against a document. Features depending on them
+  are designed, not proven.
+- **Real-document behaviour under the ceilings is unmeasured.** A 2,000-page scan, a
+  heavily tagged government form, and a 400 MB drawing have not been run, and the point
+  where iOS Safari kills the tab has not been located
+  ([ADR 0014](adr/0014-resource-ceilings.md)).
+
+Neither blocks the inventory below, because neither changes _what_ the product does, only
+whether a given item is reachable on schedule.
+
+## Fixed, and not renegotiable by this specification
+
+- Zero egress, with the gates and their stated limits
   ([ADR 0002](adr/0002-client-side-only-zero-egress.md)).
-- AGPL-3.0-only, following from MuPDF
-  ([ADR 0003](adr/0003-mupdf-as-the-engine-and-agpl.md)).
+- AGPL-3.0-only ([ADR 0003](adr/0003-mupdf-as-the-engine-and-agpl.md)).
 - Chrome 95, Firefox 131, Safari 15.2 desktop; iOS under a reduced budget
   ([ADR 0013](adr/0013-supported-browser-matrix.md)).
-- The exact ceilings in `lib/core/limits.ts`
-  ([ADR 0014](adr/0014-resource-ceilings.md)).
+- The ceilings in `lib/core/limits.ts` ([ADR 0014](adr/0014-resource-ceilings.md)).
 - WCAG 2.2 AA chrome and no positioned DOM text
   ([ADR 0015](adr/0015-accessibility-and-no-positioned-dom-text.md)).
 - Acceptance by pdf.js and qpdf, never by MuPDF
   ([ADR 0019](adr/0019-correctness-oracles.md)).
-- Basic and certification signatures only. No timestamping, no revocation checking, no
-  LTV ([ADR 0018](adr/0018-signing-via-custom-signer-vtable.md)).
+- Basic and certification signatures only
+  ([ADR 0018](adr/0018-signing-via-custom-signer-vtable.md)).
 
-## When this document gets written
+## Traceability
 
-After the spikes in [`ROADMAP.md`](ROADMAP.md) report. Each spike ends with a written
-finding under [`research/`](research/), and this specification is assembled from those
-findings.
+Every item in [`spec/parity-inventory.md`](spec/parity-inventory.md) carries a stable
+identifier (`VIEW-001`, `SIGN-024`). The identifier is the join key between this
+specification and everything downstream.
 
-Until then, do not treat any capability described in the ADRs as a shipped feature, and do
-not write user-facing copy that implies otherwise. Misleading capability claims are a
-merge blocker under [`qa/review-rubric.md`](qa/review-rubric.md).
+- A plan or pull request implementing a feature **cites its identifier**.
+- A test verifying a feature **names its identifier**, so the evidence for a checked box is
+  findable.
+- A pipeline step maps to the identifier of the operation it runs.
+- Identifiers are assigned once. They are never reused and never renumbered. A withdrawn
+  feature keeps its identifier, marked withdrawn, so an old reference never silently
+  resolves to something else.
+
+A box is checked only when the feature ships **at the label it carries** and the acceptance
+criteria below are satisfied for it. Checking a box for a `DEGRADED` feature without its
+in-product disclosure, or for an `OPEN` feature at all, is the same overclaim this document
+is structured to prevent.
+
+## Acceptance criteria
+
+Every criterion is marked with how it is checked. **`exec`** is an executable gate that
+fails CI. **`review`** is a human judgment recorded in the pull request, because no
+automated check covers it. Calling a `review` item `exec` would be the same category of
+overclaim this specification is structured to prevent.
+
+### Correctness
+
+| #   | Criterion                                                                                                                              | Check                                                                                                                |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| C1  | Every document the product writes is structurally valid per qpdf, including after an incremental save                                  | `exec`                                                                                                               |
+| C2  | Every document the product writes parses and renders in pdf.js                                                                         | `exec`                                                                                                               |
+| C3  | No acceptance assertion reads our own output back through MuPDF                                                                        | `exec`, by a lint rule over the test tree                                                                            |
+| C4  | A save specified to change nothing produces a document the oracles find equivalent                                                     | `exec`                                                                                                               |
+| C5  | An operation that fails leaves the document byte-identical to its pre-operation state                                                  | `exec`                                                                                                               |
+| C6  | Existing signatures still validate, outside our stack, after an unrelated incremental save                                             | `exec`                                                                                                               |
+| C7  | Redaction removes the content from the content stream: text and image extraction from the saved bytes, by both oracles, finds no trace | `exec`. Honest limit: this proves absence from what the oracles reach, not unrecoverability against every technique. |
+| C8  | Rendered output matches pdf.js within a stated per-page tolerance across the corpus                                                    | `exec`                                                                                                               |
+
+### Resources and stability
+
+| #   | Criterion                                                                                                              | Check                                        |
+| --- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| R1  | Every ceiling in `lib/core/limits.ts` rejects at the boundary with its documented `LimitCode`                          | `exec`                                       |
+| R2  | A rejection happens before any mutation                                                                                | `exec`                                       |
+| R3  | Rendering a document end to end and closing it returns the engine heap to its starting level within a stated tolerance | `exec`                                       |
+| R4  | A document worker killed mid-request rejects its in-flight promises and leaves other documents working                 | `exec`                                       |
+| R5  | A fuzzed corpus produces contained failures, never a stuck UI                                                          | `exec`                                       |
+| R6  | No single `toPixmap()` call exceeds `maxRenderPixels`                                                                  | `exec`                                       |
+| R7  | Scrolling a heavy 500-page document holds its frame budget on reference hardware                                       | `review`, until a stable perf harness exists |
+| R8  | iOS Safari survives the `IOS_BUDGET` ceilings on a real device                                                         | `review`, no automated iOS coverage          |
+
+### Privacy
+
+| #   | Criterion                                                                                      | Check                                    |
+| --- | ---------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| P1  | No third-party URL in shipped output                                                           | `exec` (`check:egress`)                  |
+| P2  | No foreign-origin request while the app runs                                                   | `exec` (E2E)                             |
+| P3  | The CSP in `web/index.html` is unchanged                                                       | `exec`                                   |
+| P4  | No serverless function, edge middleware, or same-origin endpoint that could receive a document | `review`, and stated as such in ADR 0002 |
+| P5  | OPFS entries are evicted when a document closes, and are clearable by the user                 | `exec`                                   |
+
+### Accessibility
+
+| #   | Criterion                                                                                             | Check                                                                                     |
+| --- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| A1  | Every command in the palette is invocable by keyboard alone                                           | `exec`                                                                                    |
+| A2  | Landmarks, skip link, and a single `h1` are present                                                   | `exec`                                                                                    |
+| A3  | The hidden reading-order element follows the structure tree where one exists                          | `exec`                                                                                    |
+| A4  | `--row-height` resolves differently in each density                                                   | `exec`                                                                                    |
+| A5  | Every semantic token pair used as foreground on background meets WCAG 2.2 AA contrast, in both themes | `exec`, at the token level. Whether components actually pair tokens that way is `review`. |
+| A6  | `touch` density resolves `--control-height` at or above the WCAG 2.2 target-size minimum              | `exec`, at the token level. Whether each rendered control honours it is `review`.         |
+| A7  | Reduced motion and forced colors behave correctly                                                     | `review`, driven not inferred                                                             |
+| A8  | A screen reader reads a two-column page in logical order                                              | `review`                                                                                  |
+| A9  | Reflow at 200% zoom and 320 px loses no function                                                      | `review`                                                                                  |
+
+### Honesty
+
+| #   | Criterion                                                                     | Check                      |
+| --- | ----------------------------------------------------------------------------- | -------------------------- |
+| H1  | Every `DEGRADED` feature carries an in-product disclosure at the point of use | `review`                   |
+| H2  | Every `EXCLUDED` feature has a named answer where a user would look for it    | `review`                   |
+| H3  | No shipped copy describes an `OPEN` or unbuilt capability as available        | `review`                   |
+| H4  | The path a text edit took is surfaced to the user                             | `review`                   |
+| H5  | This specification matches what shipped                                       | `review`, at every release |
