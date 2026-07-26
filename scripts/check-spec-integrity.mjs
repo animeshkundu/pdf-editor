@@ -12,9 +12,9 @@
 // So the identifiers and labels are checked mechanically, and the summary counts are
 // recomputed from the items rather than trusted.
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const inventoryPath = join(root, 'docs', 'spec', 'parity-inventory.md');
@@ -187,8 +187,57 @@ for (const [label, n] of Object.entries(counts).sort((a, b) => b[1] - a[1])) {
 console.log(`  ${String(total).padStart(4)}  TOTAL`);
 console.log(`[check-spec] ${seen.size} unique identifiers across ${PREFIXES.size} prefixes.`);
 
-// Cross-check any counts asserted in prose against what the items actually say. The
-// items are authoritative; a stale summary is a defect in the summary.
+// Cross-document citation check.
+//
+// The identifiers are a join key: a plan, a pull request, a test name or a pipeline step
+// cites one when it claims to implement or verify a feature. A citation that points
+// nowhere is a broken join, and it arrives easily through a typo, a deletion, or a
+// renumber that missed a reference.
+//
+// BE CLEAR ABOUT WHAT THIS DOES NOT CATCH. In review, four of six citations in a draft
+// were wrong, and all four pointed at identifiers that DO exist: SIGN-022 where SIGN-021
+// was meant, CONV-018 for CONV-017, and so on. Both endpoints resolve, so this check
+// would have passed every one of them. Catching a wrong-but-valid citation needs to know
+// what the surrounding sentence means, which no mechanical check here can do.
+//
+// So this closes the cheap half: dangling references. The expensive half stays a review
+// responsibility, and saying so is better than implying the gate covers it.
+const CITATION = /\b([A-Z0-9]{4})-(\d{3})\b/g;
+
+function collectMarkdown(dir, out = []) {
+  if (!existsSync(dir)) return out;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) collectMarkdown(full, out);
+    else if (entry.name.endsWith('.md')) out.push(full);
+  }
+  return out;
+}
+
+let citations = 0;
+for (const file of collectMarkdown(join(root, 'docs'))) {
+  const body = readFileSync(file, 'utf8');
+  const rel = relative(root, file).replace(/\\/g, '/');
+  const reported = new Set();
+
+  for (const m of body.matchAll(CITATION)) {
+    const [cited, prefix] = [m[0], m[1]];
+    if (!PREFIXES.has(prefix)) continue; // Not one of ours: a date, a code, prose.
+    citations++;
+    if (seen.has(cited) || reported.has(cited)) continue;
+    reported.add(cited);
+    const line = body.slice(0, m.index).split('\n').length;
+    errors.push(
+      `${rel}:${line}  cites ${cited}, which is not in the inventory. ` +
+        'Identifiers are the join key; a citation that resolves to nothing is a broken link.',
+    );
+  }
+}
+console.log(
+  `[check-spec] ${citations} identifier citations across docs/, all resolving. ` +
+    'Wrong-but-valid citations are not detectable here and remain a review item.',
+);
+
 const specPath = join(root, 'docs', 'PRODUCT-SPEC.md');
 if (existsSync(specPath)) {
   const spec = readFileSync(specPath, 'utf8');
