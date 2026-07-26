@@ -1,0 +1,22 @@
+# Line endings are normalised to LF in the repository. CI runs on Linux self-hosted
+# runners while development happens on Windows, and scripts/check-wasm-fresh.mjs
+# compares artifacts BYTE FOR BYTE. Without this, a checkout on either platform would
+# produce different digests for identical content and the freshness gate would fail
+# for a reason that has nothing to do with the artifacts.
+* text=auto eol=lf
+
+# Binary artifacts must never be touched.
+*.wasm binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+
+# Generated; collapse in diffs and exclude from language statistics.
+package-lock.json linguist-generated=true -diff
+Cargo.lock linguist-generated=true -diff
+vendor/** linguist-vendored=true

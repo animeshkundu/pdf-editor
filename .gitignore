@@ -1,0 +1,20 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.vercel/
+*.log
+.DS_Store
+
+# Rust
+crates/**/target/
+crates/**/pkg/
+
+# MuPDF fork: the upstream source tree is vendored via submodule or fetch script,
+# and the Emscripten build cache is machine-local. The BUILT artifacts under
+# vendor/mupdf-wasm/dist/ ARE committed on purpose so Vercel can build without a
+# native toolchain; scripts/check-wasm-fresh.mjs proves they match the source.
+vendor/mupdf-wasm/build/
+vendor/mupdf-wasm/emsdk/
+vendor/mupdf-wasm/src/
