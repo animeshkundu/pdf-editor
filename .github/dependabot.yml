@@ -69,35 +69,42 @@ updates:
   # ---------------------------------------------------------------------------------
   # Cargo
   # ---------------------------------------------------------------------------------
-  # crates/pdftext/ does not exist yet. `directories` with a glob is what makes that
-  # harmless: a pattern that matches nothing yields no update run at all, whereas a plain
-  # `directory: /crates/pdftext` would error on every scheduled run until the crate
-  # lands. The entry starts working by itself the moment the directory appears.
-  - package-ecosystem: cargo
-    directories:
-      - /crates/*
-    schedule:
-      interval: weekly
-      day: monday
-      time: '06:00'
-      timezone: Etc/UTC
-    open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - rust
-    commit-message:
-      prefix: 'deps'
-    groups:
-      cargo:
-        patterns:
-          - '*'
-        update-types:
-          - minor
-          - patch
-    ignore:
-      # scripts/check-supply-chain.mjs refuses these three by name, each for a specific
-      # advisory recorded in docs/THIRD-PARTY.md. Telling Dependabot not to propose them
-      # keeps the denial from being rediscovered as a failing gate every week.
-      - dependency-name: rustybuzz
-      - dependency-name: ttf-parser
-      - dependency-name: rsa
+  # Commented out until crates/pdftext/ exists.
+  #
+  # The `directories: [/crates/*]` glob was expected to make this harmless before the
+  # crate lands. It does not: Dependabot errors on a glob that matches nothing, and the
+  # first scheduled run failed. A job that fails every week for a known, uninteresting
+  # reason is exactly the noise that teaches people to ignore red, which is why timing
+  # checks are also kept off the blocking path.
+  #
+  # Restore this block, with `directory: /crates/pdftext`, in the same commit that adds
+  # the crate. The `ignore` list below is the part that must not be lost: those three
+  # crates are refused by scripts/check-supply-chain.mjs, each for a specific advisory
+  # recorded in docs/THIRD-PARTY.md, and Dependabot proposing them would rediscover the
+  # denial as a failing gate.
+  #
+  # - package-ecosystem: cargo
+  #   directory: /crates/pdftext
+  #   schedule:
+  #     interval: weekly
+  #     day: monday
+  #     time: '06:00'
+  #     timezone: Etc/UTC
+  #   open-pull-requests-limit: 10
+  #   labels:
+  #     - dependencies
+  #     - rust
+  #   commit-message:
+  #     prefix: 'deps'
+  #   groups:
+  #     cargo:
+  #       patterns:
+  #         - '*'
+  #       update-types:
+  #         - minor
+  #         - patch
+  #   ignore:
+  #     - dependency-name: rustybuzz    # RUSTSEC-2026-0206 unmaintained; use harfrust
+  #     - dependency-name: ttf-parser   # RUSTSEC-2026-0192 unmaintained; use skrifa
+  #     - dependency-name: rsa          # RUSTSEC-2023-0071 unpatched; sign via WebCrypto
+
