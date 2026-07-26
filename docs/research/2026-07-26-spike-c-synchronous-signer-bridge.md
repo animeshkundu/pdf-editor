@@ -4,8 +4,13 @@
 asynchronous. Can that gap be bridged, or is
 [ADR 0018](../adr/0018-signing-via-custom-signer-vtable.md) built on something impossible?
 
-**Answer: yes, via Asyncify, at a cost of about 900 KB on the shipped binary. ADR 0018
-survives.** It needs one amendment, recorded below.
+**Answer, stated narrowly: Asyncify can bridge a reduced synchronous-shaped C call to an
+awaited Promise. The real MuPDF signing path and the runtime costs remain untested.**
+
+That is weaker than this document originally claimed. The first version said "the bridge
+works, ADR 0018 survives", which outran the evidence in two ways corrected below. The
+mechanism the ADR depends on is demonstrably real; whether the ADR's design works is not
+established.
 
 ## Why this mattered
 
@@ -101,19 +106,63 @@ nothing. But it must be written down, because a future caller that treats a sign
 as synchronous will get a silent wrong answer rather than an error, which is the same
 failure this spike hit in its own first run.
 
-## What this does not establish
+## Correction after adversarial review: two overclaims
 
-- **Not measured:** the `ASYNCIFY_ONLY` restricted cost, the runtime overhead of stack
-  unwinding, or behaviour under `SubtleCrypto` with a real key rather than a `setTimeout`
-  standing in for one.
-- **Not attempted:** JSPI, which would avoid Asyncify's cost entirely but imposes a
-  browser floor. Worth revisiting if the restricted build still costs more than is
-  comfortable.
-- **Not answered:** whether the whole CMS operation or only the digest must happen inside
-  the callback. The bridge works either way, so this stopped being urgent, but it decides
-  how much of PKI.js runs under suspension.
-- **Not proven:** that MuPDF's own signing path works end to end. This establishes the
-  mechanism the path depends on, not the path.
+Both were found by a reviewer who had not run the experiment, which is the argument for
+having one.
+
+### "The bridge works" was scoped to a reduction, not to MuPDF
+
+What the experiment exercises: an awaited Asyncify export can suspend a reduced C call
+stack, await JavaScript, copy bytes into WASM memory, and resume.
+
+What it does **not** exercise, and each of these is where the real design could fail:
+MuPDF's actual indirect signer dispatch, the call graph from a production export down to
+the callback, reading or preserving the supplied `fz_stream`, real WebCrypto signing, CMS
+construction and encoding, realistic output lengths against the caller's buffer,
+rejection and cancellation and C exception propagation, Asyncify stack capacity on the
+real path's depth, PDF finalisation after rewind, external verification of the resulting
+signature, and re-entering the instance while a signing operation is suspended.
+
+Compiling MuPDF with `-sASYNCIFY` and measuring the binary proves none of those.
+
+The false first run is where the absence of an independent check is most visible. The
+harness let the C-facing result report `0` while success was logged afterwards, and it
+was noticed only because the log order looked wrong. **A negative control that omits the
+await and is required to fail should exist**, rather than relying on the experimenter
+spotting an anomaly.
+
+### "8.9%, an upper bound" is one static byte count, not a cost
+
+The arithmetic is right for the artifacts measured: 922,563 bytes, 1.0886x. But nothing
+about runtime was measured: unwind and rewind latency on a real deep stack, transient and
+peak memory to preserve that stack, slowdown of ordinary non-signing operations whose
+functions were transformed, Asyncify stack exhaustion, load and compile time, or the
+constraint that the instance may not be safely re-entered while suspended. For an engine
+with a 2 GiB heap ceiling and a documented manual-memory discipline, the memory figure
+may matter more than the bytes on disk.
+
+"Blanket instrumentation" was also wrong. Emscripten's Asyncify uses call-graph analysis
+rather than transforming everything, so `ASYNCIFY_ONLY` reduces work only if the complete
+real path is known, and indirect calls are exactly where an over-narrowed list fails at
+runtime rather than at build time.
+
+And the toy-versus-full comparison says less than it appeared to. The **absolute**
+increase rose from 9,727 bytes to 922,563. The percentage fell because the denominator
+grew, most of it code unrelated to the async path. The honest conclusion is "the toy
+percentage does not extrapolate", not "the cost is acceptable".
+
+### A materially better design was not considered
+
+Before committing to whole-call-graph Asyncify, an explicit **two-phase API** deserves
+evaluation and probably wins: have MuPDF prepare the ByteRange and a `/Contents`
+placeholder and return control to JavaScript, sign asynchronously in ordinary JS with no
+suspension at all, then re-enter WASM to install the CMS value and finalise. It costs
+more fork work and avoids suspended-instance risk, whole-graph instrumentation, and every
+runtime cost listed above. JSPI is a third option where the browser matrix allows it.
+
+This was listed in ADR 0018 as one of four candidate resolutions and then not pursued,
+because Asyncify worked first. Working first is not the same as being the right choice.
 
 `SIGN-005`, `SIGN-006`, `SIGN-008` and part of `SIGN-007` stay `OPEN` until that last
 point is closed. What changes is that they are blocked on ordinary implementation work
