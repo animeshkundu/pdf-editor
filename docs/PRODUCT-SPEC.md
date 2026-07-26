@@ -158,6 +158,84 @@ This is measured, not estimated, across a corpus spanning producers, font types,
 simple fonts, and subsetted and full embeddings. No library in any language performs this
 inversion, so there is no prior art to borrow a number from.
 
+### The corpus
+
+Both spikes, and acceptance criteria C1, C2, C5, C8 and R5, run against one named corpus
+so their results are comparable. It is assembled before either spike runs and is fixed
+for the duration, because a corpus that grows during a measurement produces a number that
+means nothing.
+
+It must contain, at minimum: documents from at least eight distinct producers including
+Acrobat Distiller, Word, LaTeX, Ghostscript and at least one mobile scanner app; simple
+and CID fonts; subsetted and fully embedded fonts; at least one Type 3 font; tagged and
+untagged documents; documents with optional content groups, transparency groups, and
+clipping paths; at least one right-to-left and one CJK document; linearised and
+non-linearised files; and at least one document that MuPDF repairs on open. Every
+document is redistributable, so the corpus can live in the repository.
+
+Its composition is recorded with the first spike finding under
+[`research/`](research/) and does not change without a note saying why.
+
+### Spike A decision rule
+
+The measurement: for every page of every corpus document, run the null filter, then
+compare before and after.
+
+**A page passes** when qpdf reports the output structurally valid, extracted text is
+identical, and the pdf.js render differs by no more than the C8 per-page tolerance.
+
+| Result | Consequence |
+| --- | --- |
+| Every page passes | Spike A is **green**. Content-stream rewriting is the primary editing path. Items blocked only on Spike A are promoted to their target labels. |
+| Failures are confined to a characterisable class (for example, only Type 3 fonts, or only documents MuPDF repairs on open) | Spike A is **conditional**. Rewriting ships, and documents in the failing class are **detected and refused before the edit**, never edited approximately. `SIGN-031` redaction ships only if the failing class can be detected reliably, because a redaction that silently fails on an undetected class is the worst outcome available here. |
+| Failures are diffuse and not characterisable | Spike A is **red**. Content-stream rewriting is withdrawn. Text editing becomes the annotation-overlay backend, `EDIT-025` is withdrawn, and **`SIGN-031` redaction is withdrawn entirely** rather than shipped as an overlay. |
+
+**What the null filter does and does not establish.** This is a real limit of the
+experiment and it is stated rather than glossed. A null filter proves that the
+parse-and-rewrite round trip preserves a document it was told not to change. It does
+**not** prove that a rewrite which actually changes something is safe: a real edit
+perturbs resources, object numbering, and stream lengths in ways the null case never
+exercises.
+
+Spike A is therefore a **necessary condition, not a sufficient one**. A red result is
+conclusive and kills the approach. A green result licenses proceeding to a second stage,
+in which the same comparison runs over a *non-null* rewrite (replace one word, delete one
+run) and every changed page is inspected for collateral damage. Promotion to a shipped
+label requires both stages, and the finding must report them separately.
+
+### Spike B decision rule
+
+The measurement: across the corpus, for every text run, attempt `invertEncoding()` against
+the embedded font and record success or the first character that failed. The **hit rate**
+is the proportion of runs where every character inverts, and it is reported per font type
+as well as overall.
+
+There is no threshold at which text editing is withdrawn, because **Path B is a working
+fallback rather than a failure**. The hit rate decides what the product *says*, not
+whether it ships:
+
+| Hit rate | What shipped copy says |
+| --- | --- |
+| At or above 95% | "Edits reuse the document's own fonts." The Path B case is a rare footnote. |
+| 70% to 95% | "Edits usually reuse the document's own fonts; some embed a new subset." Both paths are described up front, and the UI names which one an edit took. |
+| Below 70% | Path B is the common case and must be described as the normal behaviour, not the exception. The value of in-place editing is materially lower and the product says so. |
+
+Two results **do** withdraw a capability regardless of hit rate:
+
+- A font class where inversion appears to succeed but produces the **wrong glyph** is
+  worse than failure, because it silently corrupts a document. Any such class must be
+  detected and refused, and if it cannot be detected reliably, in-place editing is
+  withdrawn for that class.
+- Type 3 fonts and fonts with no usable encoding are refused with an explanation, as
+  [ADR 0012](adr/0012-content-stream-text-editing.md) already states.
+
+### How an OPEN item is resolved
+
+An `OPEN` item is promoted or withdrawn only by a written finding under
+[`research/`](research/) that states which rule above it satisfied. The change to its
+label, and to the counts in [`spec/parity-inventory.md`](spec/parity-inventory.md), cite
+that finding. No `OPEN` item is resolved by judgement alone.
+
 ### What cannot be written until both report
 
 - Whether text editing is described as "edit the text" or "edit the text, with a new font

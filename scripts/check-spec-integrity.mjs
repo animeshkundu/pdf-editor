@@ -126,6 +126,36 @@ for (const item of items) {
 
 const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
+// Refuse to pass vacuously.
+//
+// This gate once reported "0 items, every feature labelled, summary consistent" and
+// exited 0, because it read the file while another process was mid-write and parsed an
+// empty result. A gate that passes when it parses nothing is worse than no gate: it
+// reports the reassuring half of its job while doing none of it. The same discipline is
+// already in check-no-egress.mjs and check-bundle-size.mjs and was missing here.
+//
+// The floor is deliberately far below the real count rather than pinned to it, so a
+// deliberate reduction is possible without editing this file, while a parse that
+// collapses to nothing still fails loudly.
+const MINIMUM_PLAUSIBLE_ITEMS = 100;
+
+if (items.length === 0) {
+  console.error('[check-spec] Parsed zero items from a non-empty inventory.');
+  console.error('[check-spec] The item format has changed, or the file was read mid-write.');
+  process.exit(1);
+}
+
+if (total < MINIMUM_PLAUSIBLE_ITEMS) {
+  console.error(
+    `[check-spec] Only ${total} labelled items found, below the floor of ${MINIMUM_PLAUSIBLE_ITEMS}.`,
+  );
+  console.error('[check-spec] Refusing to pass: this is far more likely a parse failure');
+  console.error(
+    '[check-spec] than a real inventory. Lower the floor deliberately if it is real.',
+  );
+  process.exit(1);
+}
+
 console.log('[check-spec] Parity inventory:');
 for (const [label, n] of Object.entries(counts).sort((a, b) => b[1] - a[1])) {
   const pct = total ? ((n / total) * 100).toFixed(1) : '0.0';

@@ -280,6 +280,13 @@ described in [`../PRODUCT-SPEC.md`](../PRODUCT-SPEC.md#open-text-editing-depth).
       MuPDF's own garbage collection on save. Ships with a before-and-after size report
       that names which categories actually ran, and per-category control rather than a
       single slider.
+      **Conflicts with `SIGN-009` and must handle it.** Garbage collection and
+      deduplication renumber and rewrite objects, which requires a full save and therefore
+      invalidates every existing byte-range signature. On a signed document this operation
+      detects the signatures and either refuses, or warns and writes a separately named
+      unsigned output. It never silently invalidates a signature. Same conflict, same
+      resolution, as
+      [C7 and C6](../PRODUCT-SPEC.md#c7-and-c6-cannot-both-hold-on-the-same-save).
 - [ ] `EDIT-025` **Optimize: image downsampling and recompression, and font subsetting**
       `OPEN`, Spike A. Both rewrite the page's resources and the content stream that
       references them, so they carry exactly the fidelity risk the null-filter spike
@@ -287,8 +294,22 @@ described in [`../PRODUCT-SPEC.md`](../PRODUCT-SPEC.md#open-text-editing-depth).
       different risk profiles, and labelling them together would let the safe half carry
       the unsafe one.
 
-These document-level items are all additive or annotation-based, so none depends on the
-content-stream spikes.
+**Adding** any of the above is independent of the content-stream spikes. **Updating or
+removing** one is not, and the earlier blanket claim that "these document-level items are
+all additive or annotation-based" was simply false: `EDIT-014` through `EDIT-017` write
+page content rather than annotations, and changing or removing a header, watermark,
+background or Bates number means identifying existing content and rewriting it. `EDIT-025`
+sitting `OPEN` in this same section should have made that obvious.
+
+The resolution is a scope split, not a spike dependency:
+
+- **Artifacts this application created** carry durable private metadata identifying them,
+  so update and remove locate their own output exactly and rewrite only what they wrote.
+  That is `LOCAL`, and it is what the items above promise.
+- **Updating or removing an artifact some other producer created** requires finding
+  arbitrary content by inference and rewriting it, which is Spike A work with Spike A's
+  risk. It is not promised. The UI says it cannot find a header it did not write, rather
+  than removing something that looks like one and damaging the page.
 
 ---
 
@@ -398,30 +419,68 @@ unambiguous parity in the product.
 
 ### Digital signatures
 
-- [ ] `SIGN-005` **Sign with a certificate** `LOCAL`, through the custom `pdf_pkcs7_signer` vtable
+- [ ] `SIGN-005` **Sign with a certificate** `OPEN`, **Spike C (the synchronous signer
+      bridge)**. `pdf_pkcs7_signer.create_digest` is synchronous: it returns `int` and
+      writes into a caller-supplied buffer (`include/mupdf/pdf/form.h:226`). WebCrypto's
+      `SubtleCrypto` is asynchronous, and the engine is single-threaded WASM with no way
+      to await a promise inside a synchronous C callback. The whole design in
+      [ADR 0018](../adr/0018-signing-via-custom-signer-vtable.md) rests on a bridge that
+      has not been shown to exist. Spike C must demonstrate the bridge, `/Contents`
+      placeholder sizing, correct incremental output, and both RSA and ECDSA, before any
+      signing item can carry a shipped label. Was `LOCAL`, through the custom
+      `pdf_pkcs7_signer` vtable
       with WebCrypto and PKI.js
       ([ADR 0018](../adr/0018-signing-via-custom-signer-vtable.md)).
-- [ ] `SIGN-006` **Certify (DocMDP), visible and invisible** `LOCAL`
+- [ ] `SIGN-006` **Certify (DocMDP), visible and invisible** `OPEN`, Spike C. Inherits
+      the synchronous-bridge dependency from `SIGN-005`.
 - [ ] `SIGN-007` **Signature appearance**: name, date, reason, location, and logo `LOCAL`
-- [ ] `SIGN-008` **Sign an existing signature field** `LOCAL`
-- [ ] `SIGN-009` **Incremental save so existing signatures stay valid** `LOCAL`
-- [ ] `SIGN-010` **Validate signatures**: integrity, ByteRange coverage, and certificate
-      chain to a user-supplied trust list `DEGRADED`. Two separate weaknesses, and both
-      belong in the disclosure. First, **the WASM shim exports no verification surface at
-      all**: `pdf_check_digest` and `pdf_check_certificate` exist in the C API
-      (`include/mupdf/pdf/form.h:268-269`) but grepping `platform/wasm/lib/mupdf.c` for
-      `pkcs7` or `signer` returns zero matches, so verification requires a
-      `pdf_pkcs7_verifier` added by the fork alongside the signer in
-      [ADR 0018](../adr/0018-signing-via-custom-signer-vtable.md). Second, revocation
-      status is not checkable offline, so a validated signature reports "valid,
-      revocation not checked" rather than "valid". Overstating either would be the worst
-      honesty failure available to this product.
-- [ ] `SIGN-011` **Signature panel** showing what each signature covers and what changed after it
-      `LOCAL`
+      for composing and previewing the appearance stream, which is ordinary annotation
+      work. Producing it as part of a real signature is `OPEN` on Spike C with
+      `SIGN-005`.
+- [ ] `SIGN-008` **Sign an existing signature field** `OPEN`, Spike C. Inherits from
+      `SIGN-005`.
+- [ ] `SIGN-009` **Incremental save preserves the byte ranges existing signatures cover**
+      `LOCAL`. Stated as the mechanical fact rather than as "signatures stay valid",
+      which is not something a save can promise: a later revision can violate DocMDP or a
+      field lock, and a validator will then correctly report a disallowed change. The
+      guarantee is that we do not rewrite the signed bytes; whether the resulting document
+      still satisfies its own policy is a question for `SIGN-010`.
+- [ ] `SIGN-010` **Validate signatures** `OPEN`, **Spike D (the verifier bridge)**. Was
+      `DEGRADED`, which was wrong: `DEGRADED` means shipped but weaker, and a verifier that
+      does not exist is an unimplemented feature. The WASM shim exports no verification
+      surface at all. `pdf_check_digest` and `pdf_check_certificate` exist in the C API
+      (`include/mupdf/pdf/form.h:268-269`) and `pdf_pkcs7_verifier` is a four-function
+      vtable (`form.h:244-250`), but grepping `platform/wasm/lib/mupdf.c` for `pkcs7` or
+      `signer` returns zero matches. Spike D must add that verifier, and it inherits the
+      same synchronous-callback problem as Spike C.
+      When it ships, it reports **six separate statuses rather than one verdict**, because
+      collapsing them is how validators mislead people:
+      cryptographic integrity of the digest; ByteRange completeness, including whether
+      later revisions exist outside it; chain construction to the selected trust anchor;
+      certificate validity at signing time; DocMDP and field-lock compliance of every
+      later revision; and revocation, which is reported as `unknown` unless the document
+      itself carries the evidence (see `SIGN-015`). A signature is never summarised as
+      simply "valid".
+- [ ] `SIGN-011` **Signature panel** `DEGRADED`. Showing which byte ranges each signature
+      covers is `LOCAL` work, readable from the ByteRange array alone. Showing **what
+      changed after it** is not: that needs parsing each later incremental revision and
+      classifying the changes semantically against DocMDP and field locks. We report the
+      revisions that exist after each signature and which objects they touch; we do not
+      claim to characterise every change the way Acrobat does. The panel says which of the
+      two it is showing.
 - [ ] `SIGN-012` **Import certificates and build a trust list** `LOCAL`
 - [ ] `SIGN-013` **Private keys never leave the device** `LOCAL`, stronger than most desktop tools.
 - [ ] `SIGN-014` **RFC 3161 timestamping** `EXCLUDED`, requires a network call to a TSA.
-- [ ] `SIGN-015` **OCSP and CRL revocation checking** `EXCLUDED`, requires a network call.
+- [ ] `SIGN-015` **Revocation checking** `DEGRADED`, not `EXCLUDED`. The earlier label was
+      factually wrong: revocation evidence already inside the file is checkable offline.
+      A DSS dictionary, an OCSP response stapled into the document, and a user-imported CRL
+      are all usable without a network call, and refusing to read data sitting in the
+      document would be a self-inflicted limitation. What is `EXCLUDED` is **acquiring
+      fresh revocation data**: contacting an OCSP responder or fetching a CRL by URL
+      requires a network call
+      ([ADR 0002](../adr/0002-client-side-only-zero-egress.md)). So: evidence in the file
+      is used and reported with its own timestamp; absent evidence is reported as
+      `unknown`, never as `good`.
 - [ ] `SIGN-016` **PAdES B-LT and B-LTA (long-term validation)** `EXCLUDED`, requires both of the
       above. Where a user needs LTV, the honest answer is to name a tool that can do it.
 - [ ] `SIGN-017` **Request e-signatures from others** `EXCLUDED`, a hosted workflow by definition.
@@ -442,7 +501,13 @@ unambiguous parity in the product.
       accepted.
 - [ ] `SIGN-025` **Honour permission flags in the UI** `LOCAL`, with the restriction stated rather
       than the control silently failing.
-- [ ] `SIGN-026` **Certificate-based encryption (recipient lists)** `LOCAL`
+- [ ] `SIGN-026` **Certificate-based encryption (recipient lists)** `OPEN`, **Spike E
+      (public-key security handler)**. Was `LOCAL` with no demonstrated engine path.
+      PDF's public-key security handler is a specific construction, not something WebCrypto
+      plus a certificate parser provides for free, and no export for it has been located in
+      the shim. Spike E must show a document we encrypt this way opens in Acrobat, and one
+      Acrobat encrypts opens in ours. If that interoperability cannot be shown, this
+      becomes `EXCLUDED` rather than shipping a format only we can read.
 - [ ] `SIGN-027` **LiveCycle and AEM rights management** `EXCLUDED`, contacts a rights server on every
       open.
 
@@ -451,15 +516,20 @@ unambiguous parity in the product.
 - [ ] `SIGN-028` **Mark text, images, or a region for redaction** `LOCAL`
 - [ ] `SIGN-029` **Search and mark all occurrences of a term or pattern** `LOCAL`
 - [ ] `SIGN-030` **Redaction properties**: fill colour, overlay text, and repeat overlay `LOCAL`
-- [ ] `SIGN-031` **Apply redaction, removing the content from the content stream** `LOCAL`, dependent
-      on Spike A. **If Spike A shows the filter is unsafe, redaction is withdrawn rather
-      than shipped as an overlay.** A black rectangle drawn over text is not redaction and
-      will never be described as such here.
+- [ ] `SIGN-031` **Apply redaction, removing the content from the content stream** `OPEN`,
+      Spike A. Was labelled `LOCAL` while stating a Spike A dependency in the same
+      sentence, which is the definition of `OPEN` by this document's own rules. The
+      contradiction is corrected here rather than defended.
+      **If Spike A is red, redaction is withdrawn rather than shipped as an overlay.** A
+      black rectangle drawn over text is not redaction and will never be described as such
+      here. If Spike A is conditional, redaction ships only where the failing class can be
+      detected reliably, because a redaction that silently fails on an undetected class is
+      the worst outcome this product can produce.
       **Applying a redaction always forces a full, non-incremental save.** An incremental
       save appends, leaving the original unredacted objects physically present in an
-      earlier revision of the same file, where a hex editor recovers them even though
-      every extraction tool reports them gone. There is no configuration in which a
-      redaction is written incrementally.
+      earlier revision of the same file, where a hex editor recovers them even though every
+      extraction tool reports them gone. There is no configuration in which a redaction is
+      written incrementally.
 - [ ] `SIGN-035` **Warn before redacting a signed document, and require confirmation**
       `LOCAL`. The full rewrite that `SIGN-031` requires invalidates every existing
       signature, because the bytes those signatures covered no longer exist. That is
@@ -468,10 +538,26 @@ unambiguous parity in the product.
       preserve one, would both be worse than the warning. See
       [the C7 and C6 conflict](../PRODUCT-SPEC.md#c7-and-c6-cannot-both-hold-on-the-same-save).
 - [ ] `SIGN-032` **Redact page ranges wholesale** `LOCAL`
-- [ ] `SIGN-033` **Sanitize: remove metadata, embedded files, scripts, hidden layers, deleted
-      content, and form field values** `LOCAL`
-- [ ] `SIGN-034` **Report exactly what sanitizing removed** `LOCAL`, beyond Acrobat's summary
-      (unverified how much detail Acrobat's report gives).
+- [ ] `SIGN-033` **Sanitize** `LOCAL`, against an **enumerated scope**. "Remove scripts and
+      hidden content" is not a specification, because each category hides in several
+      places and a sanitizer that misses one is worse than none: it produces a document
+      the user believes is clean. The scope is fixed here.
+      **Scripts**: catalog `/OpenAction` and `/AA`, page `/AA`, annotation `/A` and `/AA`,
+      form field and widget `/A` and `/AA`, and document-level JavaScript in
+      `/Names/JavaScript`. **Embedded files**: `/Names/EmbeddedFiles`, `FileAttachment`
+      annotations, and file specifications referenced from anywhere else.
+      **Metadata**: the document information dictionary, XMP at document and stream level,
+      and per-object private data. **Form values**: `/V`, `/DV`, and the appearance streams
+      that may still render a value after the field is cleared. **Hidden content**:
+      optional content groups set non-visible, content outside the crop box, and
+      annotations with the hidden flag. **Previously deleted content**: objects surviving
+      in earlier incremental revisions, which is why sanitize forces a full save exactly as
+      redaction does. **XFA** is removed wholesale, since `FORM-030` refuses those
+      documents anyway.
+- [ ] `SIGN-034` **Report exactly what sanitizing removed** `LOCAL`, per category from the
+      scope above, with counts and object references. The report is only meaningful because
+      the scope is enumerated; without `SIGN-033`'s list, "exactly" could not be claimed.
+      Beyond Acrobat's summary (unverified how much detail Acrobat's report gives).
 
 ---
 
@@ -570,6 +656,20 @@ Two of them (logical reading order, colour contrast) are manual checks in Acroba
 they cannot be decided mechanically; ours are marked the same way rather than reported as
 passing.
 
+**`A11Y-001` to `A11Y-032` are not implementable from this list alone, and that is a gap
+in this document rather than a detail to leave to whoever builds them.** A rule name is
+not a specification: nothing here states each rule's algorithm, what it inspects, what
+counts as pass, fail, or "needs manual check", or what fixture demonstrates each outcome.
+An implementer working from names alone will invent a mapping, and thirty-two invented
+mappings will not match Acrobat's, which is the thing users will compare against.
+
+These thirty-two items are therefore **blocked on a prerequisite authoring task**, not on
+a spike: produce `docs/spec/a11y-rules.md` enumerating, per rule, the objects inspected,
+the pass condition, the fail condition, whether a manual verdict is possible, the report
+message, and the fixture that exercises it. Until that document exists, none of these
+items may be checked off. Their labels below describe the intended outcome, not a
+buildable specification.
+
 ### Document (8)
 
 - [ ] `A11Y-001` **Accessibility permission flag** `LOCAL`
@@ -633,18 +733,33 @@ API **is** exported (`pdf_dict_put`, `pdf_dict_get`, `pdf_array_push`, `pdf_new_
 `pdf_add_object`, `pdf_new_indirect`), so the structure tree is reachable by manipulating
 `/StructTreeRoot` directly.
 
-That is a real capability and these items are therefore `LOCAL` rather than `OPEN`. It is
-also materially more work and more risk than the labels alone suggest: we would be
-building the tagging layer on raw dictionaries rather than calling into one. Reading the
-tree is easier, since `stext` carries structure
-(`fz_new_stext_struct`, `include/mupdf/fitz/structured-text.h:1146`).
+That makes the **dictionary half** of tagging reachable, and those items are `LOCAL`. It
+is materially more work than the labels suggest, since we would be building the tagging
+layer on raw dictionaries rather than calling into one. Reading is easier still, because
+`stext` carries structure (`fz_new_stext_struct`,
+`include/mupdf/fitz/structured-text.h:1146`).
+
+**The dictionary half is not the whole job.** A tag is only useful when it is associated
+with the content it describes, and that association lives in the content stream as
+`BDC`/`EMC` marked-content operators carrying MCIDs, plus the ParentTree number tree,
+`StructParents` and `StructParent` keys, MCR and OBJR references, and a role map. Writing
+that association is content-stream rewriting, so `A11Y-035` and `A11Y-036` are `OPEN` on
+Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay `LOCAL`.
 
 - [ ] `A11Y-033` **Accessibility report**, with each failure linked to the offending object `LOCAL`
 - [ ] `A11Y-034` **Tags panel**: inspect, reorder, retype, and delete tags `LOCAL`, over
       the raw `/StructTreeRoot` per the note above.
-- [ ] `A11Y-035` **Reading order tool**: assign regions to tag types by drawing on the page `LOCAL`
-- [ ] `A11Y-036` **Autotag document** `DEGRADED`. Structure inference is heuristic in every tool
-      including Acrobat's. Presented as a proposal to review, never applied silently.
+- [ ] `A11Y-035` **Reading order tool**: assign regions to tag types by drawing on the page
+      `OPEN`, Spike A. Assigning a drawn region to a tag type means writing `BDC`/`EMC`
+      marked-content operators with MCIDs **into the content stream**, which raw
+      `/StructTreeRoot` access does not reach. This is content-stream rewriting and carries
+      Spike A's risk.
+- [ ] `A11Y-036` **Autotag document** `OPEN`, Spike A, and `DEGRADED` in quality once
+      unblocked. Two independent problems, and the earlier label named only the second.
+      Applying tags requires writing marked-content operators into the content stream, as
+      `A11Y-035` does, so it is Spike A work. Separately, structure inference is heuristic
+      in every tool including Acrobat's, so results are presented as a proposal to review
+      and never applied silently.
 - [ ] `A11Y-037` **Autotag form fields** `DEGRADED`, same reasoning.
 - [ ] `A11Y-038` **Set alternate text**, with a bulk pass over all figures `LOCAL`
 - [ ] `A11Y-039` **Set table headers and scope** `LOCAL`
@@ -657,11 +772,19 @@ tree is easier, since `stext` carries structure
 ### Our own chrome
 
 - [ ] `A11Y-043` **WCAG 2.2 AA throughout** `LOCAL`
-      ([ADR 0015](../adr/0015-accessibility-and-no-positioned-dom-text.md))
-- [ ] `A11Y-044` **Logical reading order exposed to assistive technology** `LOCAL`, from the structure
-      tree where present and from block analysis where not. Better than the standard
-      approach: the usual invisible-DOM-text overlay exposes content-stream order, which
-      reads a two-column page straight across the columns.
+      ([ADR 0015](../adr/0015-accessibility-and-no-positioned-dom-text.md)). This is a
+      **conformance target for our own chrome, enforced by criteria A1 through A9**, not an
+      audited certification. Nobody has audited this product, and a checked box here means
+      those criteria pass, not that a third party has signed anything.
+- [ ] `A11Y-044` **Logical reading order from the structure tree** `LOCAL`, where the
+      document is tagged. Better than the standard approach: the usual invisible-DOM-text
+      overlay exposes content-stream order, which reads a two-column page straight across
+      the columns.
+- [ ] `A11Y-045` **Inferred reading order for untagged documents** `DEGRADED`. Block
+      analysis is a heuristic and it misorders the cases that most need it: multi-column
+      layouts, footnotes, sidebars, and tables. It is still far better than content-stream
+      order, but a screen-reader user is told the order was inferred rather than read from
+      the document, so they know to be sceptical of it.
 
 ---
 
@@ -712,14 +835,14 @@ tree is easier, since `stext` carries structure
 
 ## Coverage summary
 
-310 items in total.
+311 items in total.
 
 | Label      | Count | Where it concentrates                                                                                                                                                                                                                                                       |
 | ---------- | ----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LOCAL`    |   263 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                                                                             |
-| `DEGRADED` |    17 | Office export, OCR, signature revocation status, field auto-detection, autotag, HTML conversion, barcode fields, RC4, scan comparison                                                                                                                                       |
-| `EXCLUDED` |    16 | Cloud review, request e-signatures, rights management, cloud sync, XFA, scanner input, web-page capture, form submit to URL, timestamping, revocation checking, LTV, folder-level JavaScript, prepress, Preflight authoring, sound annotations, Action Wizard compatibility |
-| `OPEN`     |    10 | Editing existing text and existing page objects, pending Spikes A and B                                                                                                                                                                                                     |
+| `LOCAL`    |   256 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                                                                             |
+| `DEGRADED` |    18 | Office export, OCR, signature revocation status, field auto-detection, autotag, HTML conversion, barcode fields, RC4, scan comparison                                                                                                                                       |
+| `EXCLUDED` |    15 | Cloud review, request e-signatures, rights management, cloud sync, XFA, scanner input, web-page capture, form submit to URL, timestamping, revocation checking, LTV, folder-level JavaScript, prepress, Preflight authoring, sound annotations, Action Wizard compatibility |
+| `OPEN`     |    18 | Editing existing text and existing page objects (Spikes A and B), redaction and marked-content tagging (Spike A), signing (Spike C), signature validation (Spike D), certificate encryption (Spike E) |
 | `EQUIV`    |     4 | Find, clipboard, save and save as, Read Out Loud                                                                                                                                                                                                                            |
 
 By section:
@@ -736,7 +859,7 @@ By section:
 | 8. Sign and security (`SIGN`)         |    35 |
 | 9. Convert (`CONV`)                   |    26 |
 | 10. Compare (`CMPR`)                  |     9 |
-| 11. Accessibility (`A11Y`)            |    44 |
+| 11. Accessibility (`A11Y`)            |    45 |
 | 12. Print (`PRNT`)                    |    14 |
 | 13. Automation (`AUTO`)               |     9 |
 
@@ -758,7 +881,7 @@ each is weak in a different way.
 
 ## Scope, honestly
 
-310 items is a very large surface. Two things follow, and neither is softened here.
+311 items is a very large surface. Two things follow, and neither is softened here.
 
 **This is a multi-year contract, not a release plan.** Acrobat is thirty years of
 accumulated work. Nothing about writing the list down shortens that. The phase order in
