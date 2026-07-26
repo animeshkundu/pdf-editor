@@ -38,6 +38,20 @@ updates:
           - minor
           - patch
 
+    ignore:
+      # TypeScript majors are pinned by a peer range, not by preference.
+      #
+      # typescript-eslint@8.x declares `peer typescript ">=4.8.4 <6.1.0"`. Dependabot
+      # proposed TypeScript 7.0.2 in its first run; `npm ci` then failed to resolve and
+      # every gate behind it never ran. The pin moves when typescript-eslint widens its
+      # range, which is a decision to take deliberately rather than to rediscover as a
+      # red pull request every week.
+      #
+      # Minor and patch updates still flow through the development group above.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+
   # ---------------------------------------------------------------------------------
   # GitHub Actions
   # ---------------------------------------------------------------------------------
