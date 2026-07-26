@@ -16,7 +16,7 @@ const manifest = join(root, 'crates', 'pdftext', 'Cargo.toml');
 const args = process.argv.slice(2);
 
 if (!existsSync(manifest)) {
-  console.log(`[cargo] crates/pdftext not created yet — skipping \`cargo ${args[0] ?? ''}\`.`);
+  console.log(`[cargo] crates/pdftext not created yet; skipping \`cargo ${args[0] ?? ''}\`.`);
   process.exit(0);
 }
 
@@ -27,7 +27,7 @@ if (probe.status !== 0) {
     console.error('[cargo] Rust toolchain missing in CI. Install it before running gates.');
     process.exit(1);
   }
-  console.log('[cargo] Rust toolchain not found locally — skipping. CI will enforce this.');
+  console.log('[cargo] Rust toolchain not found locally; skipping. CI will enforce this.');
   process.exit(0);
 }
 

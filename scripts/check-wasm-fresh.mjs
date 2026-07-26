@@ -35,7 +35,7 @@ function walk(dir) {
 }
 
 if (!existsSync(manifestPath)) {
-  console.log('[check-wasm-fresh] No manifest yet — no WASM artifacts to verify. Skipping.');
+  console.log('[check-wasm-fresh] No manifest yet; no WASM artifacts to verify. Skipping.');
   process.exit(0);
 }
 

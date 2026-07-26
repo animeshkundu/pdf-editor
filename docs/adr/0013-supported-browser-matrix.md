@@ -17,6 +17,11 @@ WebAssembly exception handling** rather than the older JavaScript-based emulatio
 browser without that proposal cannot instantiate the module at all. The failure is total
 and immediate, not a degraded experience.
 
+This is **verified in the build, not inferred**. `platform/wasm/tools/build.sh` carries
+`-fwasm-exceptions` at line 53 and `-sSUPPORT_LONGJMP=wasm` at line 54. Both require the
+exception-handling proposal, so the floor follows from the link line rather than from
+reading about the flag elsewhere.
+
 Native WASM exception handling shipped in:
 
 | Engine                   | Version |
@@ -32,10 +37,21 @@ Two further platform facts belong in the matrix rather than in a footnote:
 
 - The engine is single-threaded, so `SharedArrayBuffer` is not used and **COOP/COEP
   headers are not required** ([ADR 0008](0008-worker-topology-and-crash-isolation.md)).
+  Verified: `tools/build.sh` contains **no `-pthread` and no `-sUSE_PTHREADS`** anywhere.
+  Omitting cross-origin isolation from `vercel.json` is therefore correct, not merely
+  convenient.
 - **iOS Safari terminates the tab** when a WebAssembly instance exceeds its per-tab
   budget, with no catchable error and no chance to degrade gracefully. This is why
   `IOS_BUDGET` in `lib/core/limits.ts` is a set of measured survival thresholds rather
   than a scaled-down desktop budget.
+
+Two further build flags shape what the application can assume, and are recorded here
+because they are easy to rediscover the hard way:
+
+- `-sFILESYSTEM=0`. There is no MEMFS, so a document is passed in as a buffer or through
+  a `mupdf.Stream`. No code may assume a filesystem path.
+- `-sMODULARIZE=1 -sEXPORT_ES6=1`, which is what makes the ES module worker setup in
+  `vite.web.config.ts` work ([ADR 0007](0007-vite-over-a-meta-framework.md)).
 
 ## Decision
 

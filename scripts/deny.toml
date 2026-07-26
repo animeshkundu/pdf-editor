@@ -1,0 +1,71 @@
+# cargo-deny policy for crates/pdftext.
+#
+# Run by scripts/check-cargo-deny.mjs. The `advisories` section is deliberately absent:
+# cargo-audit already covers vulnerability advisories in scripts/check-supply-chain.mjs,
+# and configuring both would report every finding twice while giving two places to
+# silence one. This file owns licenses, bans and sources only.
+
+[graph]
+# The crate only ever ships to the browser. Checking other targets would drag in
+# platform-specific dependency subtrees that are never compiled, and a license or ban
+# violation in code we do not build is not a real finding.
+targets = [{ triple = "wasm32-unknown-unknown" }]
+all-features = true
+
+[licenses]
+# This project is AGPL-3.0-only. AGPL can absorb these; anything else has to be a
+# deliberate decision recorded in an ADR, not a silent transitive addition.
+allow = [
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "MIT",
+  "MIT-0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "CC0-1.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "MPL-2.0",
+]
+
+# A crate with no license expression at all cannot be shipped, because there is no grant
+# to rely on. 0.0 means every crate must resolve to a confident match.
+unused-allowed-license = "allow"
+confidence-threshold = 0.93
+
+# Font and Unicode crates commonly carry a data license alongside the code license. Each
+# exception needs a crate name, so a new one is a visible diff rather than a widening of
+# the policy for everything.
+exceptions = [
+  # Unicode character data under the Unicode license, which is permissive but not in the
+  # allow list above because it should never apply to ordinary code.
+  { allow = ["Unicode-DFS-2016"], name = "unicode-ident" },
+]
+
+[bans]
+# Two semver-incompatible copies of one crate is dead weight in a module the user waits
+# on before the first glyph renders. A warning rather than an error: the duplication is
+# usually in someone else's dependency tree and not immediately fixable, and a gate that
+# blocks on something unfixable is a gate people route around.
+multiple-versions = "warn"
+wildcards = "deny"
+
+# The same three crates scripts/check-supply-chain.mjs refuses by name. Duplicated here
+# on purpose: that script only reads Cargo.lock textually, so it cannot see a crate
+# introduced under a rename or as an optional feature dependency. cargo-deny resolves the
+# real graph and catches both. Each reason is recorded in docs/THIRD-PARTY.md.
+deny = [
+  { name = "rustybuzz", reason = "RUSTSEC-2026-0206: unmaintained. Use harfrust." },
+  { name = "ttf-parser", reason = "RUSTSEC-2026-0192: unmaintained. Use skrifa / read-fonts." },
+  { name = "rsa", reason = "RUSTSEC-2023-0071: Marvin timing attack, unpatched. Sign via WebCrypto." },
+]
+
+[sources]
+# Everything must come from crates.io. A dependency quietly switched to a git URL is a
+# supply-chain change that no advisory feed covers, because unpublished code has nowhere
+# for an advisory to be filed against it.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

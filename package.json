@@ -31,7 +31,9 @@
     "check:wasm:fresh": "node scripts/check-wasm-fresh.mjs",
     "check:egress": "node scripts/check-no-egress.mjs",
     "check:size": "node scripts/check-bundle-size.mjs",
-    "check:supply": "node scripts/check-supply-chain.mjs"
+    "check:supply": "node scripts/check-supply-chain.mjs",
+    "check:handles": "node scripts/check-handle-leak.mjs",
+    "check:deny": "node scripts/check-cargo-deny.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.1.19",

@@ -112,7 +112,9 @@ run('wasm-opt', [
 
 const after = statSync(rewritten).size;
 const kb = (n) => `${(n / 1000).toFixed(1)} kB`;
-log(`wasm-opt: ${kb(before)} -> ${kb(after)} (${((1 - after / before) * 100).toFixed(1)}% smaller)`);
+log(
+  `wasm-opt: ${kb(before)} -> ${kb(after)} (${((1 - after / before) * 100).toFixed(1)}% smaller)`,
+);
 
 log(`Artifacts in ${relative(root, outDir).replace(/\\/g, '/')}:`);
 for (const entry of readdirSync(outDir).sort()) {

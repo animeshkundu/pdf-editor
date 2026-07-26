@@ -4,14 +4,14 @@
  * The rule this module exists to enforce: **project, assert, then mutate.** Every
  * operation that can grow memory computes its cost first and throws before touching
  * the document. A rejection must never leave a half-edited document behind, because
- * the alternative — discovering the ceiling mid-mutation — corrupts state in a way no
+ * the alternative, discovering the ceiling mid-mutation, corrupts state in a way no
  * undo can reach.
  *
  * The ceilings are not arbitrary. MuPDF's WASM build is wasm32 with
  * `ALLOW_MEMORY_GROWTH` and no maximum override, which caps its linear memory at
  * 2 GiB; exceeding it aborts the instance rather than throwing something catchable.
  * iOS Safari dies well below that, and kills the tab outright with no catchable error,
- * so graceful degradation can never run there — which is why its budget is a separate,
+ * so graceful degradation can never run there, which is why its budget is a separate,
  * much lower number rather than a fraction of the desktop one.
  */
 
@@ -131,7 +131,8 @@ export function assertPageSize(widthPt: number, heightPt: number, budget: Budget
  * silently-wrapped product would sail past the very check meant to catch it.
  */
 export function projectRenderBytes(width: number, height: number): number {
-  const bytes = BigInt(Math.max(0, Math.ceil(width))) * BigInt(Math.max(0, Math.ceil(height))) * 4n;
+  const bytes =
+    BigInt(Math.max(0, Math.ceil(width))) * BigInt(Math.max(0, Math.ceil(height))) * 4n;
   return bytes > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(bytes);
 }
 
@@ -150,7 +151,11 @@ export function assertRenderSize(width: number, height: number, budget: Budget):
  * The check-before-mutate gate. Callers pass the CURRENT heap and the PROJECTED cost
  * of the operation they are about to perform; this throws before that operation runs.
  */
-export function assertHeadroom(currentBytes: number, projectedBytes: number, budget: Budget): void {
+export function assertHeadroom(
+  currentBytes: number,
+  projectedBytes: number,
+  budget: Budget,
+): void {
   const total = BigInt(Math.max(0, currentBytes)) + BigInt(Math.max(0, projectedBytes));
   if (total > BigInt(budget.wasmSoftCeiling)) {
     throw new LimitError(
@@ -208,9 +213,6 @@ export function assertSaveFlags(flags: SaveFlags, caps: SaveCapabilities): void 
     );
   }
   if (flags.changesEncryption) {
-    throw new LimitError(
-      'save_flag_conflict',
-      'Changing the password requires a full save.',
-    );
+    throw new LimitError('save_flag_conflict', 'Changing the password requires a full save.');
   }
 }

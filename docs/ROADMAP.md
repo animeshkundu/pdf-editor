@@ -28,6 +28,9 @@ done.
       `npm run check:wasm:fresh` pass in full mode.
       ([ADR 0004](adr/0004-fork-the-mupdf-wasm-build.md),
       [ADR 0006](adr/0006-three-toolchain-build-and-committed-wasm.md))
+      Partly done: `scripts/vendor-mupdf.mjs` fetches and patches, the stock from-source
+      build reproduces Artifex's published artifact byte for byte, and `mujs=yes` builds
+      and links. Remaining: the patch set itself, the manifest, and the freshness gate.
 - [ ] **`js_processor` end to end.** Walk a real page's content stream from TypeScript and
       confirm `op_Tf` yields a resolved `pdf_font_desc`, `op_BDC` yields the cooked
       marked-content dictionary including the MCID, and `op_BI` yields a decoded image.

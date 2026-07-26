@@ -55,7 +55,13 @@ const referenced = new Set();
 for (const doc of html) {
   for (const m of doc.matchAll(/(?:src|href)="([^"]+)"/g)) {
     const ref = m[1];
-    if (ref) referenced.add(ref.replace(/^\.?\//, '').split('/').pop());
+    if (ref)
+      referenced.add(
+        ref
+          .replace(/^\.?\//, '')
+          .split('/')
+          .pop(),
+      );
   }
 }
 
@@ -95,10 +101,14 @@ for (const [key, budget] of Object.entries(BUDGETS)) {
   const ok = actual <= budget;
   if (!ok) failed = true;
   const pct = ((actual / budget) * 100).toFixed(0);
-  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${key.padEnd(15)} ${kb(actual).padStart(12)} / ${kb(budget)} (${pct}%)`);
+  console.log(
+    `  ${ok ? 'ok  ' : 'FAIL'} ${key.padEnd(15)} ${kb(actual).padStart(12)} / ${kb(budget)} (${pct}%)`,
+  );
 }
 
 if (failed) {
-  console.error('\n[check-bundle-size] Over budget. Raise the ceiling deliberately, with a reason.');
+  console.error(
+    '\n[check-bundle-size] Over budget. Raise the ceiling deliberately, with a reason.',
+  );
   process.exit(1);
 }

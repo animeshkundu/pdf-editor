@@ -23,6 +23,11 @@ structural shell.
 - Gate scripts: `check-no-egress`, `check-wasm-fresh`, `check-supply-chain`, and
   `check-bundle-size`.
 - Documentation set and ADRs 0001 through 0019 under `docs/adr/`.
+- Product specification draft: the five-label parity classification, a 308-item feature
+  inventory with stable identifiers, the competitor-win set, and the UI and UX
+  specification under `docs/spec/`.
+- MuPDF vendoring via `scripts/vendor-mupdf.mjs`, with the stock from-source WASM build
+  verified byte-identical to Artifex's published artifact.
 
 ### Changed
 

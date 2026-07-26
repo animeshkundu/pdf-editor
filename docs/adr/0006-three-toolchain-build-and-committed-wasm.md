@@ -30,6 +30,21 @@ Committing build output is normally a bad practice, for one specific reason: nob
 tell whether the committed binary corresponds to the committed source. That objection is
 about verifiability, not about the commit itself.
 
+**The rebuild-and-compare answer to that objection has been demonstrated, not just
+designed.** A from-source build of stock MuPDF 1.28.0 is byte-identical to Artifex's
+published npm artifact: sha256
+`f7d39be2ea7bf8f65ffe1b11f405547d0a5b7e3b94d4c1ef59d16687411bdebf`, 10,408,550 bytes.
+Byte comparison is therefore a viable gate rather than an aspiration, and any byte
+difference in a future build is attributable to our patch and nothing else.
+
+The reproducibility does not depend on us controlling the toolchain.
+`platform/wasm/tools/build.sh:27-28` runs `emsdk install 4.0.8` and
+`emsdk activate 4.0.8` regardless of the surrounding container, so the build pins its own
+Emscripten. This removes an entire class of drift: a contributor with a different emsdk,
+a CI image that updates underneath us, and a container rebuild all produce the same bytes.
+The composite action in `.github/actions/setup-emsdk/` is a convenience for build speed,
+not a correctness requirement.
+
 ## Decision
 
 Commit the built WebAssembly artifacts, and make their correspondence to source
@@ -69,8 +84,9 @@ which runs `check:wasm:fresh` in full mode, requires the source tree.
 
 ### Negative
 
-- Repository size grows with each artifact revision. The MuPDF binary alone is about
-  10.4 MB raw.
+- Repository size grows with each artifact revision. The MuPDF binary alone is 10,408,550
+  bytes for the stock build, and 10,648,877 with `mujs=yes`
+  ([ADR 0004](0004-fork-the-mupdf-wasm-build.md)).
 - A change to the C shim or the Rust crate requires committing rebuilt artifacts and a
   regenerated manifest in the same change, which is easy to forget until CI catches it.
 - Three toolchains have to be installable and documented for anyone touching the engine
@@ -81,6 +97,11 @@ which runs `check:wasm:fresh` in full mode, requires the source tree.
 - The manifest is the contract. If it ever disagrees with reality, the gate fails
   closed; `check-wasm-fresh.mjs` treats a missing artifact and a digest mismatch as
   equally fatal, and treats a missing manifest as "nothing to verify yet".
+- A variant build must set `SUFFIX`, or `make` reuses the previous configuration's object
+  files and emits a byte-identical binary. Automation of the fork build has to account for
+  this, and a "no change" result should be treated as a suspected cache hit until `SUFFIX`
+  is confirmed. See
+  [ADR 0004](0004-fork-the-mupdf-wasm-build.md#implementation-note-the-suffix-object-cache-trap).
 
 ## Notes
 

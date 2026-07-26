@@ -20,14 +20,25 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const inventoryPath = join(root, 'docs', 'spec', 'parity-inventory.md');
 
 if (!existsSync(inventoryPath)) {
-  console.log('[check-spec] docs/spec/parity-inventory.md not present — skipping.');
+  console.log('[check-spec] docs/spec/parity-inventory.md not present; skipping.');
   process.exit(0);
 }
 
 const LABELS = new Set(['LOCAL', 'EQUIV', 'DEGRADED', 'EXCLUDED', 'OPEN']);
 const PREFIXES = new Set([
-  'VIEW', 'FIND', 'MARK', 'CMNT', 'EDIT', 'PAGE',
-  'FORM', 'SIGN', 'CONV', 'CMPR', 'A11Y', 'PRNT', 'AUTO',
+  'VIEW',
+  'FIND',
+  'MARK',
+  'CMNT',
+  'EDIT',
+  'PAGE',
+  'FORM',
+  'SIGN',
+  'CONV',
+  'CMPR',
+  'A11Y',
+  'PRNT',
+  'AUTO',
 ]);
 
 const text = readFileSync(inventoryPath, 'utf8');

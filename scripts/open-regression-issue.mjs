@@ -75,7 +75,9 @@ async function api(path, init = {}) {
     },
   });
   if (!response.ok) {
-    throw new Error(`GitHub API ${path} responded ${response.status}: ${await response.text()}`);
+    throw new Error(
+      `GitHub API ${path} responded ${response.status}: ${await response.text()}`,
+    );
   }
   return response.json();
 }
@@ -93,7 +95,9 @@ try {
       method: 'POST',
       body: JSON.stringify({ body: `${body}${footer}` }),
     });
-    console.log(`[open-regression-issue] Commented on #${existing.number}: ${existing.html_url}`);
+    console.log(
+      `[open-regression-issue] Commented on #${existing.number}: ${existing.html_url}`,
+    );
   } else {
     const created = await api(`repos/${repo}/issues`, {
       method: 'POST',

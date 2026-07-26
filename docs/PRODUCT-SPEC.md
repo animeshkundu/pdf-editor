@@ -170,11 +170,15 @@ Findings land under [`research/`](research/) as `YYYY-MM-DD-null-filter-fidelity
 Two items from the original stub remain true and are recorded here so this draft does not
 read as more settled than it is.
 
-- **The fork has not been built and run.** `scripts/vendor-mupdf.mjs` fetches and patches
-  the source, and every claim ADR 0004 rests on has been verified against the real C
-  sources. But `js_processor`, `pdf_filter_page_contents`, `mujs=yes`, and the custom
-  `pdf_pkcs7_signer` have not yet executed against a document. Features depending on them
-  are designed, not proven.
+- **The fork's additions have not executed against a document.** The build environment is
+  now proven: a from-source build of stock MuPDF 1.28.0 is byte-identical to Artifex's
+  published artifact, and `mujs=yes` builds and links at a cost of 240,327 bytes
+  ([ADR 0004](adr/0004-fork-the-mupdf-wasm-build.md)). What that establishes is that the
+  build is correct and that any future byte difference is our patch. It does **not**
+  establish that `js_processor`, `pdf_filter_page_contents`, or the custom
+  `pdf_pkcs7_signer` work, and it does not establish that `doc.isJSSupported()` returns
+  true at runtime, because no build has been loaded in a browser. Features depending on
+  them are designed, not proven.
 - **Real-document behaviour under the ceilings is unmeasured.** A 2,000-page scan, a
   heavily tagged government form, and a 400 MB drawing have not been run, and the point
   where iOS Safari kills the tab has not been located

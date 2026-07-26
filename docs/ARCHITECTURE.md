@@ -40,7 +40,8 @@ This repository is **three languages**, and each owns a distinct part of the pro
 
 MuPDF 1.28.0 is the document engine ([ADR 0003](adr/0003-mupdf-as-the-engine-and-agpl.md)).
 Its C API already contains what the hard features need, but its WebAssembly shim
-(`platform/wasm/lib/mupdf.c`, roughly 2,944 lines and 335 exports) does not export it. We
+(`platform/wasm/lib/mupdf.c`, 2,944 lines and 331 unique `wasm_` symbols) does not export
+it. We
 maintain an additive fork ([ADR 0004](adr/0004-fork-the-mupdf-wasm-build.md)) that adds:
 
 - a `js_processor` bridging `pdf_processor`, MuPDF's complete content-stream operator

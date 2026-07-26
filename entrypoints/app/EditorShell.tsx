@@ -3,8 +3,8 @@ import { useState } from 'react';
 /**
  * Structural shell only.
  *
- * The layout follows Acrobat's mental model — global bar, left tools rail, document
- * pane, right contextual panel — because that is the model Acrobat refugees already
+ * The layout follows Acrobat's mental model (global bar, left tools rail, document
+ * pane, right contextual panel) because that is the model Acrobat refugees already
  * have. The execution is deliberately not Acrobat's: labels always accompany icons,
  * panels are resizable and may be open simultaneously, and nothing occludes the
  * document.

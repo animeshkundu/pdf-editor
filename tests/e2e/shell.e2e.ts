@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 // A deliberately thin smoke test over the production artifact. Its job is to prove the
-// shell mounts, the accessibility landmarks exist, and — most importantly — that the
+// shell mounts, the accessibility landmarks exist, and, most importantly, that the
 // page issues no cross-origin request. That last assertion is the runtime counterpart
 // to scripts/check-no-egress.mjs: the static scan proves no third-party URL is present
 // in the bundle, this proves none is contacted when the app actually runs.
@@ -9,7 +9,11 @@ test('shell mounts and contacts nobody', async ({ page }) => {
   const foreign: string[] = [];
   page.on('request', (req) => {
     const url = new URL(req.url());
-    if (url.origin !== 'http://127.0.0.1:4180' && url.protocol !== 'data:' && url.protocol !== 'blob:') {
+    if (
+      url.origin !== 'http://127.0.0.1:4180' &&
+      url.protocol !== 'data:' &&
+      url.protocol !== 'blob:'
+    ) {
       foreign.push(req.url());
     }
   });

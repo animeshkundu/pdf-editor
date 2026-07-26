@@ -74,6 +74,14 @@ jobs:
       - name: Typecheck, lint and test
         run: npm run check
 
+      # Same two gates as ci.yml, invoked as files for the same reason: this workflow is
+      # immutable, and a package.json script name is not a contract it can rely on.
+      - name: Handle-ownership gate
+        run: node scripts/check-handle-leak.mjs
+
+      - name: License and provenance gate
+        run: node scripts/check-cargo-deny.mjs
+
       - name: Build production web app
         run: npm run build
 

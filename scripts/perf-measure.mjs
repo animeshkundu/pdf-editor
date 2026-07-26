@@ -18,7 +18,14 @@
 //
 //   node scripts/perf-measure.mjs [--out perf/report.json] [--runs 5]
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { brotliCompressSync, constants } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -77,7 +84,13 @@ if (files.length === 0) {
 const referenced = new Set();
 for (const file of files.filter((f) => f.endsWith('.html'))) {
   for (const m of readFileSync(file, 'utf8').matchAll(/(?:src|href)="([^"]+)"/g)) {
-    if (m[1]) referenced.add(m[1].replace(/^\.?\//, '').split('/').pop());
+    if (m[1])
+      referenced.add(
+        m[1]
+          .replace(/^\.?\//, '')
+          .split('/')
+          .pop(),
+      );
   }
 }
 
@@ -91,8 +104,10 @@ for (const file of files) {
 
   let bucket = null;
   if (file.endsWith('.wasm')) bucket = 'wasmBrotli';
-  else if (file.endsWith('.css')) bucket = referenced.has(name) ? 'initialCssBrotli' : 'lazyJsBrotli';
-  else if (/\.(js|mjs)$/.test(file)) bucket = referenced.has(name) ? 'initialJsBrotli' : 'lazyJsBrotli';
+  else if (file.endsWith('.css'))
+    bucket = referenced.has(name) ? 'initialCssBrotli' : 'lazyJsBrotli';
+  else if (/\.(js|mjs)$/.test(file))
+    bucket = referenced.has(name) ? 'initialJsBrotli' : 'lazyJsBrotli';
 
   if (bucket) bytes[bucket] += brotli(buf);
 }
@@ -212,6 +227,7 @@ writeFileSync(outPath, `${JSON.stringify(report, null, 2)}\n`);
 
 log(`Wrote ${outPath}`);
 for (const [key, metric] of Object.entries(metrics)) {
-  const shown = metric.unit === 'bytes' ? `${(metric.value / 1000).toFixed(1)} kB` : `${metric.value} ms`;
+  const shown =
+    metric.unit === 'bytes' ? `${(metric.value / 1000).toFixed(1)} kB` : `${metric.value} ms`;
   log(`  ${key.padEnd(24)} ${shown}`);
 }

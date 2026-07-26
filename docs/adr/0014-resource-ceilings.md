@@ -14,6 +14,12 @@ wasm32 linear memory cannot exceed **2 GiB (2,147,483,648 bytes)**. MuPDF's WASM
 uses `ALLOW_MEMORY_GROWTH` with no maximum override, so it grows until it hits that wall.
 Crossing it **aborts the instance**. It does not throw something a `catch` can handle.
 
+This is verified in the build rather than assumed. `platform/wasm/tools/build.sh:58`
+carries `-sALLOW_MEMORY_GROWTH=1`, and the link line contains **no `-sMAXIMUM_MEMORY`**.
+With growth enabled and no explicit maximum, Emscripten's wasm32 default ceiling applies,
+which is where the 2 GiB figure comes from. Had a lower maximum been set, our soft ceiling
+would need to sit below that instead.
+
 iOS Safari is worse. It kills the tab well below that limit, with no catchable error at
 all, so no graceful-degradation path can ever run there. A budget derived by scaling the
 desktop numbers down would be a guess about a threshold that, when crossed, offers no

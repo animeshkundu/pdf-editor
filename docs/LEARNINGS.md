@@ -26,9 +26,38 @@ to do next time.
   documented methods are marked `[mutool run only]` and simply do not exist in the browser
   build. A design derived from the documentation fails at first integration.
 - **What to do next time.** Verify every engine capability against
-  `platform/wasm/lib/mupdf.c` in the actual version being used. The shim is small (roughly
-  2,944 lines, roughly 335 exports) and reading it is faster than debugging a wrong
-  assumption. This is how ADR 0004 was written.
+  `platform/wasm/lib/mupdf.c` in the actual version being used. The shim is small (2,944
+  lines, 331 unique `wasm_` symbols) and reading it is faster than debugging a wrong
+  assumption. Grepping it for `filter|processor|sanitiz|clip_page` returns nothing, which
+  is how we know the content-stream machinery is genuinely unexported rather than merely
+  undocumented. This is how ADR 0004 was written.
+
+## 2026-07-26: a variant WASM build without `SUFFIX` silently reuses cached objects
+
+- **Context.** Measuring what `mujs=yes` costs, by building MuPDF's WASM twice.
+- **What happened.** The variant build produced a binary byte-identical to stock, which
+  reads exactly like "enabling mujs changes nothing". It was not. `make` caches object
+  files per `build_suffix` (`platform/wasm/tools/build.sh:39`, with archive paths at lines
+  63 and 64 under `../../build/wasm/$BUILD$SUFFIX/`), so without `SUFFIX` the second build
+  reused the first build's objects and never compiled anything new.
+- **What to do next time.** Set `SUFFIX` per configuration:
+  `FEATURES="brotli=no extract=no xps=no svg=no" SUFFIX="mujs" bash tools/build.sh`.
+  Treat any "the variant is byte-identical to stock" result as a suspected cache hit until
+  `SUFFIX` is confirmed. The real cost of `mujs=yes` is 240,327 bytes.
+
+## 2026-07-26: the MuPDF WASM build pins its own Emscripten, so it reproduces exactly
+
+- **Context.** Deciding how much of the toolchain we needed to pin ourselves to make the
+  committed-artifact freshness gate meaningful
+  ([ADR 0006](adr/0006-three-toolchain-build-and-committed-wasm.md)).
+- **What happened.** A from-source build came out byte-identical to Artifex's published
+  npm artifact: sha256 `f7d39be2...411bdebf`, 10,408,550 bytes. The reason is
+  `tools/build.sh:27-28`, which runs `emsdk install 4.0.8` and `emsdk activate 4.0.8`
+  regardless of the surrounding container.
+- **What to do next time.** Do not spend effort pinning an emsdk image for correctness;
+  the build pins itself. Pin it for speed if at all. The valuable consequence is that any
+  byte difference in a future build is attributable to our patch and nothing else, which
+  is what makes byte comparison a usable gate rather than an aspiration.
 
 ## 2026-07-26: `pdf_pkcs7_signer` is a vtable, not an OpenSSL type
 

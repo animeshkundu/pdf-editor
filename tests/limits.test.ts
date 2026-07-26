@@ -51,7 +51,9 @@ describe('budget selection', () => {
 
 describe('input ceilings', () => {
   it('accepts a file at exactly the limit and rejects one byte more', () => {
-    expect(codeOf(() => assertFileSize(DESKTOP_BUDGET.maxFileBytes, DESKTOP_BUDGET))).toBeNull();
+    expect(
+      codeOf(() => assertFileSize(DESKTOP_BUDGET.maxFileBytes, DESKTOP_BUDGET)),
+    ).toBeNull();
     expect(codeOf(() => assertFileSize(DESKTOP_BUDGET.maxFileBytes + 1, DESKTOP_BUDGET))).toBe(
       'file_too_large',
     );
@@ -106,7 +108,9 @@ describe('assertHeadroom, the check-before-mutate gate', () => {
 
   it('rejects when the sum overflows safe-integer arithmetic', () => {
     expect(
-      codeOf(() => assertHeadroom(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, DESKTOP_BUDGET)),
+      codeOf(() =>
+        assertHeadroom(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, DESKTOP_BUDGET),
+      ),
     ).toBe('heap_ceiling');
   });
 });
@@ -159,9 +163,9 @@ describe('assertSaveFlags', () => {
   });
 
   it('refuses incremental combined with garbage collection', () => {
-    expect(codeOf(() => assertSaveFlags({ mode: 'incremental', garbage: 'all' }, healthy))).toBe(
-      'save_flag_conflict',
-    );
+    expect(
+      codeOf(() => assertSaveFlags({ mode: 'incremental', garbage: 'all' }, healthy)),
+    ).toBe('save_flag_conflict');
   });
 
   it('refuses incremental when the password changes', () => {

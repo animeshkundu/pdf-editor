@@ -34,7 +34,9 @@ function log(message) {
 }
 
 if (!existsSync(reportPath)) {
-  console.error(`[check-perf-baseline] No report at ${reportPath}. Run perf-measure.mjs first.`);
+  console.error(
+    `[check-perf-baseline] No report at ${reportPath}. Run perf-measure.mjs first.`,
+  );
   process.exit(1);
 }
 

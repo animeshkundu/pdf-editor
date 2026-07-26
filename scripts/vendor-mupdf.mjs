@@ -15,7 +15,7 @@
 //   pdf_processor via a js_processor bridge
 //     A complete vtable over every content-stream operator. op_Tf hands back a
 //     RESOLVED pdf_font_desc rather than just a resource name, which answers "which
-//     font produced this glyph" — otherwise unanswerable through the public API.
+//     font produced this glyph"; otherwise unanswerable through the public API.
 //     op_BDC hands back the cooked, resource-resolved property dictionary, which is
 //     the MCID and unblocks tagged-PDF editing. op_BI hands back a decoded image, so
 //     the inline-image EI-ambiguity problem never reaches us.
@@ -94,7 +94,7 @@ const shimLines = readFileSync(shimPath, 'utf8').split('\n').length;
 console.log(`[vendor-mupdf] Shim is ${shimLines} lines.`);
 
 if (!existsSync(patchDir)) {
-  console.log('[vendor-mupdf] No patches directory yet — source fetched unmodified.');
+  console.log('[vendor-mupdf] No patches directory yet; source fetched unmodified.');
   process.exit(0);
 }
 
@@ -103,7 +103,7 @@ const patches = readdirSync(patchDir)
   .sort();
 
 if (patches.length === 0) {
-  console.log('[vendor-mupdf] No patches to apply — source fetched unmodified.');
+  console.log('[vendor-mupdf] No patches to apply; source fetched unmodified.');
   process.exit(0);
 }
 

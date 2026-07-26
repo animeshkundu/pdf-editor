@@ -111,9 +111,13 @@ rmSync(staging, { recursive: true, force: true });
 mkdirSync(staging, { recursive: true });
 
 const archive = join(staging, asset);
-const download = run('curl', ['--proto', "'=https'", '--tlsv1.2', '-fsSL', '--retry', '3', '-o', archive, url], {
-  stdio: 'inherit',
-});
+const download = run(
+  'curl',
+  ['--proto', "'=https'", '--tlsv1.2', '-fsSL', '--retry', '3', '-o', archive, url],
+  {
+    stdio: 'inherit',
+  },
+);
 if (download.status !== 0) fail(`Failed to download ${url}`);
 
 // --strip-components drops the versioned top-level directory so bin/ and lib/ land

@@ -109,7 +109,7 @@ style preference: it is what makes MuPDF's own journal a complete undo history
 MuPDF's published reference documents the union of the WebAssembly build and the
 `mutool run` desktop interpreter. Many documented methods are marked `[mutool run only]`
 and **do not exist in the browser build**. Check `platform/wasm/lib/mupdf.c` at the
-version in use. It is roughly 2,944 lines with roughly 335 exports, and reading it is
+version in use. It is 2,944 lines with 331 unique `wasm_` symbols, and reading it is
 faster than debugging a wrong assumption.
 
 ## Resource and format contracts

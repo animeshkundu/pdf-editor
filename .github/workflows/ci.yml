@@ -64,9 +64,6 @@ jobs:
       - name: Install exact Node dependencies
         run: npm ci --include=dev
 
-      # Needed by `npm run lint` and `npm run test`, both of which fan out to cargo.
-      # scripts/cargo.mjs hard-fails when CI is set and the toolchain is missing, so this
-      # step is what keeps the Rust half of those gates real rather than skipped.
       # Gate the Rust toolchain on the crate actually existing.
       #
       # scripts/cargo.mjs hard-fails when CI is set and cargo is missing, which is what
@@ -122,8 +119,13 @@ jobs:
       # mupdf.js, so it gets its own blocking gate rather than a code-review convention.
       #
       # No-op until lib/engine/worker/ exists.
+      #
+      # Invoked as a file rather than through an npm script deliberately. This workflow
+      # is immutable to the build pipeline, so a step that depends on a package.json
+      # entry existing is a step that silently disappears if that entry is renamed or
+      # never added. The script path is the stable contract.
       - name: Handle-ownership gate
-        run: npm run check:handles
+        run: node scripts/check-handle-leak.mjs
 
       - name: Test
         run: npm run test
@@ -150,6 +152,15 @@ jobs:
       # supply-chain gate is one nobody reads.
       - name: Supply-chain gate
         run: npm run check:supply
+
+      # Separate from check:supply on purpose: that gate covers vulnerability advisories,
+      # this one covers licenses, source provenance and banned crates. A transitively
+      # added crate under a license AGPL-3.0-only cannot absorb makes the shipped binary
+      # undistributable, and no advisory database would ever report it.
+      #
+      # No-op until crates/pdftext/ exists.
+      - name: License and provenance gate
+        run: node scripts/check-cargo-deny.mjs
 
       - name: Install browser families
         run: npx playwright install --with-deps chromium firefox

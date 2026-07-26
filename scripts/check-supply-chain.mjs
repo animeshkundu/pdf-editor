@@ -39,7 +39,7 @@ if (existsSync(cargoLock)) {
       console.error('[check-supply-chain] cargo-audit unavailable in CI. Install cargo-audit.');
       failed = true;
     } else {
-      console.log('[check-supply-chain] cargo-audit not installed locally — skipping.');
+      console.log('[check-supply-chain] cargo-audit not installed locally; skipping.');
     }
   } else {
     process.stdout.write(audit.stdout ?? '');
@@ -49,14 +49,14 @@ if (existsSync(cargoLock)) {
     }
   }
 } else {
-  console.log('[check-supply-chain] No Cargo.lock yet — skipping crate checks.');
+  console.log('[check-supply-chain] No Cargo.lock yet; skipping crate checks.');
 }
 
-const npmAudit = spawnSync(
-  'npm',
-  ['audit', '--audit-level=high', '--omit=dev', '--json'],
-  { encoding: 'utf8', shell: true, cwd: root },
-);
+const npmAudit = spawnSync('npm', ['audit', '--audit-level=high', '--omit=dev', '--json'], {
+  encoding: 'utf8',
+  shell: true,
+  cwd: root,
+});
 try {
   const report = JSON.parse(npmAudit.stdout || '{}');
   const counts = report.metadata?.vulnerabilities ?? {};
@@ -67,7 +67,7 @@ try {
   );
   if (serious > 0) failed = true;
 } catch {
-  console.log('[check-supply-chain] npm audit produced no parseable report — skipping.');
+  console.log('[check-supply-chain] npm audit produced no parseable report; skipping.');
 }
 
 process.exit(failed ? 1 : 0);
