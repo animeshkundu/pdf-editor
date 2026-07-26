@@ -23,9 +23,9 @@ inputs:
     default: clippy,rustfmt
   audit:
     description: >-
-      Install cargo-audit. Only worth the compile time on the jobs that run
-      `npm run check:supply`, and it is skipped entirely until crates/pdftext/ exists
-      because check-supply-chain.mjs does not look for it before then.
+      Install cargo-audit and cargo-deny. Only worth the compile time on the jobs that
+      run the supply-chain gates, and skipped entirely until crates/pdftext/ exists
+      because neither gate looks for a crate graph before then.
     required: false
     default: 'false'
   cache:
@@ -64,20 +64,65 @@ runs:
         set -euo pipefail
         export PATH="$HOME/.cargo/bin:$PATH"
 
+        # Same shared-$HOME hazard as the emsdk action: several runner processes on one
+        # machine write the same ~/.rustup and ~/.cargo. rustup is not concurrency-safe
+        # against itself, and two simultaneous `toolchain install` runs can leave a
+        # half-unpacked toolchain that fails much later with a confusing error.
+        if command -v flock >/dev/null 2>&1; then
+          exec 9>"$HOME/.rustup-setup.lock"
+          flock 9
+        else
+          echo "::warning::flock not found; concurrent jobs on this runner could race" \
+               "over ~/.rustup. Install util-linux on the runner image."
+        fi
+
         # Every rustup subcommand below is a no-op when already satisfied, so the whole
         # step costs a few seconds on a warm runner.
-        install_args=(toolchain install "$TOOLCHAIN" --profile minimal --no-self-update)
-        if [ -n "$COMPONENTS" ]; then
+        #
+        # Except that "no-op" is not free. `toolchain install` on an already-installed
+        # toolchain still reinstalls any component named with --component, and that
+        # reinstall moves files through $RUSTUP_HOME/tmp. On an ephemeral container whose
+        # image ships a preinstalled toolchain, the toolchain directory and the tmp
+        # directory can land on different overlay layers, and the move fails with
+        # "Invalid cross-device link (os error 18)" while rolling back a component that
+        # was already correct. Observed on this runner image.
+        #
+        # So satisfy-then-skip: only touch rustup when something is genuinely missing.
+        have_toolchain=0
+        rustup toolchain list 2>/dev/null | grep -q "^${TOOLCHAIN}-" && have_toolchain=1
+
+        missing=""
+        if [ "$have_toolchain" = "1" ] && [ -n "$COMPONENTS" ]; then
+          installed="$(rustup component list --toolchain "$TOOLCHAIN" --installed 2>/dev/null || true)"
           IFS=',' read -ra parts <<< "$COMPONENTS"
           for part in "${parts[@]}"; do
-            [ -n "$part" ] && install_args+=(--component "$part")
+            [ -z "$part" ] && continue
+            grep -q "^${part}" <<< "$installed" || missing="$missing,$part"
           done
         fi
-        rustup "${install_args[@]}"
-        rustup default "$TOOLCHAIN"
+
+        if [ "$have_toolchain" = "1" ] && [ -z "$missing" ]; then
+          echo "Toolchain $TOOLCHAIN and components already present; not touching rustup."
+          rustup default "$TOOLCHAIN" >/dev/null 2>&1 || true
+        else
+          install_args=(toolchain install "$TOOLCHAIN" --profile minimal --no-self-update)
+          # Only ask for what is actually absent, so a healthy component is never
+          # reinstalled and can never trip the cross-device rollback above.
+          want="${missing:-$COMPONENTS}"
+          if [ "$have_toolchain" = "0" ]; then want="$COMPONENTS"; fi
+          if [ -n "$want" ]; then
+            IFS=',' read -ra parts <<< "$want"
+            for part in "${parts[@]}"; do
+              [ -n "$part" ] && install_args+=(--component "$part")
+            done
+          fi
+          rustup "${install_args[@]}"
+          rustup default "$TOOLCHAIN"
+        fi
 
         for target in $TARGETS; do
-          rustup target add --toolchain "$TOOLCHAIN" "$target"
+          rustup target list --toolchain "$TOOLCHAIN" --installed 2>/dev/null \
+            | grep -qx "$target" || rustup target add --toolchain "$TOOLCHAIN" "$target"
         done
 
         rustc --version
@@ -100,25 +145,36 @@ runs:
         restore-keys: |
           cargo-${{ runner.os }}-${{ inputs.toolchain }}-
 
-    - name: Install cargo-audit
+    - name: Install cargo-audit and cargo-deny
       if: inputs.audit == 'true'
       shell: bash
       run: |
         set -euo pipefail
         export PATH="$HOME/.cargo/bin:$PATH"
 
-        # check-supply-chain.mjs only requires cargo-audit once crates/pdftext/Cargo.lock
-        # exists, and only fails on its absence when CI is set. Installing it before then
-        # would burn several minutes of compile time on every run for no gate.
+        # The supply-chain gates only require these once crates/pdftext/ exists, and both
+        # scripts exit 0 before then. Installing them earlier would burn several minutes
+        # of compile time on every run for no gate at all.
         if [ ! -f crates/pdftext/Cargo.toml ]; then
-          echo "crates/pdftext not created yet; cargo-audit not needed."
+          echo "crates/pdftext not created yet; cargo-audit and cargo-deny not needed."
           exit 0
         fi
 
-        if command -v cargo-audit >/dev/null 2>&1; then
-          echo "cargo-audit already present: $(cargo audit --version)"
-          exit 0
+        # `cargo install` writes to the shared ~/.cargo/bin, so it takes the same lock as
+        # the toolchain step. Re-probing inside the lock matters: two jobs can both miss a
+        # binary above, and only one of them should pay for the compile.
+        if command -v flock >/dev/null 2>&1; then
+          exec 9>"$HOME/.rustup-setup.lock"
+          flock 9
         fi
 
-        echo "Installing cargo-audit (one-time compile on this runner)."
-        cargo install --locked cargo-audit
+        # cargo-audit covers advisories; cargo-deny covers licenses, bans and sources.
+        # They answer different questions, so both gates need their own binary.
+        for tool in cargo-audit cargo-deny; do
+          if command -v "$tool" >/dev/null 2>&1; then
+            echo "$tool already present."
+          else
+            echo "Installing $tool (one-time compile on this runner)."
+            cargo install --locked "$tool"
+          fi
+        done

@@ -54,9 +54,18 @@ runs:
         # directory is mutated with `git reset --hard` and `emsdk install`. Two jobs
         # entering here at once would corrupt the checkout or the toolchain, and the
         # symptom would be an unreproducible compiler failure. Serialise instead.
+        #
+        # flock is in util-linux and present on every ordinary Linux runner, but a
+        # minimal container image can omit it. Losing the lock is a correctness risk
+        # worth warning about; hard-failing the job over a missing utility is not.
         mkdir -p "$(dirname "$emsdk_dir")"
-        exec 9>"${emsdk_dir}.lock"
-        flock 9
+        if command -v flock >/dev/null 2>&1; then
+          exec 9>"${emsdk_dir}.lock"
+          flock 9
+        else
+          echo "::warning::flock not found; concurrent jobs on this runner could race" \
+               "over $emsdk_dir. Install util-linux on the runner image."
+        fi
 
         if [ ! -d "$emsdk_dir/.git" ]; then
           echo "Cloning emsdk into $emsdk_dir"

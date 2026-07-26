@@ -10,7 +10,11 @@ name: Release
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
+
+# No workflow_dispatch. Everything below derives the version from GITHUB_REF_NAME with
+# the leading `v` stripped, so a manual run on `main` would package "pdf-editor-main-web.zip"
+# and ask the release action to publish against a branch ref. Re-cutting a release means
+# pushing a tag, which is the operation that should be recorded anyway.
 
 # Never cancel a release in progress: an interrupted run can leave a tag with a partial
 # set of assets attached, which is worse than a queued second run.
@@ -41,7 +45,21 @@ jobs:
       - name: Install exact Node dependencies
         run: npm ci --include=dev
 
+      - name: Detect Rust crate
+        id: rust
+        shell: bash
+        run: |
+          if [ -f crates/pdftext/Cargo.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Same reasoning as ci.yml: before crates/pdftext exists there is nothing for the
+      # toolchain to do, and installing it on this runner image tripped a cross-device
+      # rollback in rustup.
       - name: Set up Rust
+        if: steps.rust.outputs.present == 'true'
         uses: ./.github/actions/setup-rust
         with:
           targets: wasm32-unknown-unknown
@@ -92,8 +110,17 @@ jobs:
 
           # Zipped from inside dist/ so the archive expands into a servable root rather
           # than a nested dist/ directory.
-          (cd dist && zip -qr "../.output/${archive}" .)
-          (cd .output && sha256sum ./*.zip > SHA256SUMS)
+          #
+          # -X drops extra file attributes (uid, gid, and the platform-specific extra
+          # fields). Without it the archive carries the runner's own metadata, so two
+          # builds of identical bytes produce different SHA256SUMS and the checksum
+          # cannot be independently reproduced. The entry order is fixed for the same
+          # reason: `find | sort` rather than letting the filesystem decide.
+          (cd dist && find . -type f | LC_ALL=C sort | zip -qX "../.output/${archive}" -@)
+
+          # Relative names only. `sha256sum -c SHA256SUMS` has to work in whatever
+          # directory a person downloads the assets into.
+          (cd .output && sha256sum "${archive}" > SHA256SUMS)
 
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "archive=${archive}" >> "$GITHUB_OUTPUT"

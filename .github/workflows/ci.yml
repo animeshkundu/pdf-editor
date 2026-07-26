@@ -67,7 +67,29 @@ jobs:
       # Needed by `npm run lint` and `npm run test`, both of which fan out to cargo.
       # scripts/cargo.mjs hard-fails when CI is set and the toolchain is missing, so this
       # step is what keeps the Rust half of those gates real rather than skipped.
+      # Gate the Rust toolchain on the crate actually existing.
+      #
+      # scripts/cargo.mjs hard-fails when CI is set and cargo is missing, which is what
+      # keeps the Rust half of `lint` and `test` real rather than quietly skipped. But
+      # that only bites once crates/pdftext exists: before then the script skips by
+      # design, so installing a toolchain buys nothing and costs minutes per run. It also
+      # cost correctness once, since touching rustup on this runner image tripped a
+      # cross-device rollback.
+      #
+      # This turns itself on in the same commit that adds the crate.
+      - name: Detect Rust crate
+        id: rust
+        shell: bash
+        run: |
+          if [ -f crates/pdftext/Cargo.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "crates/pdftext absent; skipping Rust setup."
+          fi
+
       - name: Set up Rust
+        if: steps.rust.outputs.present == 'true'
         uses: ./.github/actions/setup-rust
         with:
           # wasm32 is not strictly required to clippy or test on the host, but adding it
@@ -91,6 +113,17 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      # Static handle-ownership gate. eslint.config.js already refuses a bare
+      # `new mupdf.X()` outside an arena, but a syntactic rule cannot see an arena that
+      # is never released, nor a handle-producing METHOD call whose result is dropped:
+      # those return owned objects with no `new` at the call site. A leaked MuPDF object
+      # leaks until the page reloads, which is the most common production failure in
+      # mupdf.js, so it gets its own blocking gate rather than a code-review convention.
+      #
+      # No-op until lib/engine/worker/ exists.
+      - name: Handle-ownership gate
+        run: npm run check:handles
 
       - name: Test
         run: npm run test

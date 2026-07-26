@@ -21,17 +21,16 @@ on:
       # directly. What does reach here is the vendoring script and the patch set that
       # produce that tree, which is the thing actually under version control.
       #
-      # The lockfile is in the list because this workflow is the only place the native
-      # build runs at all: if a dependency bump breaks it, nothing else would notice
-      # until someone tried to regenerate the artifacts.
+      # package-lock.json is deliberately NOT a trigger. Every script this workflow runs
+      # is dependency-free Node ESM, so an npm bump cannot change what the native build
+      # produces, and listing it would fire a 60-minute Emscripten job on every routine
+      # dependency pull request.
       - 'vendor/**'
       - 'crates/**'
       - 'scripts/build-wasm.mjs'
       - 'scripts/build-rust-wasm.mjs'
       - 'scripts/setup-wasm-tools.mjs'
       - 'scripts/vendor-mupdf.mjs'
-      - 'package.json'
-      - 'package-lock.json'
       - '.github/workflows/wasm.yml'
       - '.github/actions/setup-emsdk/action.yml'
       - '.github/actions/setup-rust/action.yml'
@@ -44,8 +43,6 @@ on:
       - 'scripts/build-rust-wasm.mjs'
       - 'scripts/setup-wasm-tools.mjs'
       - 'scripts/vendor-mupdf.mjs'
-      - 'package.json'
-      - 'package-lock.json'
       - '.github/workflows/wasm.yml'
       - '.github/actions/setup-emsdk/action.yml'
       - '.github/actions/setup-rust/action.yml'
@@ -100,6 +97,22 @@ jobs:
 
       - name: Set up Emscripten
         uses: ./.github/actions/setup-emsdk
+
+      # Content-hash keyed on everything that can change the output: the vendoring script
+      # and its patch set, the build script, and the toolchain pin. An Emscripten build
+      # is tens of minutes, so a hit here is the difference between a workflow people run
+      # and one they avoid. The restore-key prefix deliberately has no fallback: a
+      # partial-match restore would seed the build cache from a DIFFERENT source tree,
+      # and stale object files are exactly how a build silently produces artifacts that
+      # do not match their manifest.
+      - name: Cache the MuPDF build tree
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: vendor/mupdf-wasm/build
+          key: >-
+            mupdf-${{ runner.os }}-${{ hashFiles('vendor/mupdf-wasm/.emscripten-version',
+            'vendor/mupdf-wasm/patches/**', 'scripts/vendor-mupdf.mjs',
+            'scripts/build-wasm.mjs') }}
 
       - name: Build the forked MuPDF WASM engine
         run: npm run build:wasm

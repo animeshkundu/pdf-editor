@@ -1,0 +1,66 @@
+name: Deployment smoke test
+
+# Vercel's native Git integration owns the deploy, so there is no deploy workflow to
+# assert against. That leaves a real gap: vercel.json is the only thing standing between
+# a user and a missing security header or a .wasm served as octet-stream, and nothing in
+# CI can see it, because those headers only exist once the platform has served the file.
+#
+# This closes that gap. It runs after a deployment reaches the ready state and asserts,
+# against the live URL, exactly what vercel.json claims: the security headers arrive, the
+# WASM MIME type is right, hashed assets are immutable, HTML revalidates, and no
+# cross-origin request is needed. A broken deployment then fails loudly rather than
+# sitting in production unnoticed.
+#
+# `deployment_status` is emitted by Vercel's own integration, so this needs no token
+# beyond the default one and no scheduled polling.
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Deployment URL to check.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Assert the deployed headers and MIME types
+    # `deployment_status` fires for every state transition, most of which have no URL to
+    # check. Only a successful deployment is worth a request.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.deployment_status.state == 'success'
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      # No `npm ci`: check-deployment.mjs is dependency-free by design, so this job needs
+      # nothing but a Node runtime. That keeps it fast enough to be worth running on
+      # every preview deployment rather than only on production.
+      - name: Smoke-test the deployment
+        env:
+          # Vercel Authentication answers 401 to an unauthenticated client on preview
+          # URLs. The bypass secret is optional: without it the script still runs, which
+          # is correct for a production custom domain, and reports the 401 plainly if it
+          # is not.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          TARGET_URL: ${{ github.event.inputs.url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TARGET_URL" ]; then
+            echo "No deployment URL on this event; nothing to check." >&2
+            exit 1
+          fi
+          echo "Checking $TARGET_URL"
+          node scripts/check-deployment.mjs "$TARGET_URL"
