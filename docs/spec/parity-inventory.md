@@ -656,19 +656,27 @@ Two of them (logical reading order, colour contrast) are manual checks in Acroba
 they cannot be decided mechanically; ours are marked the same way rather than reported as
 passing.
 
-**`A11Y-001` to `A11Y-032` are not implementable from this list alone, and that is a gap
-in this document rather than a detail to leave to whoever builds them.** A rule name is
-not a specification: nothing here states each rule's algorithm, what it inspects, what
-counts as pass, fail, or "needs manual check", or what fixture demonstrates each outcome.
-An implementer working from names alone will invent a mapping, and thirty-two invented
-mappings will not match Acrobat's, which is the thing users will compare against.
+**A rule name is not a specification.** `A11Y-001` to `A11Y-032` below are identifiers
+and outcomes; the buildable detail lives in
+[`a11y-rules.md`](a11y-rules.md), which states per rule the PDF structures inspected, the
+exact pass, fail, manual and unreachable conditions, the message the user sees, a minimal
+failing fixture, and what the repair tools can and cannot do. Implement from that
+document, not from this list.
 
-These thirty-two items are therefore **blocked on a prerequisite authoring task**, not on
-a spike: produce `docs/spec/a11y-rules.md` enumerating, per rule, the objects inspected,
-the pass condition, the fail condition, whether a manual verdict is possible, the report
-message, and the fixture that exercises it. Until that document exists, none of these
-items may be checked off. Their labels below describe the intended outcome, not a
-buildable specification.
+Three results from writing it are worth carrying here, because they change what these
+labels mean:
+
+- **Two rules are `unreachable` rather than merely manual.** Screen flicker (`A11Y-014`)
+  and timed responses (`A11Y-016`) require executing and observing content over time. We
+  report the mechanisms that could cause them and say plainly that the condition itself
+  cannot be determined.
+- **One rule deliberately differs from Acrobat.** Table summary (`A11Y-029`) is advisory
+  rather than failing, because `/Summary` is required by neither PDF/UA nor WCAG, and
+  flagging every table trains users to ignore the report.
+- **Three rules have no available repair**, because their only fix needs marked-content
+  writing: `A11Y-003`, `A11Y-009` and `A11Y-022`. `A11Y-003` is the one that fires on
+  every untagged document, so until Spike A resolves, the report can diagnose the most
+  common defect in the world and not fix it. That is stated in the report.
 
 ### Document (8)
 

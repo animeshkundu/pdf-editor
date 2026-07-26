@@ -18,6 +18,7 @@ feature, exactly which kind of parity is on offer.
 | [`spec/parity-inventory.md`](spec/parity-inventory.md) | Every feature, by Acrobat's own categories, each labelled                                         |
 | [`spec/competitor-wins.md`](spec/competitor-wins.md)   | Capabilities taken from tools other than Acrobat, and why each beats Adobe's version              |
 | [`spec/ui-ux.md`](spec/ui-ux.md)                       | Chrome layout, tool switching, comment workflow, Organize Pages, Prepare Form, the keyboard model |
+| [`spec/a11y-rules.md`](spec/a11y-rules.md)             | The 32 accessibility rules, each with its check, verdicts, message, fixture and repair            |
 
 Design tokens, density, motion, and focus treatment are in [`DESIGN.md`](DESIGN.md) and are
 not restated here.
@@ -261,6 +262,31 @@ that finding. No `OPEN` item is resolved by judgement alone.
 
 Findings land under [`research/`](research/) as `YYYY-MM-DD-null-filter-fidelity.md` and
 `YYYY-MM-DD-encoding-inversion-corpus.md`, and this section is replaced by what they say.
+
+## Prerequisites satisfied
+
+The accessibility rule set was blocked on an authoring task rather than a spike: thirty-two
+rule names are not a specification, and an implementer working from names alone would have
+invented thirty-two mappings that did not match Acrobat's.
+
+[`spec/a11y-rules.md`](spec/a11y-rules.md) settles it. Each rule states the PDF structures
+inspected, the exact pass, fail, manual and unreachable conditions, the user-facing
+message, a minimal failing fixture, and what the repair tools can do. `A11Y-001` to
+`A11Y-032` are now implementable from this repository alone.
+
+Writing it produced three findings worth surfacing here:
+
+- **Two rules are `unreachable`, not manual.** Screen flicker and timed responses need
+  content executed and observed over time. We report the mechanisms and say the condition
+  itself cannot be determined, which is more honest than asking a user to check something
+  we implied we could have checked.
+- **One rule differs from Acrobat deliberately.** Table summary is advisory rather than
+  failing, because `/Summary` is required by neither PDF/UA nor WCAG and flagging every
+  table trains users to ignore the whole report.
+- **The most common defect in the world has no available repair.** `A11Y-003` fires on
+  every untagged document, and its only fix is autotagging, which needs marked-content
+  writing and is `OPEN` on Spike A. Until that resolves, the report diagnoses and cannot
+  fix. Stated in the report rather than discovered.
 
 ## Still unproven, beyond text editing
 
