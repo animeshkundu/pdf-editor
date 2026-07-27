@@ -21,8 +21,8 @@ no independent reader exposes them.
 Run on Windows (Node 24.18.0) and re-run in full on Linux x86_64 (WSL Ubuntu, same Node,
 `npm ci` from the committed lockfile), against the engine on the
 `fast-feature/land-the-forked-mupdf-webassembly-engine-96bd1eb2e4883547` branch (`b3d5ecc`).
-**Every number is identical on both hosts**, which is what lets the host be ruled out as a
-variable in section 1.
+**All 120 lines of probe output are byte-identical on both hosts**, checked by diffing the
+two captures, which is what lets the host be ruled out as a variable in section 1.
 
 **An earlier version of this document overstated three of its four sections.** The
 measurements were repaired and re-run; [what was wrong](#what-this-document-got-wrong) is
