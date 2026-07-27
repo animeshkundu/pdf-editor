@@ -47,14 +47,17 @@ export const corpus: readonly CorpusDocument[] = [
     source: `${PDFBOX_SOURCE}pdfbox/src/test/resources/input/rendering/survey.pdf`,
     license: PDFBOX_LICENSE,
     features: ['untagged', 'simple-font', 'clipping-path'],
-    expectedC8Failures: [5],
-    observedCeilings: {
-      differentPixelRatio: 0.000027,
-      maxChannelDelta: 64,
-      rmse: 0.057,
-    },
-    expectedFilteredRenderSha256:
-      '481629234591455770b172e688b4aee1fb4a6fbcaa8740983460a5adcdf09147',
+    // Recorded as failing C8 on page 5 via maxChannelDelta 64. It does not reproduce:
+    // the maximum across all nine pages is 7 and page 5's is 4, identically on Windows,
+    // on Linux, and under this suite on GitHub-hosted CI. The recorded ratio (0.000027)
+    // and rmse (0.057) both passed their limits, so channel delta was the only failing
+    // metric and the gap is a factor of 9 to 16 rather than marginal. See
+    // docs/research/2026-07-26-redaction-and-editing-on-the-forked-engine.md.
+    //
+    // observedCeilings and expectedFilteredRenderSha256 are gone with the failure they
+    // described. They bound a KNOWN failure; a document that passes C8 outright is
+    // asserted by C8 itself, which is the stronger statement.
+    expectedC8Failures: [],
   },
   {
     file: 'latex-pdftex.pdf',
@@ -64,14 +67,18 @@ export const corpus: readonly CorpusDocument[] = [
     source: `${PDFBOX_SOURCE}pdfbox/src/test/resources/input/cweb.pdf`,
     license: PDFBOX_LICENSE,
     features: ['untagged', 'simple-font', 'subset-font'],
+    // The failing pages reproduce exactly. The ceilings and the render digest did not,
+    // and are updated to measured values that three independent environments agree on
+    // byte for byte. The previous ceilings were also self-inconsistent with the digest
+    // they shipped beside.
     expectedC8Failures: Array.from({ length: 27 }, (_, index) => index + 2),
     observedCeilings: {
-      differentPixelRatio: 0.005684,
-      maxChannelDelta: 103,
-      rmse: 0.333,
+      differentPixelRatio: 0.005845,
+      maxChannelDelta: 66,
+      rmse: 0.23538,
     },
     expectedFilteredRenderSha256:
-      'aec742e6d79cf2989666fd02057f3de93689e7e6df0da97d3434684b63b86cf9',
+      '6750fe34c2cd910c2fa8b3d8aff93e2990a353b77156766d3032618d67f581e1',
   },
   {
     file: 'libreoffice.pdf',
@@ -83,14 +90,16 @@ export const corpus: readonly CorpusDocument[] = [
       'GlyphLayoutDIN91379Form.pdf',
     license: PDFBOX_LICENSE,
     features: ['tagged', 'cid-font', 'subset-font', 'fully-embedded-font'],
+    // As above. The recorded rmse ceiling of 0.408 was below the measured 0.40851, so it
+    // would have failed even after the digest was corrected.
     expectedC8Failures: [1],
     observedCeilings: {
-      differentPixelRatio: 0.009714,
+      differentPixelRatio: 0.009585,
       maxChannelDelta: 66,
-      rmse: 0.408,
+      rmse: 0.40851,
     },
     expectedFilteredRenderSha256:
-      'c329ca9cb4c98e4643fe193bf6861255321b21c8859512d035cba5e2d8e79986',
+      'bcff92cdfc0b386301cd280a798be797a07f6fba282f9ab29733a68c9b4ba9c0',
   },
   {
     file: 'rtl-quartz.pdf',

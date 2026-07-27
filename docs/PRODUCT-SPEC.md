@@ -281,15 +281,12 @@ Writing it produced three findings worth surfacing here:
 Two items from the original stub remain true and are recorded here so this draft does not
 read as more settled than it is.
 
-- **The fork's additions have not executed against a document.** The build environment is
-  now proven: a from-source build of stock MuPDF 1.28.0 is byte-identical to Artifex's
-  published artifact, and `mujs=yes` builds and links at a cost of 240,327 bytes
-  ([ADR 0004](adr/0004-fork-the-mupdf-wasm-build.md)). What that establishes is that the
-  build is correct and that any future byte difference is our patch. It does **not**
-  establish that `js_processor`, `pdf_filter_page_contents`, or the custom
-  `pdf_pkcs7_signer` work, and it does not establish that `doc.isJSSupported()` returns
-  true at runtime, because no build has been loaded in a browser. Features depending on
-  them are designed, not proven.
+- **Only the fork's read-side addition has executed in the browser.** The Phase 3 viewer
+  loads the committed build in production module workers and exercises `js_processor`
+  while deriving each page's analysis limits. The null filter is independently measured in
+  Node and remains diagnostic-only after its red result. The custom `pdf_pkcs7_signer` is
+  not implemented, and `doc.isJSSupported()` still lacks a browser runtime test. Those
+  capabilities remain unproven rather than inheriting confidence from the viewer.
 - **Real-document behaviour under the ceilings is unmeasured.** A 2,000-page scan, a
   heavily tagged government form, and a 400 MB drawing have not been run, and the point
   where iOS Safari kills the tab has not been located
