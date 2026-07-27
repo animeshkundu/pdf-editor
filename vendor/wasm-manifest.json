@@ -24,9 +24,8 @@
     "vendor/mupdf-wasm/src/platform/wasm/tools/make-wasm-type.js": "30449067538ebbb7185e983c24fbca4cd02dd9b72808e8d6dcb7c825114c0872"
   },
   "inputs": {
-    "package-lock.json": "cd24c5d630fd695efb203b73c58b72b43ddce47106fac16f57be691212714daa",
     "package.json": "9b633d1acdc62e89a5616d688dde2e8a0a6104ae8fbb663c7fcf840349b7653d",
-    "scripts/build-wasm.mjs": "c9fef6b35118892a1a2ec2e2a74591adb14a8ee372664ab6651a1924c37084c8",
+    "scripts/build-wasm.mjs": "63e6d385927eabd80f9c7c39759e13df4bf2e2c0990aa1c8d51c1faf3c446a6e",
     "scripts/vendor-mupdf.mjs": "a58dfe72d57ba1432931c502b9af675379d07740a290bb07ea9f2ec7647e1887",
     "vendor/mupdf-wasm/.emscripten-version": "f88f603fa5b8bbbdd6be6f7c9e65590259014ad190f144c673e89ecf536c1912",
     "vendor/mupdf-wasm/patches/0001-buffered-processor-and-filter-export.patch": "50e4315799be22e31b26f48fb9f799faa98d959a1259588c82bc40b74dd2879d",

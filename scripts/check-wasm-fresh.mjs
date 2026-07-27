@@ -21,9 +21,14 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const manifestOnly = process.argv.includes('--manifest-only');
 const manifestPath = join(root, 'vendor', 'wasm-manifest.json');
 const vendorDir = join(root, 'vendor', 'mupdf-wasm');
+// package-lock.json is deliberately NOT tracked here. Both build paths in
+// build-wasm.mjs shell out to `bash tools/build.sh` under emcc or the emscripten/emsdk
+// container, so no npm dependency is read while producing the artifacts. Tracking the
+// lockfile made every unrelated dependency bump invalidate WASM provenance and demand a
+// full Emscripten rebuild, and because this gate runs first in CI a false positive here
+// skips every downstream gate. package.json stays: it names the build entry point.
 const trackedInputs = [
   join(root, 'package.json'),
-  join(root, 'package-lock.json'),
   join(root, 'scripts', 'build-wasm.mjs'),
   join(root, 'scripts', 'vendor-mupdf.mjs'),
   join(vendorDir, '.emscripten-version'),
