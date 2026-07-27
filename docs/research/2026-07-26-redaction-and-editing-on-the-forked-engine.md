@@ -16,11 +16,11 @@ All verdicts below come from pdf.js, raw bytes, or inflated streams. MuPDF is us
 locate text and to perform the operation, never to grade it, per
 [ADR 0019](../adr/0019-correctness-oracles.md).
 
-Run on Windows, Node 24.18.0, against the engine built on the
+Run on Windows (Node 24.18.0) and re-run in full on Linux x86_64 (WSL Ubuntu, same Node,
+`npm ci` from the committed lockfile), against the engine built on the
 `fast-feature/land-the-forked-mupdf-webassembly-engine-96bd1eb2e4883547` branch (`b3d5ecc`).
-WSL on this machine has no Node runtime; the engine is WASM and every comparison is
-before/after on one host, so the host cancels out of the diff. The one place it does not
-cancel is noted below and is the reason for the ghostscript discrepancy.
+**Every number in this document is identical on both hosts**, which is what allows the
+host to be ruled out as a variable in section 1.
 
 ## 1. Redaction's filter flags change nothing
 
@@ -44,23 +44,53 @@ the flag difference, and that question is now closed.
 `latex-pdftex.pdf` exceeds the ratio tolerance by 58x and `libreoffice.pdf` by 96x. These are
 not marginal.
 
-### The ghostscript row does not reproduce
+### The ghostscript row does not reproduce anywhere
 
-The pipeline's oracle table records `ghostscript.pdf` as a C8 **failure** with page 5
-exceeding. Here it passes, with the worst page being page 1 at a ratio of 0.000032 against a
-0.0001 limit, and page 4 changing where the published run reported it unchanged.
+The corpus records `expectedC8Failures: [5]` for `ghostscript.pdf`, and the pipeline's
+oracle table reports page 5 exceeding. It does not reproduce.
 
-`useSystemFonts` was the obvious suspect, since the oracle leaves it on and it makes the
-result depend on the host's installed fonts. It is not the cause: the numbers are identical
-with it on and off. The remaining difference is the rasterizer, Linux on the pipeline runner
-versus Windows here. A document sitting near the threshold can land on either side of it.
+Three independent runs, and they agree with each other rather than with the record:
 
-**The ghostscript verdict is host-dependent and should be recorded as such** rather than as a
-third independent failure. ADR 0020's conclusion still stands, because pdfTeX and LibreOffice
-are two unrelated producers with unrelated font classes and both fail by two orders of
-magnitude. But the oracle itself needs a note: near-threshold corpus verdicts are not
-portable across rasterizers, and `useSystemFonts: true` should be turned off so at least the
-font input is pinned.
+| Run                                              | ghostscript C8 failures |
+| ------------------------------------------------ | ----------------------- |
+| This probe, Windows                              | none                    |
+| This probe, Linux x86_64 (WSL, Node 24.18.0)     | none                    |
+| The repo's own `tests/pdf-oracle.test.ts`, Linux | none                    |
+
+The oracle's own output for page 5 is 38 differing pixels, ratio 0.0000189, against a
+0.0001 limit. It is a factor of five under the threshold, not near it. Every per-page
+differing-pixel count in the probe matches the oracle's own JSON exactly, on both hosts:
+65, 22, 0, 6, 38, 2, 4, 0, 0.
+
+**An earlier draft of this document blamed a Windows-versus-Linux rasterizer difference.
+That was wrong and is withdrawn.** The Linux run settles it: the two hosts produce
+identical numbers, so the host is not the variable. `useSystemFonts` is not the variable
+either, ruled out separately by running it both ways.
+
+What the Linux oracle run does show, from 11 passes and 3 failures:
+
+- `latex-pdftex.pdf` and `libreoffice.pdf` fail on **exactly** the recorded pages, with
+  exactly the pixel counts recorded. ADR 0020's evidence reproduces.
+- Both nonetheless fail their `expectedFilteredRenderSha256` assertion. The absolute
+  render hash differs while every derived metric matches, which is what you would expect
+  if antialiasing or hinting shifts the before and after renders together: the delta is
+  stable, the absolute pixels are not.
+- `ghostscript.pdf` fails its `expectedC8Failures` assertion with `expected [] to deeply
+equal [5]`.
+
+The simplest explanation consistent with all of it is that **the recorded expectations were
+captured against a different engine build than the one committed**, and the ghostscript row
+was wrong when written. That should be resolved before the PR merges, because the corpus
+expectations are the gate.
+
+Two separate defects in the gate design are visible regardless of that:
+
+- **`expectedFilteredRenderSha256` pins an absolute rasterization** and cannot survive a
+  font, canvas or pdf.js change. The C8 metrics it sits beside are stable across two hosts;
+  the hash is not. It should be dropped or demoted to advisory.
+- **`useSystemFonts: true`** makes the oracle depend on the host's installed fonts for no
+  benefit. It happens not to matter for `ghostscript.pdf`, which is the only document it was
+  tested against here, but it is an uncontrolled input in a fidelity gate.
 
 ## 2. Redaction works, with two leaks
 
@@ -167,13 +197,44 @@ Note the asymmetry with redaction, which handled the same document correctly: `p
 sets `instance_forms=1`, so forms are instanced and filtered. The trace has no equivalent, so
 **redaction sees text that the editing analysis cannot.**
 
+### The write path exists, but it is not the designed one
+
+`pdf_new_buffer_processor` is **absent from the built engine**. A scan of all 508 `wasm_*`
+exports in `mupdf-wasm.wasm` finds no operator-level re-serializer, so the designed edit path
+(trace, modify the operator stream, write it back through a buffer processor) cannot be
+expressed.
+
+`wasm_pdf_update_stream` did land, exposed as `PDFObject.writeStream`, which permits replacing
+a content stream's bytes wholesale. That is enough for an end-to-end edit, and one was run
+rather than assumed. Rewriting the `Tj` string `Line 1` to `EDITED` in
+`distiller-tagged-linearized.pdf` and saving with `compress,garbage=deduplicate`:
+
+| Check                                | Result |
+| ------------------------------------ | ------ |
+| pdf.js extracted the old text before | yes    |
+| pdf.js extracts the new text after   | yes    |
+| pdf.js still finds the old text      | no     |
+| Pixels changed on page 1             | 388    |
+| Page count                           | 1 → 1  |
+
+**An in-place text edit reaches an independent reader intact.** Scope that narrowly. The
+replacement was byte-length-preserving and ASCII, into a simple-font `Tj` on a document whose
+content stream is uncompressed enough to locate the literal. It exercises none of the hard
+parts: encoding inversion through `/Differences` or `/ToUnicode`, width and advance
+correction, subset fonts missing the needed glyph, `TJ` kerning arrays, or an edit that
+changes the string's length. It establishes that the write path works, not that editing works.
+
 ## What this changes
 
 1. **Closed.** Redaction's filter flags do not rescue it from ADR 0020. The withdrawal stands
-   as written.
-2. **The ghostscript corpus verdict is host-dependent** and should be annotated. The oracle
-   should set `useSystemFonts: false`, and near-threshold documents need a recorded tolerance
-   band rather than a bare pass/fail.
+   as written, and its two load-bearing failures reproduce exactly under the repo's own oracle
+   on Linux.
+2. **The committed corpus expectations do not match the committed engine.** `ghostscript.pdf`
+   is recorded as failing C8 on page 5 and passes on every host tested, including under the
+   repo's own harness. Two more documents fail their pinned render hashes while every derived
+   metric matches. This must be resolved before the PR merges, since these expectations are
+   the gate. Separately, `expectedFilteredRenderSha256` should be dropped or demoted, and
+   `useSystemFonts` set to `false`.
 3. **A redacting save must garbage-collect**, enforced in the engine port rather than left to
    the caller.
 4. **Redaction is `DEGRADED`, not `LOCAL`**, until it also clears marked-content properties,
@@ -184,11 +245,15 @@ sets `instance_forms=1`, so forms are instanced and filtered. The trace has no e
 6. **`processContents()` needs form recursion or instancing** before the editing analysis can
    claim page coverage. Until then any document with a `Do_form` on the page is only partly
    analysable, and the badge must say so.
+7. **The operator-level write path did not land.** `pdf_new_buffer_processor` is absent, so
+   editing currently means whole-stream byte replacement via `pdf_update_stream`. That works
+   end to end on a trivial case and is not a substitute for the designed path.
 
-Two of the three findings in this document were false positives in their first form: the
-latex-pdftex "leak" was a font copyright notice, and the "missing `TJ` text" was my probe
-calling a method that does not exist. Both were caught by asking where the bytes actually
-were instead of trusting the summary count.
+Three claims in this document were wrong in their first form and are corrected above rather
+than quietly dropped: the latex-pdftex "leak" was a font copyright notice; the "missing `TJ`
+text" was my probe calling a method that does not exist; and the ghostscript discrepancy was
+blamed on a rasterizer difference that the Linux run then disproved. Each was caught by
+running the control rather than by reasoning about the summary.
 
 ## Reproducing
 
@@ -197,10 +262,14 @@ Probes live in `tests/probes/`. Each is standalone and prints its own table:
 | Script                        | Question                                        |
 | ----------------------------- | ----------------------------------------------- |
 | `redact-flags.probe.mjs`      | Section 1: do redaction's flags change anything |
-| `gs-discrepancy.probe.mjs`    | Section 1: is the ghostscript verdict portable  |
+| `gs-discrepancy.probe.mjs`    | Section 1: does `useSystemFonts` explain it     |
 | `redaction.probe.mjs`         | Section 2: does redaction remove the text       |
 | `redaction-leak.probe.mjs`    | Section 2: which stream retains it              |
 | `redaction-garbage.probe.mjs` | Section 2: does a collecting save fix it        |
 | `editing-trace.probe.mjs`     | Section 3: what the trace delivers              |
 | `tj-coverage.probe.mjs`       | Section 3: is all the shown text present        |
 | `form-recurse.probe.mjs`      | Section 3: where libreoffice's text actually is |
+| `inplace-edit.probe.mjs`      | Section 3: does an edit reach an outside reader |
+
+On Linux, `npx vitest run tests/pdf-oracle.test.ts` reproduces the section 1 discrepancy
+directly; it needs `unzip` on PATH for the pinned qpdf download.
