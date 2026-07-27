@@ -64,46 +64,68 @@ function describe(dict) {
 for (const file of ['apache-fop.pdf', 'latex-pdftex.pdf', 'ocg-acrobat.pdf']) {
   const original = readFileSync(corpusDir + file);
   const doc = mupdf.Document.openDocument(Uint8Array.from(original), 'application/pdf');
-  const mp = doc.loadPage(0);
-  const st = mp.toStructuredText();
-  const plain = st.asText?.() ?? '';
-  st.destroy();
-
+  let mp;
   let word = null;
   let rect = null;
-  const words = new Set();
-  for (const w of plain.split(/\s+/)) {
-    const clean = w.replace(/[^A-Za-z]/g, '');
-    if (clean.length >= 6 && clean === w) words.add(clean);
-  }
-  for (const candidate of [...words].sort((a, b) => b.length - a.length)) {
-    const hits = mp.search(candidate, 4);
-    if (hits.length === 1 && hits[0].length === 1) {
-      word = candidate;
-      rect = quadToRect(hits[0][0]);
-      break;
-    }
-  }
-
-  const annot = mp.createAnnotation('Redact');
-  annot.setRect(rect);
-  annot.update();
-  mp.applyRedactions(true, 1, 0, 0);
-  mp.update();
-  const buf = doc.saveToBuffer('compress');
-  const redacted = Uint8Array.from(buf.asUint8Array());
-  buf.destroy();
-  mp.destroy();
-
-  // How many pages of the ORIGINAL contain this word at all? If more than one, the
-  // surviving bytes may simply be another page, which is not a redaction failure.
+  let redacted;
   let pagesWithWord = 0;
-  for (let i = 0; i < doc.countPages(); i++) {
-    const p = doc.loadPage(i);
-    if (p.search(word, 1).length > 0) pagesWithWord++;
-    p.destroy();
+  try {
+    mp = doc.loadPage(0);
+    const st = mp.toStructuredText();
+    let plain;
+    try {
+      plain = st.asText?.() ?? '';
+    } finally {
+      st.destroy();
+    }
+    const words = new Set();
+    for (const w of plain.split(/\s+/)) {
+      const clean = w.replace(/[^A-Za-z]/g, '');
+      if (clean.length >= 6 && clean === w) words.add(clean);
+    }
+    for (const candidate of [...words].sort((a, b) => b.length - a.length)) {
+      const hits = mp.search(candidate, 4);
+      if (hits.length === 1 && hits[0].length === 1) {
+        word = candidate;
+        rect = quadToRect(hits[0][0]);
+        break;
+      }
+    }
+
+    // Count before mutating: these are pages of the ORIGINAL containing the word.
+    for (let i = 0; i < doc.countPages(); i++) {
+      const p = doc.loadPage(i);
+      try {
+        if (p.search(word, 1).length > 0) pagesWithWord++;
+      } finally {
+        p.destroy();
+      }
+    }
+
+    const annot = mp.createAnnotation('Redact');
+    try {
+      annot.setRect(rect);
+      annot.update();
+    } finally {
+      annot.destroy();
+    }
+    mp.applyRedactions(
+      true,
+      mupdf.PDFPage.REDACT_IMAGE_REMOVE,
+      mupdf.PDFPage.REDACT_LINE_ART_REMOVE_IF_COVERED,
+      mupdf.PDFPage.REDACT_TEXT_REMOVE,
+    );
+    mp.update();
+    const buf = doc.saveToBuffer('compress');
+    try {
+      redacted = Uint8Array.from(buf.asUint8Array());
+    } finally {
+      buf.destroy();
+    }
+  } finally {
+    mp?.destroy();
+    doc.destroy();
   }
-  doc.destroy();
 
   const needle = Buffer.from(word, 'latin1');
   console.log(`\n=== ${file}  word="${word}"  pages containing it: ${pagesWithWord} ===`);

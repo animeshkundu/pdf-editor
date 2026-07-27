@@ -9,8 +9,8 @@
 //                                                                  fidelity is the open
 //                                                                  question)
 //
-// This checks 1 and 2 against a real corpus, and cross-checks the extracted text against
-// pdf.js so the trace is not graded by the engine that produced it.
+// This checks 1 and 2 on page 1 only against a real corpus, and cross-checks page 1
+// extracted text against pdf.js so the trace is not graded by the engine that produced it.
 
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import * as mupdf from '../../vendor/mupdf-wasm/dist/mupdf.js';
@@ -39,6 +39,23 @@ const DOCS = [
 
 const TEXT_OPS = new Set(['Tj', 'TJ', "'", '"']);
 
+function shownBytes(record) {
+  if (record.payload?.length) return Buffer.from(record.payload);
+  const out = [];
+  for (const handle of record.handles ?? []) {
+    if (typeof handle.isArray !== 'function' || !handle.isArray()) continue;
+    for (let i = 0; i < handle.length; i++) {
+      const item = handle.get(i);
+      try {
+        if (item.isString?.()) out.push(Buffer.from(item.asByteString()));
+      } finally {
+        item.destroy();
+      }
+    }
+  }
+  return Buffer.concat(out);
+}
+
 console.log('Editing capability: what the processContents trace actually delivers\n');
 console.log(
   'document'.padEnd(32),
@@ -46,7 +63,9 @@ console.log(
   'ops'.padStart(5),
   'text'.padStart(6),
   'Tf'.padStart(4),
-  'fonts'.padStart(6),
+  'font names'.padEnd(30),
+  'embedded'.padStart(9),
+  'writing modes'.padEnd(14),
   'resolvd'.padStart(8),
   'BDC'.padStart(5),
   'cooked'.padStart(7),
@@ -65,7 +84,9 @@ for (const file of DOCS) {
     const textRecords = records.filter((r) => TEXT_OPS.has(r.operator));
     const tf = records.filter((r) => r.operator === 'Tf');
     const resolved = tf.filter((r) => r.font != null);
-    const fontNames = new Set(resolved.map((r) => r.font?.name).filter(Boolean));
+    const fontNames = new Set(resolved.map((r) => r.font.getName()));
+    const embedded = resolved.filter((r) => r.font.isEmbedded()).length;
+    const writingModes = new Set(resolved.map((r) => String(r.font.getWritingMode())));
     const bdc = records.filter((r) => r.operator === 'BDC');
     const cooked = bdc.filter((r) => r.cooked != null);
 
@@ -74,8 +95,9 @@ for (const file of DOCS) {
       ops: ops.size,
       text: textRecords.length,
       tf: tf.length,
-      fonts: fontNames.size,
       resolved: resolved.length,
+      embedded,
+      writingModes: [...writingModes],
       bdc: bdc.length,
       cooked: cooked.length,
       fontNames: [...fontNames],
@@ -95,10 +117,12 @@ for (const file of DOCS) {
     String(row.ops).padStart(5),
     String(row.text).padStart(6),
     String(row.tf).padStart(4),
-    String(row.fonts).padStart(6),
-    `${row.resolved}/${row.tf}`.padStart(8),
+    row.fontNames.join(',').slice(0, 29).padEnd(30),
+    `${row.embedded}/${row.resolved}`.padStart(9),
+    row.writingModes.join(',').padEnd(14),
+    (row.tf ? `${row.resolved}/${row.tf}` : 'n/a').padStart(8),
     String(row.bdc).padStart(5),
-    `${row.cooked}/${row.bdc}`.padStart(7),
+    (row.bdc ? `${row.cooked}/${row.bdc}` : 'n/a').padStart(7),
   );
 }
 
@@ -113,18 +137,19 @@ for (const file of ['libreoffice.pdf', 'ghostscript.pdf', 'distiller-tagged-line
   const payloads = trace
     .getRecords()
     .filter((r) => TEXT_OPS.has(r.operator))
-    .map((r) => Buffer.from(r.payload).toString('latin1'));
+    .map((r) => shownBytes(r).toString('latin1'));
   trace.destroy();
   page.destroy();
   doc.destroy();
 
-  const pdfDoc = await getDocument({
+  const task = getDocument({
     data: Uint8Array.from(original),
     cMapPacked: true,
     cMapUrl,
     standardFontDataUrl,
     useSystemFonts: false,
-  }).promise;
+  });
+  const pdfDoc = await task.promise;
   const p1 = await pdfDoc.getPage(1);
   const extracted = (await p1.getTextContent()).items.map((i) => i.str).join('');
   const alpha = (s) => s.replace(/[^A-Za-z]/g, '');
@@ -142,4 +167,5 @@ for (const file of ['libreoffice.pdf', 'ghostscript.pdf', 'distiller-tagged-line
       `pdf.js words found in payloads: ${matched}/${total}`,
   );
   console.log(`   first payload: ${JSON.stringify(payloads[0]?.slice(0, 70) ?? '(none)')}`);
+  await task.destroy();
 }

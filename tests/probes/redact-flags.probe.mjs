@@ -137,9 +137,10 @@ console.log(
   'flags'.padEnd(7),
   'pages'.padStart(5),
   'failed'.padStart(6),
-  'worst ratio'.padStart(12),
+  'max ratio'.padStart(12),
   'maxD'.padStart(5),
-  'rmse'.padStart(7),
+  'max rmse'.padStart(9),
+  'bytes'.padStart(10),
   ' C8',
 );
 
@@ -152,15 +153,17 @@ for (const file of FAILING) {
     ['redact', REDACT_FLAGS],
   ]) {
     let after;
+    let filtered;
     try {
-      after = await open(filterWith(original, flags));
+      filtered = filterWith(original, flags);
+      after = await open(filtered);
     } catch (e) {
       console.log(file.padEnd(20), label.padEnd(7), 'ERROR', String(e.message).slice(0, 50));
       continue;
     }
     const failedPages = [];
     const changedPages = [];
-    let worst = { ratio: 0, maxDelta: 0, rmse: 0, differentPixels: 0 };
+    const maxima = { ratio: 0, maxDelta: 0, rmse: 0 };
     const n = Math.min(before.doc.numPages, after.doc.numPages);
     for (let i = 1; i <= n; i++) {
       const bp = await before.doc.getPage(i);
@@ -174,7 +177,9 @@ for (const file of FAILING) {
       const m = compare(b, a);
       if (m.differentPixels !== 0) changedPages.push(`${i}(${m.differentPixels})`);
       if (!passesC8(m, viewportDelta)) failedPages.push(i);
-      if (m.ratio > worst.ratio) worst = m;
+      maxima.ratio = Math.max(maxima.ratio, m.ratio);
+      maxima.maxDelta = Math.max(maxima.maxDelta, m.maxDelta);
+      maxima.rmse = Math.max(maxima.rmse, m.rmse);
       bp.cleanup();
       ap.cleanup();
     }
@@ -183,9 +188,10 @@ for (const file of FAILING) {
       label.padEnd(7),
       String(n).padStart(5),
       String(failedPages.length).padStart(6),
-      worst.ratio.toFixed(6).padStart(12),
-      String(worst.maxDelta).padStart(5),
-      worst.rmse.toFixed(3).padStart(7),
+      maxima.ratio.toFixed(6).padStart(12),
+      String(maxima.maxDelta).padStart(5),
+      maxima.rmse.toFixed(3).padStart(9),
+      String(filtered.length).padStart(10),
       failedPages.length === 0 ? ' PASS' : ' FAIL',
     );
     console.log('     changed pages(px):', changedPages.join(' ') || 'none');

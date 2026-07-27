@@ -1,10 +1,5 @@
-// The redacted text is unreachable by pdf.js but still present as plaintext in an
-// inflated stream. Hypothesis: saveToBuffer('compress') does not garbage-collect, so the
-// PRE-redaction content stream survives as an orphaned object and anyone who inflates
-// the file recovers the text.
-//
-// If that is right, the leak disappears under a garbage-collecting save, and the rule
-// for the product is that redaction must never be saved without one.
+// Test whether garbage-collecting saves remove pre-redaction text that was demonstrably
+// present in a searchable original stream. Cases absent before redaction are not measured.
 
 import * as mupdf from '../../vendor/mupdf-wasm/dist/mupdf.js';
 import { readFileSync } from 'node:fs';
@@ -13,7 +8,6 @@ import { inflateSync } from 'node:zlib';
 
 const asPath = (u) => fileURLToPath(new URL(u, import.meta.url)).replaceAll('\\', '/');
 const corpusDir = asPath('../fixtures/pdf-corpus/');
-
 const quadToRect = (q) => [
   Math.min(q[0], q[2], q[4], q[6]),
   Math.min(q[1], q[3], q[5], q[7]),
@@ -21,9 +15,10 @@ const quadToRect = (q) => [
   Math.max(q[1], q[3], q[5], q[7]),
 ];
 
-function inflatedStreams(bytes) {
+function searchableStreams(bytes) {
   const buf = Buffer.from(bytes);
-  const out = [];
+  const streams = [];
+  let failedInflates = 0;
   let i = 0;
   for (;;) {
     const start = buf.indexOf('stream', i);
@@ -35,13 +30,34 @@ function inflatedStreams(bytes) {
     if (end < 0) break;
     const raw = buf.subarray(dataStart, end);
     try {
-      out.push(inflateSync(raw));
+      streams.push(inflateSync(raw));
     } catch {
-      out.push(raw);
+      streams.push(raw);
+      failedInflates++;
     }
     i = end + 9;
   }
-  return out;
+  return { streams, failedInflates };
+}
+
+function encodings(word) {
+  const utf16be = Buffer.alloc(word.length * 2);
+  for (let i = 0; i < word.length; i++) utf16be.writeUInt16BE(word.charCodeAt(i), i * 2);
+  return [
+    ['latin1', Buffer.from(word, 'latin1')],
+    ['utf16be', utf16be],
+    ['hex', Buffer.from(Buffer.from(word, 'latin1').toString('hex'), 'ascii')],
+  ];
+}
+
+function streamHits(bytes, word) {
+  const { streams, failedInflates } = searchableStreams(bytes);
+  return {
+    matches: encodings(word)
+      .filter(([, needle]) => streams.some((stream) => stream.includes(needle)))
+      .map(([name]) => name),
+    failedInflates,
+  };
 }
 
 const SAVE_MODES = [
@@ -51,7 +67,6 @@ const SAVE_MODES = [
   'compress,garbage=deduplicate',
   'garbage=deduplicate,compress,sanitize',
 ];
-
 const CASES = [
   { file: 'apache-fop.pdf', word: 'embedded' },
   { file: 'ocg-acrobat.pdf', word: 'AlignmentTest' },
@@ -64,13 +79,19 @@ console.log('Does a garbage-collecting save remove the orphaned pre-redaction st
 console.log(
   'document'.padEnd(32),
   'save mode'.padEnd(32),
-  'plaintext'.padEnd(10),
+  'stream'.padEnd(18),
+  'inflate!'.padStart(8),
   'bytes'.padStart(8),
 );
 
 for (const { file, word } of CASES) {
   const original = readFileSync(corpusDir + file);
-  const needle = Buffer.from(word, 'latin1');
+  const pre = streamHits(original, word);
+  if (!pre.matches.length) {
+    console.log(file.padEnd(32), 'n/a (absent pre)');
+    console.log();
+    continue;
+  }
 
   for (const mode of SAVE_MODES) {
     const doc = mupdf.Document.openDocument(Uint8Array.from(original), 'application/pdf');
@@ -78,31 +99,48 @@ for (const { file, word } of CASES) {
     let error = null;
     try {
       const mp = doc.loadPage(0);
-      const hits = mp.search(word, 4);
-      if (!hits.length) throw new Error('word not found on page 1');
-      const annot = mp.createAnnotation('Redact');
-      annot.setRect(quadToRect(hits[0][0]));
-      annot.update();
-      mp.applyRedactions(true, 1, 0, 0);
-      mp.update();
-      mp.destroy();
+      try {
+        const hits = mp.search(word, 4);
+        if (!hits.length) throw new Error('word not found on page 1');
+        const annot = mp.createAnnotation('Redact');
+        try {
+          annot.setRect(quadToRect(hits[0][0]));
+          annot.update();
+        } finally {
+          annot.destroy();
+        }
+        mp.applyRedactions(
+          true,
+          mupdf.PDFPage.REDACT_IMAGE_REMOVE,
+          mupdf.PDFPage.REDACT_LINE_ART_REMOVE_IF_COVERED,
+          mupdf.PDFPage.REDACT_TEXT_REMOVE,
+        );
+        mp.update();
+      } finally {
+        mp.destroy();
+      }
       const buf = doc.saveToBuffer(mode);
-      redacted = Uint8Array.from(buf.asUint8Array());
-      buf.destroy();
+      try {
+        redacted = Uint8Array.from(buf.asUint8Array());
+      } finally {
+        buf.destroy();
+      }
     } catch (e) {
       error = e.message;
+    } finally {
+      doc.destroy();
     }
-    doc.destroy();
 
     if (error) {
       console.log(file.padEnd(32), mode.padEnd(32), `ERROR ${error.slice(0, 40)}`);
       continue;
     }
-    const leaks = inflatedStreams(redacted).some((s) => s.includes(needle));
+    const post = streamHits(redacted, word);
     console.log(
       file.padEnd(32),
       mode.padEnd(32),
-      (leaks ? 'PRESENT' : 'gone').padEnd(10),
+      (post.matches.length ? `PRESENT(${post.matches.join('+')})` : 'gone').padEnd(18),
+      String(post.failedInflates).padStart(8),
       String(redacted.length).padStart(8),
     );
   }

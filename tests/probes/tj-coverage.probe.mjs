@@ -20,7 +20,11 @@ function shownBytes(record) {
     if (typeof handle.isArray !== 'function' || !handle.isArray()) continue;
     for (let i = 0; i < handle.length; i++) {
       const item = handle.get(i);
-      if (item.isString?.()) out.push(Buffer.from(item.asByteString()));
+      try {
+        if (item.isString?.()) out.push(Buffer.from(item.asByteString()));
+      } finally {
+        item.destroy();
+      }
     }
   }
   return Buffer.concat(out);
@@ -44,9 +48,10 @@ console.log(
   'TJ'.padStart(4),
   'Tj'.padStart(4),
   'arrElems'.padStart(9),
-  'bytes'.padStart(7),
+  'trace bytes'.padStart(11),
+  'space codes'.padStart(12),
   'pdf.js chars'.padStart(13),
-  'coverage',
+  'bytes/chars',
 );
 
 for (const file of DOCS) {
@@ -62,26 +67,25 @@ for (const file of DOCS) {
     for (const h of r.handles ?? []) if (h.isArray?.()) arrayElements += h.length;
   }
   const bytes = Buffer.concat(textRecords.map(shownBytes));
+  const spaceCodes = bytes.reduce((count, byte) => count + Number(byte === 0x20), 0);
 
   trace.destroy();
   page.destroy();
   doc.destroy();
 
-  const pdfDoc = await getDocument({
+  const task = getDocument({
     data: Uint8Array.from(original),
     cMapPacked: true,
     cMapUrl,
     standardFontDataUrl,
     useSystemFonts: false,
-  }).promise;
+  });
+  const pdfDoc = await task.promise;
   const p1 = await pdfDoc.getPage(1);
-  const extracted = (await p1.getTextContent()).items
-    .map((i) => i.str)
-    .join('')
-    .replace(/\s+/g, '');
+  const extracted = (await p1.getTextContent()).items.map((i) => i.str).join('');
 
-  // The trace gives raw character CODES, not Unicode, so a byte-for-byte comparison is
-  // wrong. Character COUNT is the fair check: one code per shown glyph.
+  // These are different units. The ratio is descriptive only; absolute counts and trace
+  // space codes expose small samples and whitespace discrepancies.
   const coverage = extracted.length ? (bytes.length / extracted.length).toFixed(2) : 'n/a';
 
   console.log(
@@ -89,8 +93,10 @@ for (const file of DOCS) {
     String(records.filter((r) => r.operator === 'TJ').length).padStart(4),
     String(records.filter((r) => r.operator === 'Tj').length).padStart(4),
     String(arrayElements).padStart(9),
-    String(bytes.length).padStart(7),
+    String(bytes.length).padStart(11),
+    String(spaceCodes).padStart(12),
     String(extracted.length).padStart(13),
     `  ${coverage}`,
   );
+  await task.destroy();
 }
