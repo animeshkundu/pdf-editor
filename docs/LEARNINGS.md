@@ -18,6 +18,42 @@ to do next time.
 - Development happens on Windows; CI runs on Linux. `.gitattributes` normalises line
   endings to LF because the WASM freshness gate compares bytes.
 
+## 2026-07-27: module workers need an explicit ready handshake
+
+- **Context.** Sending an `open` request immediately after constructing the production
+  MuPDF document worker.
+- **What happened.** The worker fetched and initialized the WASM successfully, but a request
+  posted before the module finished evaluating and installed its message listener was lost
+  in the browser runtime. The UI stayed in its loading state with no error to report.
+- **What to do next time.** Have every module worker post an id-zero ready response after
+  installing its listener. Queue RPC messages behind that handshake and fail startup after
+  a bounded deadline. Worker creation is not evidence that worker code is listening.
+
+## 2026-07-27: virtual document height cannot be a CSS spacer
+
+- **Context.** Mapping the 10,000-page ceiling into one prefix-sum scroll surface.
+- **What happened.** Browser layout dimensions clamp well below the logical height of a
+  permitted document at supported zoom levels, making later pages unreachable.
+- **What to do next time.** Keep the prefix sum in logical coordinates, cap physical scroll
+  height, map between the two ranges, and position only the mounted page window near the
+  current physical scroll offset.
+
+## 2026-07-27: transferred input still has a WASM copy cost
+
+- **Context.** Opening the same maximum-size file in document and search workers.
+- **What happened.** Slicing twice before transfer and opening both workers concurrently
+  multiplied one accepted file into several simultaneous JavaScript and WASM copies.
+- **What to do next time.** Transfer the original buffer directly, start the read-only search
+  worker lazily, and project the aggregate input-plus-WASM peak before allocating it.
+
+## 2026-07-27: tagged structure is not exposed by the committed wrapper
+
+- **Context.** Building the hidden assistive reading surface from structured text.
+- **What happened.** The engine can collect structure internally, but the committed
+  `StructuredText.walk()` wrapper ignores structure blocks and exposes no traversal API.
+- **What to do next time.** Detect tagged pages and disclose inferred order as `DEGRADED`;
+  do not call it structure-tree order until a measured wrapper export exists.
+
 ## 2026-07-26: MuPDF's published docs describe a superset of the WASM build
 
 - **Context.** Planning the engine layer against the MuPDF reference on readthedocs.

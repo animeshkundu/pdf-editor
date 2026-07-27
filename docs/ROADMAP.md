@@ -175,12 +175,14 @@ planning had not. What is left genuinely depends on results.
 
 ## Phase 3: viewer
 
-- [ ] Open, render, navigate, zoom, and search a document.
-- [ ] Text selection and copy from `stext` quads, with the canvas highlight overlay.
+- [x] Open, render, navigate, zoom, and search a document.
+- [x] Text selection and copy from `stext` quads, with the canvas highlight overlay.
       ([ADR 0015](adr/0015-accessibility-and-no-positioned-dom-text.md))
-- [ ] Logical reading order for assistive technology, and Ctrl+F routed to engine search.
-- [ ] Thumbnails, outline, and attachments.
-- [ ] Command palette.
+- [x] Assistive structured-text reading surface, and Ctrl+F routed to engine search.
+- [ ] Tagged structure-tree reading order. The current WASM wrapper cannot traverse collected
+      structure blocks, so tagged and inferred order are disclosed as `DEGRADED`.
+- [x] Thumbnails, outline, and attachments.
+- [x] Command palette.
 
 ## Phase 4: editor
 

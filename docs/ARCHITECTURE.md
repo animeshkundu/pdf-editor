@@ -6,11 +6,10 @@ described below rather than asserted in copy.
 
 > **Read this as the target architecture.** It is written in the present tense because it
 > is the contract every change is reviewed against, not a report of what is built. Today
-> the repository contains the build, `lib/core/limits.ts`, the design token system, a
-> structural shell, the gate scripts, and these decision records. The engine layers,
-> `lib/engine/`, `lib/render/`, `lib/text/`, and `lib/store/` are designed and recorded
-> here but not yet implemented. [`ROADMAP.md`](ROADMAP.md) is the source of truth for what
-> exists.
+> the repository contains the build, resource ceilings, design tokens, the Phase 3 viewer,
+> its document and search workers, and the tiled render pipeline. The dedicated `lib/text/`
+> and `lib/store/` layers and the editor phases remain planned rather than shipped.
+> [`ROADMAP.md`](ROADMAP.md) is the source of truth for what exists.
 
 ## Runtime
 

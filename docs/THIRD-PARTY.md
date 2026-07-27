@@ -86,6 +86,7 @@ Never bundled, never shipped.
 | Tailwind CSS                |   4.3.3 | npm `tailwindcss`                 | MIT          | Token and utility compilation                |
 | Tailwind Vite plugin        |   4.3.3 | npm `@tailwindcss/vite`           | MIT          | Stylesheet build integration                 |
 | ESLint                      |  10.7.0 | npm `eslint`                      | MIT          | Linting, including the WASM handle rules     |
+| `brace-expansion`           |   5.0.8 | npm, transitive through ESLint    | MIT          | Patched brace expansion for lint file globs  |
 | `@eslint/js`                |  10.0.1 | npm `@eslint/js`                  | MIT          | ESLint recommended rule set                  |
 | typescript-eslint           |  8.64.0 | npm `typescript-eslint`           | MIT          | TypeScript linting                           |
 | eslint-plugin-react-hooks   |   7.1.1 | npm `eslint-plugin-react-hooks`   | MIT          | Hook rules                                   |

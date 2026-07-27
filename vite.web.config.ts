@@ -3,6 +3,12 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 
+function engineChunk(id: string): string | undefined {
+  return id.includes('node_modules/mupdf') || id.includes('/vendor/mupdf-wasm/')
+    ? 'engine'
+    : undefined;
+}
+
 // The editor is a single client-side surface. There is no server, no SSR, and no
 // route table: navigation is application state. Vite is used over a meta-framework
 // because per-document Web Workers loading a ~10 MB WASM binary are first-class here
@@ -27,15 +33,17 @@ export default defineConfig({
       output: {
         // Keep the engine out of the entry chunk so the app shell paints before the
         // WASM glue is parsed. Enforced by scripts/check-bundle-size.mjs.
-        manualChunks(id: string) {
-          if (id.includes('node_modules/mupdf')) return 'engine';
-          return undefined;
-        },
+        manualChunks: engineChunk,
       },
     },
   },
   worker: {
     format: 'es',
+    rollupOptions: {
+      output: {
+        manualChunks: engineChunk,
+      },
+    },
   },
   // MuPDF ships a prebuilt .wasm that must not be pre-bundled or inlined.
   optimizeDeps: {
