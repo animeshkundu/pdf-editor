@@ -1,0 +1,16 @@
+{
+  "tag": "1.28.0",
+  "repo": "https://github.com/ArtifexSoftware/mupdf.git",
+  "upstream": {
+    "commit": "205b8cf43551279d1215e88fe2845c5d595bade9",
+    "submodulesSha256": "266c7b2641877326730668fadd304391a740f2d8d83bebcadbea92380ee791de"
+  },
+  "patches": [
+    "0001-buffered-processor-and-filter-export.patch",
+    "0002-typescript-processor-bindings.patch"
+  ],
+  "overlays": [
+    "vendor/mupdf-wasm/patches/files/mupdf-js-processor.c"
+  ],
+  "shimLines": 2947
+}

@@ -53,14 +53,17 @@ signing a document.
 
 ## Decision
 
-Vendor MuPDF's source and maintain a patch set against `platform/wasm/lib/mupdf.c` plus
-the WASM build configuration. Build it ourselves with Emscripten. The fork adds exactly
-the following and nothing else.
+Vendor MuPDF's source and maintain a patch set against `platform/wasm/lib/mupdf.c`,
+`platform/wasm/lib/mupdf.ts`, and the WASM build configuration. Build it ourselves with
+Emscripten. The first three surfaces below are landed. The signer remains deferred pending
+a real two-phase design.
 
 ### 1. A `js_processor`: `pdf_processor` bridged to JavaScript
 
-A `pdf_processor` implementation whose operator callbacks marshal into JavaScript. The
-value is in what MuPDF has already resolved by the time a callback fires:
+A `pdf_processor` implementation whose 85 operator callbacks append fixed 64-byte
+little-endian records and payload bytes to an `fz_buffer`. JavaScript copies the completed
+buffer once; there is no callback trampoline per operator. The value is in what MuPDF has
+already resolved by the time a callback fires:
 
 - `op_Tf` yields a **resolved `pdf_font_desc`**, not the raw `/F3` name. The encoding
   tables, the descendant font, and the CID mapping are already loaded. Re-deriving that
@@ -115,11 +118,28 @@ confirmation pending", never as "AcroForm JavaScript works".
 The `SUFFIX` in that command is load-bearing. See
 [the object-cache trap](#implementation-note-the-suffix-object-cache-trap).
 
-### 4. A custom `pdf_pkcs7_signer` whose `create_digest` calls into JavaScript
+### 4. Deferred: a custom `pdf_pkcs7_signer`
 
-See [ADR 0018](0018-signing-via-custom-signer-vtable.md). The signer is a function
-pointer vtable, so the cryptography can live in WebCrypto and PKI.js while MuPDF keeps
-ownership of the ByteRange, the incremental save, and the DocMDP transform parameters.
+See [ADR 0018](0018-signing-via-custom-signer-vtable.md). MuPDF's public API does not
+provide a two-phase prepare/install boundary. The private writer locates placeholders,
+writes ByteRange, calls synchronous `create_digest`, and installs CMS in one save stack.
+Splitting that lifecycle is additional fork design. Asyncify remains proven only on the
+reduction in the Spike C finding, so no signer or Asyncify instrumentation is landed.
+
+### Landed exports
+
+The low-level WASM surface adds:
+
+- `wasm_pdf_process_page_contents`;
+- `wasm_pdf_processor_trace_get_data`, `wasm_pdf_processor_trace_get_length`, and
+  `wasm_pdf_drop_processor_trace`;
+- `wasm_pdf_keep_font`, `wasm_pdf_drop_font`, `wasm_pdf_font_name`,
+  `wasm_pdf_font_is_embedded`, and `wasm_pdf_font_wmode`;
+- `wasm_pdf_filter_page_contents`.
+
+The high-level wrapper adds `PDFProcessorTrace`, `PDFFontDescriptor`,
+`PDFPage.processContents()`, and `PDFPage.filterContents()`. The build emits and manifests
+`mupdf.js` and `mupdf.d.ts` as well as the low-level loader, declarations, and WASM.
 
 ### What the fork does not do
 
@@ -157,15 +177,23 @@ Verified by building from source:
   in `.github/actions/setup-emsdk/` is a convenience, not a correctness requirement.
 - `mujs=yes` builds and links, at a cost of 240,327 bytes.
 
-Not yet verified:
+Verified by the landed fork:
 
-- That adding an export, or the `js_processor`, produces a **working** build. Only the
-  stock build's reproducibility and the `mujs` variant's size are established.
-- That `doc.isJSSupported()` returns true at runtime. The binary has not been loaded in a
-  browser.
+- All ten new low-level exports compile and link in a 10,659,894-byte WASM artifact.
+- A real page yields a resolved `pdf_font_desc`, an MCID-bearing cooked marked-content
+  dictionary, and a decoded inline image through the buffered processor.
+- The high-level TypeScript wrapper compiles and is committed with declarations.
+- Full artifact and build-source digests pass `check-wasm-fresh`.
+- qpdf accepts every filtered corpus output structurally and pdf.js extracts identical
+  text from every output.
 
-The four additions above remain designed rather than proven, and
-[`../PRODUCT-SPEC.md`](../PRODUCT-SPEC.md) treats them that way.
+Not verified or not successful:
+
+- Null-filter visual fidelity is **red**, not green. pdf.js found out-of-C8 differences in
+  Ghostscript, pdfTeX, and LibreOffice documents. ADR 0020 supersedes the use of this filter
+  as an editing path.
+- `doc.isJSSupported()` still lacks a browser runtime test.
+- The signer and a two-phase signing state machine are not implemented.
 
 ## Consequences
 

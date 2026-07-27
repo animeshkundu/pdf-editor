@@ -1,0 +1,965 @@
+diff --git a/platform/wasm/lib/mupdf.ts b/platform/wasm/lib/mupdf.ts
+index dcf2a16..1d32189 100644
+--- a/platform/wasm/lib/mupdf.ts
++++ b/platform/wasm/lib/mupdf.ts
+@@ -68,7 +68,7 @@ or passing around pointer values.
+ 		STRING2(stringValue) -- if you need to pass more than one string
+ 		MATRIX(matrixArray)
+ 		RECT(rectArray)
+-		BUFFER(bufferValue)
++		withBuffer(bufferValue, pointer => use(pointer))
+ 		etc.
+ 
+ 	Look up an enum value by string:
+@@ -91,7 +91,7 @@ PDFObjects are always bound to a PDFDocument, so must be accessed via a document
+ 
+ 	doc._fromPDFObjectNew(new_ptr)
+ 	doc._fromPDFObjectKeep(borrowed_ptr)
+-	doc._PDFOBJ(value)
++	doc._withPDFObject(value, pointer => use(pointer))
+ 
+ Type checking of input arguments at runtime.
+ 
+@@ -329,14 +329,17 @@ function checkAnnotColor(value: any): asserts value is AnnotColor {
+ /** The types that can be automatically converted into a Buffer object */
+ type AnyBuffer = Buffer | ArrayBuffer | Uint8Array | string
+ 
+-function BUFFER(input: AnyBuffer) {
++function withBuffer<T>(input: AnyBuffer, use: (pointer: Pointer<"fz_buffer">) => T): T {
+ 	if (input instanceof Buffer)
+-		return input.pointer
+-	if (input instanceof ArrayBuffer || input instanceof Uint8Array)
+-		return new Buffer(input).pointer
+-	if (typeof input === "string")
+-		return new Buffer(input).pointer
+-	throw new TypeError("expected buffer")
++		return use(input.pointer)
++	if (!(input instanceof ArrayBuffer || input instanceof Uint8Array || typeof input === "string"))
++		throw new TypeError("expected buffer")
++	const buffer = typeof input === "string" ? new Buffer(input) : new Buffer(input)
++	try {
++		return use(buffer.pointer)
++	} finally {
++		buffer.destroy()
++	}
+ }
+ 
+ function ENUM<T>(value: T, list: readonly T[]): number {
+@@ -654,8 +657,6 @@ function runSearch(searchFun: SearchFunction, searchThis: number, needle: string
+ /* -------------------------------------------------------------------------- */
+ 
+ abstract class Userdata<B> {
+-	private static _finalizer: FinalizationRegistry<number>
+-
+ 	static readonly _drop: (pointer: any) => void
+ 
+ 	pointer: Pointer<B>
+@@ -663,19 +664,12 @@ abstract class Userdata<B> {
+ 	constructor(pointer: Pointer<B>) {
+ 		if (typeof pointer !== "number")
+ 			throw new Error("invalid pointer: " + typeof pointer)
+-		if (pointer !== 0) {
+-			let ctor = this.constructor as typeof Userdata
+-			if (!ctor._finalizer)
+-				ctor._finalizer = new FinalizationRegistry(ctor._drop)
+-			ctor._finalizer.register(this, pointer, this)
+-		}
+ 		this.pointer = pointer
+ 	}
+ 
+ 	destroy() {
+ 		if (this.pointer !== 0) {
+ 			let ctor = this.constructor as typeof Userdata
+-			ctor._finalizer.unregister(this)
+ 			ctor._drop(this.pointer)
+ 		}
+ 		this.pointer = 0 as Pointer<B>
+@@ -763,7 +757,9 @@ export class Buffer extends Userdata<"fz_buffer"> {
+ 	}
+ 
+ 	writeBuffer(other: AnyBuffer) {
+-		libmupdf._wasm_append_buffer(this.pointer, BUFFER(other))
++		withBuffer(other, pointer =>
++			libmupdf._wasm_append_buffer(this.pointer, pointer)
++		)
+ 	}
+ 
+ 	asUint8Array() {
+@@ -830,7 +826,9 @@ export class ColorSpace extends Userdata<"fz_colorspace"> {
+ 				else
+ 					throw new Error("missing 'fs' module")
+ 			}
+-			super(libmupdf._wasm_new_icc_colorspace(STRING_OPT(name), BUFFER(from as AnyBuffer)))
++			super(withBuffer(from as AnyBuffer, pointer =>
++				libmupdf._wasm_new_icc_colorspace(STRING_OPT(name), pointer)
++			))
+ 		}
+ 	}
+ 
+@@ -931,7 +929,9 @@ export class Font extends Userdata<"fz_font"> {
+ 					throw new Error("missing 'fs' module")
+ 			}
+ 			if (data)
+-				pointer = libmupdf._wasm_new_font_from_buffer(STRING(name_or_pointer), BUFFER(data), subfont)
++				pointer = withBuffer(data, buffer =>
++					libmupdf._wasm_new_font_from_buffer(STRING(name_or_pointer), buffer, subfont)
++				)
+ 			else if (name_or_pointer === "zh-Hant")
+ 				pointer = libmupdf._wasm_new_cjk_font(Font.ADOBE_CNS)
+ 			else if (name_or_pointer === "zh-Hans")
+@@ -1001,7 +1001,9 @@ export class Image extends Userdata<"fz_image"> {
+ 				else
+ 					throw new Error("missing 'fs' module")
+ 			}
+-			pointer = libmupdf._wasm_new_image_from_buffer(BUFFER(data as Uint8Array))
++			pointer = withBuffer(data as Uint8Array, buffer =>
++				libmupdf._wasm_new_image_from_buffer(buffer)
++			)
+ 		}
+ 		super(pointer)
+ 	}
+@@ -1053,6 +1055,26 @@ export class Image extends Userdata<"fz_image"> {
+ 	}
+ }
+ 
++export class PDFFontDescriptor extends Userdata<"pdf_font_desc"> {
++	static override readonly _drop = libmupdf._wasm_pdf_drop_font
++
++	constructor(pointer: Pointer<"pdf_font_desc">) {
++		super(libmupdf._wasm_pdf_keep_font(pointer))
++	}
++
++	getName() {
++		return fromString(libmupdf._wasm_pdf_font_name(this.pointer))
++	}
++
++	isEmbedded() {
++		return !!libmupdf._wasm_pdf_font_is_embedded(this.pointer)
++	}
++
++	getWritingMode() {
++		return libmupdf._wasm_pdf_font_wmode(this.pointer)
++	}
++}
++
+ export type LineCap = "Butt" | "Round" | "Square" | "Triangle"
+ export type LineJoin = "Miter" | "Round" | "Bevel" | "MiterXPS"
+ 
+@@ -1889,7 +1911,7 @@ export class DocumentWriter extends Userdata<"fz_document_writer"> {
+ 	constructor(buffer: Buffer, format: string, options: string) {
+ 		super(
+ 			libmupdf._wasm_new_document_writer_with_buffer(
+-				BUFFER(buffer),
++				buffer.pointer,
+ 				STRING(format),
+ 				STRING2(options)
+ 			)
+@@ -2002,7 +2024,7 @@ export class Document extends Userdata<"any_document"> {
+ 
+ 	static openDocument(from: Buffer | ArrayBuffer | Uint8Array | Stream | string, magic?: string): Document {
+ 		let pointer = 0 as Pointer<"any_document">
+-		let free_from = false
++		let ownedBuffer: Buffer | null = null
+ 
+ 		if (typeof from === "string") {
+ 			magic = from
+@@ -2018,21 +2040,18 @@ export class Document extends Userdata<"any_document"> {
+ 		checkType(magic, "string")
+ 
+ 		if (from instanceof ArrayBuffer || from instanceof Uint8Array) {
+-			from = new Buffer(from)
+-			free_from = true
++			ownedBuffer = new Buffer(from)
++			from = ownedBuffer
+ 		}
+-		if (from instanceof Buffer)
+-			pointer = libmupdf._wasm_open_document_with_buffer(STRING(magic), from.pointer)
+-		else if (from instanceof Stream)
+-			pointer = libmupdf._wasm_open_document_with_stream(STRING(magic), from.pointer)
+-		else
+-			throw new Error("not a Buffer or Stream")
+-
+-		if (free_from) {
+-			// Destroy any implicit Buffer instances immediately!
+-			// This may help the GC and FinalizationRegistry out when
+-			// processing many documents without a pause.
+-			from.destroy()
++		try {
++			if (from instanceof Buffer)
++				pointer = libmupdf._wasm_open_document_with_buffer(STRING(magic), from.pointer)
++			else if (from instanceof Stream)
++				pointer = libmupdf._wasm_open_document_with_stream(STRING(magic), from.pointer)
++			else
++				throw new Error("not a Buffer or Stream")
++		} finally {
++			ownedBuffer?.destroy()
+ 		}
+ 
+ 		let pdf = libmupdf._wasm_pdf_document_from_fz_document(pointer)
+@@ -2477,21 +2496,27 @@ export class PDFDocument extends Document {
+ 		if (obj instanceof Array) {
+ 			let result = this.newArray()
+ 			for (let item of obj)
+-				result.push(item)
++				result._pushValue(item)
+ 			return result
+ 		}
+ 		if (obj instanceof Object) {
+ 			let result = this.newDictionary()
+ 			for (let key in obj)
+-				result.put(key, obj[key])
++				result._putValue(key, obj[key])
+ 			return result
+ 		}
+ 		throw new TypeError("cannot convert value to PDFObject")
+ 	}
+ 
+-	_PDFOBJ(obj: any) {
+-		// Note: We have to create a PDFObject instance for garbage collection.
+-		return this._toPDFObject(obj).pointer
++	_withPDFObject<T>(obj: any, use: (pointer: Pointer<"pdf_obj">) => T): T {
++		const borrowed = obj instanceof PDFObject
++		const value = this._toPDFObject(obj)
++		try {
++			return use(value.pointer)
++		} finally {
++			if (!borrowed && value !== PDFObject.Null)
++				value.destroy()
++		}
+ 	}
+ 
+ 	getVersion() {
+@@ -2511,7 +2536,7 @@ export class PDFDocument extends Document {
+ 	}
+ 
+ 	getTrailer() {
+-		return new PDFObject(this, libmupdf._wasm_pdf_trailer(this.pointer))
++		return this._fromPDFObjectKeep(libmupdf._wasm_pdf_trailer(this.pointer))
+ 	}
+ 
+ 	createObject() {
+@@ -2553,15 +2578,25 @@ export class PDFDocument extends Document {
+ 	}
+ 
+ 	addObject(obj: any) {
+-		return this._fromPDFObjectNew(libmupdf._wasm_pdf_add_object(this.pointer, this._PDFOBJ(obj)))
++		return this._withPDFObject(obj, pointer =>
++			this._fromPDFObjectNew(libmupdf._wasm_pdf_add_object(this.pointer, pointer))
++		)
+ 	}
+ 
+ 	addStream(buf: AnyBuffer, obj: any) {
+-		return this._fromPDFObjectNew(libmupdf._wasm_pdf_add_stream(this.pointer, BUFFER(buf), this._PDFOBJ(obj), 0))
++		return this._withPDFObject(obj, pointer =>
++			withBuffer(buf, buffer =>
++				this._fromPDFObjectNew(libmupdf._wasm_pdf_add_stream(this.pointer, buffer, pointer, 0))
++			)
++		)
+ 	}
+ 
+ 	addRawStream(buf: AnyBuffer, obj: any) {
+-		return this._fromPDFObjectNew(libmupdf._wasm_pdf_add_stream(this.pointer, BUFFER(buf), this._PDFOBJ(obj), 1))
++		return this._withPDFObject(obj, pointer =>
++			withBuffer(buf, buffer =>
++				this._fromPDFObjectNew(libmupdf._wasm_pdf_add_stream(this.pointer, buffer, pointer, 1))
++			)
++		)
+ 	}
+ 
+ 	newGraftMap() {
+@@ -2621,20 +2656,24 @@ export class PDFDocument extends Document {
+ 	addPage(mediabox: Rect, rotate: Rotate, resources: any, contents: AnyBuffer) {
+ 		checkRect(mediabox)
+ 		checkType(rotate, "number")
+-		return this._fromPDFObjectNew(
+-			libmupdf._wasm_pdf_add_page(
+-				this.pointer,
+-				RECT(mediabox),
+-				rotate,
+-				this._PDFOBJ(resources),
+-				BUFFER(contents)
++		return this._withPDFObject(resources, pointer =>
++			withBuffer(contents, buffer =>
++				this._fromPDFObjectNew(libmupdf._wasm_pdf_add_page(
++					this.pointer,
++					RECT(mediabox),
++					rotate,
++					pointer,
++					buffer
++				))
+ 			)
+ 		)
+ 	}
+ 
+ 	insertPage(at: number, obj: PDFObject) {
+ 		checkType(at, "number")
+-		libmupdf._wasm_pdf_insert_page(this.pointer, at, this._PDFOBJ(obj))
++		this._withPDFObject(obj, pointer =>
++			libmupdf._wasm_pdf_insert_page(this.pointer, at, pointer)
++		)
+ 	}
+ 
+ 	deletePage(at: number) {
+@@ -2653,15 +2692,17 @@ export class PDFDocument extends Document {
+ 		checkType(created, Date)
+ 		checkType(modified, Date)
+ 		checkType(checksum, "boolean")
+-		return this._fromPDFObjectNew(
+-			libmupdf._wasm_pdf_add_embedded_file(
+-				this.pointer,
+-				STRING(filename),
+-				STRING2(mimetype),
+-				BUFFER(contents),
+-				created.getTime() / 1000 | 0,
+-				modified.getTime() / 1000 | 0,
+-				checksum
++		return withBuffer(contents, buffer =>
++			this._fromPDFObjectNew(
++				libmupdf._wasm_pdf_add_embedded_file(
++					this.pointer,
++					STRING(filename),
++					STRING2(mimetype),
++					buffer,
++					created.getTime() / 1000 | 0,
++					modified.getTime() / 1000 | 0,
++					checksum
++				)
+ 			)
+ 		)
+ 	}
+@@ -2696,61 +2737,146 @@ export class PDFDocument extends Document {
+ 			var i, n
+ 			if (N.isDictionary()) {
+ 				var NN = N.get("Names")
+-				if (NN)
++				try {
+ 					for (i = 0, n = NN.length; i < n; i += 2)
+-						result[NN.get(i+0).asString()] = NN.get(i+1)
++					{
++						const key = NN.get(i+0)
++						try {
++							result[key.asString()] = NN.get(i+1)
++						} finally {
++							key.destroy()
++						}
++					}
++				} finally {
++					NN.destroy()
++				}
+ 				var NK = N.get("Kids")
+-				if (NK)
++				try {
+ 					for (i = 0, n = NK.length; i < n; i += 1)
+-						_getEmbeddedFilesRec(result, NK.get(i))
++					{
++						const kid = NK.get(i)
++						try {
++							_getEmbeddedFilesRec(result, kid)
++						} finally {
++							kid.destroy()
++						}
++					}
++				} finally {
++					NK.destroy()
++				}
+ 			}
+ 			return result
+ 		}
+-		return _getEmbeddedFilesRec({}, this.getTrailer().get("Root", "Names", "EmbeddedFiles"))
++		const trailer = this.getTrailer()
++		let embeddedFiles = PDFObject.Null
++		try {
++			embeddedFiles = trailer.get("Root", "Names", "EmbeddedFiles")
++			return _getEmbeddedFilesRec({}, embeddedFiles)
++		} finally {
++			embeddedFiles.destroy()
++			trailer.destroy()
++		}
+ 	}
+ 
+ 	loadNameTree(treeName: string): Record<string,PDFObject> {
+ 		function _loadNameTreeRec(dict: Record<string,PDFObject>, node: PDFObject) {
+ 			var kids = node.get("Kids")
+-			if (kids && kids.isArray())
+-				for (var i = 0; i < kids.length; i += 1)
+-					_loadNameTreeRec(dict, kids.get(i))
++			try {
++				if (kids.isArray())
++					for (var i = 0; i < kids.length; i += 1) {
++						const kid = kids.get(i)
++						try {
++							_loadNameTreeRec(dict, kid)
++						} finally {
++							kid.destroy()
++						}
++					}
++			} finally {
++				kids.destroy()
++			}
+ 			var names = node.get("Names")
+-			if (names && names.isArray())
+-				for (var i = 0; i < names.length; i += 2)
+-					dict[names.get(i).asString()] = names.get(i+1)
++			try {
++				if (names.isArray())
++					for (var i = 0; i < names.length; i += 2) {
++						const key = names.get(i)
++						try {
++							dict[key.asString()] = names.get(i+1)
++						} finally {
++							key.destroy()
++						}
++					}
++			} finally {
++				names.destroy()
++			}
+ 		}
+-		var node = this.getTrailer().get("Root").get("Names").get(treeName)
++		const trailer = this.getTrailer()
++		let node = PDFObject.Null
+ 		var dict = {}
+-		if (node.isDictionary())
+-			_loadNameTreeRec(dict, node)
+-		return dict
++		try {
++			node = trailer.get("Root", "Names", treeName)
++			if (node.isDictionary())
++				_loadNameTreeRec(dict, node)
++			return dict
++		} finally {
++			node.destroy()
++			trailer.destroy()
++		}
+ 	}
+ 
+ 	insertEmbeddedFile(filename: string, filespec: PDFObject) {
+ 		var efs = this.getEmbeddedFiles()
+-		efs[filename] = filespec
+-		this._rewriteEmbeddedFiles(efs)
++		const owned = Object.values(efs)
++		try {
++			efs[filename] = filespec
++			this._rewriteEmbeddedFiles(efs)
++		} finally {
++			for (const value of owned)
++				value.destroy()
++		}
+ 	}
+ 
+ 	deleteEmbeddedFile(filename: string) {
+ 		var efs = this.getEmbeddedFiles()
+-		delete efs[filename]
+-		this._rewriteEmbeddedFiles(efs)
++		const owned = Object.values(efs)
++		try {
++			delete efs[filename]
++			this._rewriteEmbeddedFiles(efs)
++		} finally {
++			for (const value of owned)
++				value.destroy()
++		}
+ 	}
+ 
+ 	_rewriteEmbeddedFiles(efs: Record<string,PDFObject>) {
+ 		var efs_keys = Object.keys(efs)
+ 		efs_keys.sort()
+-		var root = this.getTrailer().get("Root")
+-		var root_names = root.get("Names")
+-		if (!root_names.isDictionary())
+-			root_names = root.put("Names", this.newDictionary())
+-		var root_names_efs = root_names.put("EmbeddedFiles", this.newDictionary())
+-		var root_names_efs_names = root_names_efs.put("Names", this.newArray())
+-		for (var key of efs_keys) {
+-			root_names_efs_names.push(this.newString(key))
+-			root_names_efs_names.push(efs[key])
++		const trailer = this.getTrailer()
++		let root = PDFObject.Null
++		let root_names = PDFObject.Null
++		let root_names_efs = PDFObject.Null
++		let root_names_efs_names = PDFObject.Null
++		try {
++			root = trailer.get("Root")
++			root_names = root.get("Names")
++			if (!root_names.isDictionary()) {
++				root_names.destroy()
++				root_names = this.newDictionary()
++				root._putValue("Names", root_names)
++			}
++			root_names_efs = this.newDictionary()
++			root_names_efs_names = this.newArray()
++			root_names._putValue("EmbeddedFiles", root_names_efs)
++			root_names_efs._putValue("Names", root_names_efs_names)
++			for (var key of efs_keys) {
++				root_names_efs_names._pushValue(`(${key})`)
++				root_names_efs_names._pushValue(efs[key])
++			}
++		} finally {
++			root_names_efs_names.destroy()
++			root_names_efs.destroy()
++			root_names.destroy()
++			root.destroy()
++			trailer.destroy()
+ 		}
+ 	}
+ 
+@@ -2945,7 +3071,232 @@ export class PDFDocument extends Document {
+ 	}
+ 
+ 	resetForm(fields: PDFObject, exclude: boolean) {
+-		libmupdf._wasm_pdf_reset_form(this.pointer, this._PDFOBJ(fields), Number(exclude))
++		this._withPDFObject(fields, pointer =>
++			libmupdf._wasm_pdf_reset_form(this.pointer, pointer, Number(exclude))
++		)
++	}
++}
++
++const PDF_OPERATOR_NAMES = [
++	"",
++	"w", "j", "J", "M", "d", "ri", "i",
++	"gs_begin", "gs_BM", "gs_ca", "gs_CA", "gs_SMask", "gs_end",
++	"q", "Q", "cm", "m", "l", "c", "v", "y", "h", "re",
++	"S", "s", "F", "f", "f*", "B", "B*", "b", "b*", "n", "W", "W*",
++	"BT", "ET", "Tc", "Tw", "Tz", "TL", "Tf", "Tr", "Ts",
++	"Td", "TD", "Tm", "T*", "TJ", "Tj", "'", "\"", "d0", "d1",
++	"CS", "cs", "SC_pattern", "sc_pattern", "SC_shade", "sc_shade",
++	"SC_color", "sc_color", "G", "g", "RG", "rg", "K", "k",
++	"BI", "sh", "Do_image", "Do_form", "MP", "DP", "BMC", "BDC", "EMC",
++	"BX", "EX", "gs_OP", "gs_op", "gs_OPM", "gs_UseBlackPtComp", "EOD", "END",
++] as const
++
++const PDF_NAME_PAYLOAD_OPERATORS = new Set([
++	"ri", "gs_begin", "gs_BM", "Tf", "CS", "cs", "SC_shade", "sc_shade",
++	"BI", "sh", "Do_image", "Do_form", "MP", "DP", "BMC", "BDC",
++])
++
++const PDF_COLOR_OPERATORS = new Set(["SC_color", "sc_color"])
++const PDF_PATTERN_OPERATORS = new Set(["SC_pattern", "sc_pattern"])
++
++const PDF_OPERATOR_ARITY = new Map<string, number>([
++	...[
++		"w", "j", "J", "M", "d", "i", "gs_ca", "gs_CA",
++		"Tc", "Tw", "Tz", "TL", "Tf", "Tr", "Ts", "G", "g",
++		"gs_OP", "gs_op", "gs_OPM",
++	].map(operator => [operator, 1] as const),
++	...["m", "l", "Td", "TD", "\"", "d0"].map(operator => [operator, 2] as const),
++	...["RG", "rg"].map(operator => [operator, 3] as const),
++	...["v", "y", "re", "K", "k"].map(operator => [operator, 4] as const),
++	...["cm", "c", "Tm", "d1"].map(operator => [operator, 6] as const),
++])
++
++export type PDFOperatorHandle =
++	PDFFontDescriptor |
++	PDFObject |
++	Image |
++	ColorSpace |
++	Shade
++
++export interface PDFOperatorRecord {
++	readonly operator: string
++	readonly operands: readonly number[]
++	readonly payload: Uint8Array
++	readonly flags: number
++	readonly handles: readonly PDFOperatorHandle[]
++	readonly name?: string
++	readonly font?: PDFFontDescriptor
++	readonly raw?: PDFObject
++	readonly cooked?: PDFObject
++	readonly image?: Image
++}
++
++export interface PDFFilterPageOptions {
++	recurse?: boolean
++	instanceForms?: boolean
++	ascii?: boolean
++	noUpdate?: boolean
++	newlines?: boolean
++}
++
++export class PDFProcessorTrace extends Userdata<"wasm_pdf_processor_trace"> {
++	static override readonly _drop = libmupdf._wasm_pdf_drop_processor_trace
++
++	private readonly _doc: PDFDocument
++	private readonly _ownedHandles: PDFOperatorHandle[] = []
++	private _records: PDFOperatorRecord[] | null = null
++
++	constructor(doc: PDFDocument, pointer: Pointer<"wasm_pdf_processor_trace">) {
++		super(pointer)
++		this._doc = doc
++	}
++
++	getRecords(): readonly PDFOperatorRecord[] {
++		if (this._records)
++			return this._records
++		if (!this.pointer)
++			throw new Error("PDF processor trace has been destroyed")
++
++		const length = libmupdf._wasm_pdf_processor_trace_get_length(this.pointer)
++		const pointer = libmupdf._wasm_pdf_processor_trace_get_data(this.pointer)
++		const bytes = libmupdf.HEAPU8.slice(pointer, pointer + length)
++		const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
++
++		if (length < 32 || view.getUint32(0, true) !== 0x5052504a)
++			throw new Error("invalid PDF processor trace")
++		const version = view.getUint32(4, true)
++		const stride = view.getUint32(8, true)
++		const count = view.getUint32(12, true)
++		const recordsOffset = view.getUint32(16, true)
++		const payloadOffset = view.getUint32(20, true)
++		const payloadLength = view.getUint32(24, true)
++		if (version !== 1 || stride !== 64 ||
++			recordsOffset + count * stride !== payloadOffset ||
++			payloadOffset + payloadLength !== length)
++			throw new Error("unsupported PDF processor trace layout")
++
++		const records: PDFOperatorRecord[] = []
++		for (let index = 0; index < count; ++index) {
++			const base = recordsOffset + index * stride
++			const opcode = view.getUint32(base, true)
++			const operator = PDF_OPERATOR_NAMES[opcode]
++			if (!operator)
++				throw new Error(`unknown PDF operator code ${opcode}`)
++
++			const relativePayloadOffset = view.getUint32(base + 4, true)
++			const recordPayloadLength = view.getUint32(base + 8, true)
++			if (relativePayloadOffset + recordPayloadLength > payloadLength)
++				throw new Error("PDF processor record payload is out of bounds")
++			let payload = bytes.slice(
++				payloadOffset + relativePayloadOffset,
++				payloadOffset + relativePayloadOffset + recordPayloadLength,
++			)
++
++			const handles: PDFOperatorHandle[] = []
++			for (let slot = 0; slot < 3; ++slot) {
++				const kind = view.getUint32(base + 12 + slot * 8, true)
++				const handle = view.getUint32(base + 16 + slot * 8, true)
++				let value: PDFOperatorHandle | null = null
++				if (handle && kind === 1)
++					value = new PDFFontDescriptor(handle as Pointer<"pdf_font_desc">)
++				else if (handle && kind === 2)
++					value = this._doc._fromPDFObjectKeep(handle as Pointer<"pdf_obj">)
++				else if (handle && kind === 3)
++					value = new Image(handle as Pointer<"fz_image">)
++				else if (handle && kind === 4)
++					value = new ColorSpace(libmupdf._wasm_keep_colorspace(handle as Pointer<"fz_colorspace">))
++				else if (handle && kind === 6)
++					value = new Shade(libmupdf._wasm_keep_shade(handle as Pointer<"fz_shade">))
++				if (value) {
++					handles.push(value)
++					this._ownedHandles.push(value)
++				}
++			}
++
++			let operands = Array.from({ length: PDF_OPERATOR_ARITY.get(operator) ?? 0 }, (_, operand) =>
++				view.getFloat32(base + 36 + operand * 4, true)
++			)
++			let name: string | undefined
++			if (PDF_COLOR_OPERATORS.has(operator)) {
++				if (payload.length !== view.getUint32(base + 60, true) * 4)
++					throw new Error("invalid PDF color payload")
++				const colors = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
++				operands = Array.from({ length: payload.length / 4 }, (_, operand) =>
++					colors.getFloat32(operand * 4, true)
++				)
++			} else if (PDF_PATTERN_OPERATORS.has(operator)) {
++				if (payload.length < 4)
++					throw new Error("invalid PDF pattern payload")
++				const pattern = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
++				const nameLength = pattern.getUint32(0, true)
++				const colorOffset = 4 + nameLength
++				if (colorOffset > payload.length ||
++					payload.length - colorOffset !== view.getUint32(base + 60, true) * 4)
++					throw new Error("invalid PDF pattern payload")
++				name = new TextDecoder().decode(payload.subarray(4, colorOffset))
++				const colors = new DataView(
++					payload.buffer,
++					payload.byteOffset + colorOffset,
++					payload.byteLength - colorOffset,
++				)
++				operands = Array.from({ length: colors.byteLength / 4 }, (_, operand) =>
++					colors.getFloat32(operand * 4, true)
++				)
++			} else if (operator === "gs_SMask" && payload.length) {
++				if (payload.length !== view.getUint32(base + 60, true) * 4)
++					throw new Error("invalid PDF soft-mask color payload")
++				const colors = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
++				operands = [
++					view.getFloat32(base + 36, true),
++					...Array.from({ length: colors.byteLength / 4 }, (_, operand) =>
++						colors.getFloat32(operand * 4, true)
++					),
++				]
++			} else if (operator === "gs_SMask") {
++				operands = [view.getFloat32(base + 36, true)]
++			}
++			const record: {
++				operator: string
++				operands: readonly number[]
++				payload: Uint8Array
++				flags: number
++				handles: readonly PDFOperatorHandle[]
++				name?: string
++				font?: PDFFontDescriptor
++				raw?: PDFObject
++				cooked?: PDFObject
++				image?: Image
++			} = {
++				operator,
++				operands,
++				payload,
++				flags: view.getUint32(base + 60, true),
++				handles,
++			}
++			if (name !== undefined)
++				record.name = name
++			if (payload.length && PDF_NAME_PAYLOAD_OPERATORS.has(operator))
++				record.name = new TextDecoder().decode(payload)
++			if (operator === "Tf" && handles[0] instanceof PDFFontDescriptor)
++				record.font = handles[0]
++			if ((operator === "DP" || operator === "BDC") && handles[0] instanceof PDFObject)
++				record.raw = handles[0]
++			if ((operator === "DP" || operator === "BDC") && handles[1] instanceof PDFObject)
++				record.cooked = handles[1]
++			if ((operator === "BI" || operator === "Do_image") && handles[0] instanceof Image)
++				record.image = handles[0]
++			records.push(record)
++		}
++		this._records = records
++		return records
++	}
++
++	override destroy() {
++		for (let index = this._ownedHandles.length; index > 0; --index)
++			this._ownedHandles[index - 1]!.destroy()
++		this._ownedHandles.length = 0
++		this._records = null
++		super.destroy()
+ 	}
+ }
+ 
+@@ -2970,6 +3321,26 @@ export class PDFPage extends Page {
+ 		return fromMatrix(libmupdf._wasm_pdf_page_transform(this.pointer))
+ 	}
+ 
++	processContents() {
++		return new PDFProcessorTrace(
++			this._doc,
++			libmupdf._wasm_pdf_process_page_contents(this.pointer),
++		)
++	}
++
++	filterContents(options: PDFFilterPageOptions = {}) {
++		const flags =
++			((options.recurse ?? true) ? 1 : 0) |
++			((options.instanceForms ?? false) ? 2 : 0) |
++			((options.ascii ?? false) ? 4 : 0) |
++			((options.noUpdate ?? false) ? 8 : 0) |
++			((options.newlines ?? true) ? 16 : 0)
++		libmupdf._wasm_pdf_filter_page_contents(
++			this.pointer,
++			flags,
++		)
++	}
++
+ 	setPageBox(box: PageBox, rect: Rect) {
+ 		let box_ix = ENUM<PageBox>(box, Page.BOXES)
+ 		checkRect(rect)
+@@ -3072,7 +3443,7 @@ export class PDFObject extends Userdata<"pdf_obj"> {
+ 
+ 	// PRIVATE
+ 	constructor(doc: PDFDocument, pointer: Pointer<"pdf_obj">) {
+-		super(libmupdf._wasm_pdf_keep_obj(pointer))
++		super(pointer)
+ 		this._doc = doc
+ 	}
+ 
+@@ -3106,19 +3477,25 @@ export class PDFObject extends Userdata<"pdf_obj"> {
+ 	writeObject(obj: any) {
+ 		if (!this.isIndirect())
+ 			throw new TypeError("can only call PDFObject.writeObject on an indirect reference")
+-		libmupdf._wasm_pdf_update_object(this._doc.pointer, this.asIndirect(), this._doc._PDFOBJ(obj))
++		this._doc._withPDFObject(obj, pointer =>
++			libmupdf._wasm_pdf_update_object(this._doc.pointer, this.asIndirect(), pointer)
++		)
+ 	}
+ 
+ 	writeStream(buf: AnyBuffer) {
+ 		if (!this.isIndirect())
+ 			throw new TypeError("can only call PDFObject.writeStream on an indirect reference")
+-		libmupdf._wasm_pdf_update_stream(this._doc.pointer, this.pointer, BUFFER(buf), 0)
++		withBuffer(buf, buffer =>
++			libmupdf._wasm_pdf_update_stream(this._doc.pointer, this.pointer, buffer, 0)
++		)
+ 	}
+ 
+ 	writeRawStream(buf: AnyBuffer) {
+ 		if (!this.isIndirect())
+ 			throw new TypeError("can only call PDFObject.writeRawStream on an indirect reference")
+-		libmupdf._wasm_pdf_update_stream(this._doc.pointer, this.pointer, BUFFER(buf), 1)
++		withBuffer(buf, buffer =>
++			libmupdf._wasm_pdf_update_stream(this._doc.pointer, this.pointer, buffer, 1)
++		)
+ 	}
+ 
+ 	resolve() {
+@@ -3159,20 +3536,34 @@ export class PDFObject extends Userdata<"pdf_obj"> {
+ 	}
+ 
+ 	put(key: number | string | PDFObject, value: any) {
+-		value = this._doc._toPDFObject(value)
+-		if (typeof key === "number")
+-			libmupdf._wasm_pdf_array_put(this.pointer, key, value.pointer)
+-		else if (key instanceof PDFObject)
+-			libmupdf._wasm_pdf_dict_put(this.pointer, key.pointer, value.pointer)
+-		else
+-			libmupdf._wasm_pdf_dict_puts(this.pointer, STRING(key), value.pointer)
+-		return value
++		this._putValue(key, value)
++		if (value instanceof PDFObject)
++			return value
++		return this.get(key)
++	}
++
++	_putValue(key: number | string | PDFObject, value: any) {
++		this._doc._withPDFObject(value, pointer => {
++			if (typeof key === "number")
++				libmupdf._wasm_pdf_array_put(this.pointer, key, pointer)
++			else if (key instanceof PDFObject)
++				libmupdf._wasm_pdf_dict_put(this.pointer, key.pointer, pointer)
++			else
++				libmupdf._wasm_pdf_dict_puts(this.pointer, STRING(key), pointer)
++		})
+ 	}
+ 
+ 	push(value: any) {
+-		value = this._doc._toPDFObject(value)
+-		libmupdf._wasm_pdf_array_push(this.pointer, value.pointer)
+-		return value
++		this._pushValue(value)
++		if (value instanceof PDFObject)
++			return value
++		return this.get(this.length - 1)
++	}
++
++	_pushValue(value: any) {
++		this._doc._withPDFObject(value, pointer =>
++			libmupdf._wasm_pdf_array_push(this.pointer, pointer)
++		)
+ 	}
+ 
+ 	delete(key: number | string | PDFObject) {
+@@ -3199,16 +3590,28 @@ export class PDFObject extends Userdata<"pdf_obj"> {
+ 	}
+ 
+ 	forEach(fn: (val: PDFObject, key: number | string, self: PDFObject) => void) {
++		// Values are owned by this callback scope and destroyed when it returns.
+ 		if (this.isArray()) {
+ 			let n = this.length
+-			for (let i = 0; i < n; ++i)
+-				fn(this.get(i), i, this)
++			for (let i = 0; i < n; ++i) {
++				const value = this.get(i)
++				try {
++					fn(value, i, this)
++				} finally {
++					value.destroy()
++				}
++			}
+ 		} else if (this.isDictionary()) {
+ 			let n = libmupdf._wasm_pdf_dict_len(this.pointer)
+ 			for (let i = 0; i < n; ++i) {
+ 				let key = this._doc._fromPDFObjectKeep(libmupdf._wasm_pdf_dict_get_key(this.pointer, i))
+ 				let val = this._doc._fromPDFObjectKeep(libmupdf._wasm_pdf_dict_get_val(this.pointer, i))
+-				fn(val, key.asName(), this)
++				try {
++					fn(val, key.asName(), this)
++				} finally {
++					val.destroy()
++					key.destroy()
++				}
+ 			}
+ 		}
+ 	}
+@@ -3225,7 +3628,12 @@ export class PDFObject extends Userdata<"pdf_obj"> {
+ 			if (ref in seen)
+ 				return seen[ref]
+ 			seen[ref] = PDFObject.Null // stop recursion!
+-			return seen[ref] = this.resolve().asJS(seen)
++			const resolved = this.resolve()
++			try {
++				return seen[ref] = resolved.asJS(seen)
++			} finally {
++				resolved.destroy()
++			}
+ 		}
+ 
+ 		if (this.isArray()) {
+@@ -3857,7 +4265,9 @@ export class PDFAnnotation extends Userdata<"pdf_annot"> {
+ 	}
+ 
+ 	setFileSpec(fs: PDFObject) {
+-		return libmupdf._wasm_pdf_set_annot_filespec(this.pointer, this._doc._PDFOBJ(fs))
++		return this._doc._withPDFObject(fs, pointer =>
++			libmupdf._wasm_pdf_set_annot_filespec(this.pointer, pointer)
++		)
+ 	}
+ 
+ 	getQuadPoints() {
+@@ -3979,14 +4389,18 @@ export class PDFAnnotation extends Userdata<"pdf_annot"> {
+ 	setAppearance(appearance: string | null, state: string | null, transform: Matrix, bbox: Rect, resources: any, contents: AnyBuffer) {
+ 		checkMatrix(transform)
+ 		checkRect(bbox)
+-		libmupdf._wasm_pdf_set_annot_appearance(
+-			this.pointer,
+-			STRING_OPT(appearance),
+-			STRING2_OPT(state),
+-			MATRIX(transform),
+-			RECT(bbox),
+-			this._doc._PDFOBJ(resources),
+-			BUFFER(contents)
++		this._doc._withPDFObject(resources, pointer =>
++			withBuffer(contents, buffer =>
++				libmupdf._wasm_pdf_set_annot_appearance(
++					this.pointer,
++					STRING_OPT(appearance),
++					STRING2_OPT(state),
++					MATRIX(transform),
++					RECT(bbox),
++					pointer,
++					buffer
++				)
++			)
+ 		)
+ 	}
+ 
+diff --git a/platform/wasm/tools/build.sh b/platform/wasm/tools/build.sh
+index f288d36..c74d126 100755
+--- a/platform/wasm/tools/build.sh
++++ b/platform/wasm/tools/build.sh
+@@ -1,4 +1,5 @@
+ #!/bin/bash
++set -eo pipefail
+ #
+ # Script to build the WASM binary.
+ #
+@@ -68,15 +69,18 @@ chmod -x dist/mupdf-wasm.wasm
+ 
+ echo "TYPESCRIPT"
+ 
+-sed < lib/mupdf.c '/#include/d' | emcc -E - | node tools/make-wasm-type.js > lib/mupdf-wasm.d.ts
++{
++	sed < lib/mupdf.c '/#include/d'
++	sed < lib/mupdf-js-processor.c '/#include/d'
++} | emcc -E - | node tools/make-wasm-type.js > lib/mupdf-wasm.d.ts
+ cp lib/mupdf-wasm.d.ts dist/mupdf-wasm.d.ts
+ 
+-npx tsc -p .
++npx --no-install tsc -p . --types node
+ 
+ # convert spaces to tabs
+ sed -i -e 's/    /\t/g' dist/mupdf.js
+ 
+ echo "TERSER"
+ 
+-npx terser --module -c -m -o dist/mupdf-wasm.js dist/mupdf-wasm.js
++npx --no-install terser --module -c -m -o dist/mupdf-wasm.js dist/mupdf-wasm.js
+ # npx terser --module -c -m -o dist/mupdf.min.js dist/mupdf.js

@@ -1,5 +1,7 @@
 node_modules/
 dist/
+!vendor/mupdf-wasm/dist/
+!vendor/mupdf-wasm/dist/**
 coverage/
 playwright-report/
 test-results/

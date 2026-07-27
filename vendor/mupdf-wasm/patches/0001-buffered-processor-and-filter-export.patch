@@ -1,0 +1,10 @@
+diff --git a/platform/wasm/lib/mupdf.c b/platform/wasm/lib/mupdf.c
+index 26c9845..b44d7f7 100644
+--- a/platform/wasm/lib/mupdf.c
++++ b/platform/wasm/lib/mupdf.c
+@@ -2942,3 +2942,5 @@ fz_device *wasm_new_js_device(int id)
+ 
+ 	return (fz_device*)dev;
+ }
++
++#include "mupdf-js-processor.c"

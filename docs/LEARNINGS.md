@@ -117,3 +117,38 @@ to do next time.
   `INERT_HOST` allowlist where every entry carries a reason, and
   `tests/e2e/shell.e2e.ts` fails if the running application contacts a foreign origin. See
   [ADR 0002](adr/0002-client-side-only-zero-egress.md).
+
+## 2026-07-26: a semantic-null sanitize filter is not visually null
+
+- **Context.** Grading `pdf_filter_page_contents` with `pdf_new_sanitize_filter` as the
+  write path for existing content.
+- **What happened.** qpdf accepted every output and pdf.js extracted identical text, but
+  pdf.js renders exceeded C8 for Ghostscript, pdfTeX, and LibreOffice documents. MuPDF's
+  earlier self-round-trip missed all of this. The result is diffuse and therefore red under
+  the decision table fixed before the test.
+- **What to do next time.** Keep the producer/oracle separation, retain raw per-page
+  metrics, and treat a semantic-null serializer as a mutation until an independent renderer
+  proves otherwise. See [ADR 0020](adr/0020-content-stream-rewriting-failed-stage-one.md).
+
+## 2026-07-26: included C exports must enter the declaration generator separately
+
+- **Context.** Keeping the buffered processor implementation in a reviewable C overlay
+  included by MuPDF's flat WASM shim.
+- **What happened.** The binary linked, but upstream's declaration command deletes every
+  `#include` line before preprocessing, so exports in the included file were absent from
+  `mupdf-wasm.d.ts`. The build script also continued after TypeScript errors because it did
+  not fail fast.
+- **What to do next time.** Feed each shim source into `make-wasm-type.js`, run the build
+  script with `set -eo pipefail`, and manifest both the low- and high-level wrapper
+  artifacts.
+
+## 2026-07-27: runtime tests of a committed binary do not prove its source provenance
+
+- **Context.** Accepting a forked WASM engine whose generated artifacts are committed.
+- **What happened.** Processor and oracle tests passed against the committed binary even
+  when the C patches and build wiring were removed. They proved the bytes worked, but not
+  that those bytes came from the reviewed source.
+- **What to do next time.** Pair runtime behavior tests with a full rebuild-and-compare
+  freshness check. Its negative control must make a semantic C-source change and require a
+  rebuilt-artifact mismatch; checking only that a patch digest changed still does not prove
+  the reviewed source produced the committed binary.

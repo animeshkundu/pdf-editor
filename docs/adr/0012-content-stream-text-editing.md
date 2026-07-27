@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR 0020](0020-content-stream-rewriting-failed-stage-one.md)
 
 ## Date
 

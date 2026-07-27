@@ -28,8 +28,15 @@ structural shell.
   specification under `docs/spec/`.
 - MuPDF vendoring via `scripts/vendor-mupdf.mjs`, with the stock from-source WASM build
   verified byte-identical to Artifex's published artifact.
+- Forked MuPDF 1.28.0 artifacts with a buffered 85-operator processor bridge, resolved
+  font/marked-content/image bindings, and an independently graded sanitize-filter harness.
+- A fixed 13-document redistributable oracle corpus, rendered by pdf.js at 144 dpi and
+  structurally checked by qpdf.
 
 ### Changed
+
+- Content-stream editing, true redaction, existing object rewrites, and marked-content
+  tagging were withdrawn after the null filter produced diffuse render perturbations.
 
 ### Deprecated
 
