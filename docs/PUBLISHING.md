@@ -4,16 +4,38 @@ The product is a static site. There is no server, no serverless function, no edg
 middleware, and no build step that executes project code on someone else's
 infrastructure beyond a plain `vite build`.
 
-## Vercel, through the native Git integration
+## Vercel, driven from CI
 
-Deployment uses Vercel's Git integration rather than a CI-driven prebuilt upload. The
-project configuration lives in `vercel.json` at the repository root, which pins the
+Deployment runs from `.github/workflows/deploy.yml` rather than Vercel's native Git
+integration, and is gated on CI passing
+([ADR 0021](adr/0021-deploy-through-ci-rather-than-git-integration.md)). Vercel builds
+from `vercel.json`, which knows nothing about `npm run check`, `check:egress` or
+`check:size`; under the Git integration a commit that failed every gate would still reach
+a URL. The workflow triggers on the CI run completing, refuses to proceed unless it
+succeeded, and checks out the exact commit CI verified. `main` goes to production and
+every other branch gets a preview.
+
+**The Git integration must stay disconnected.** Two mechanisms deploying the same project
+would race for the production alias, and the ungated one winning would make the gate
+pointless.
+
+Deployment needs three repository secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID` and
+`VERCEL_PROJECT_ID`. Without them the workflow says so in its summary and exits green,
+the same way `scripts/cargo.mjs` skips for a contributor with no Rust toolchain.
+
+The project configuration lives in `vercel.json` at the repository root, which pins the
 framework preset to `null`, the build command to `npm run build:vercel`, the output
 directory to `dist`, and the install command to `npm ci --include=dev`. It also sets the
 response headers: HSTS, `X-Content-Type-Options`, `Referrer-Policy: no-referrer`,
 `X-Frame-Options: DENY`, a restrictive `Permissions-Policy`, a transport-level CSP
 carrying `frame-ancestors`, `base-uri`, and `object-src`, the correct
 `application/wasm` content type, and immutable caching for content-hashed assets.
+
+Vercel still builds rather than receiving CI's `dist/` as prebuilt output. Uploading
+prebuilt output would mean restating every one of those headers in Build Output API form,
+and two copies of a security header set is how one of them goes stale. `deploy.yml`
+asserts the headers that actually arrived by running `scripts/check-deployment.mjs`
+against the deployed URL.
 
 The transport CSP complements, and does not replace, the default-deny policy in
 `web/index.html`. That document policy remains the contract
