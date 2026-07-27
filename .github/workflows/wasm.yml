@@ -57,21 +57,20 @@ permissions:
 
 jobs:
   # The two engines are independent, so they run in parallel. Splitting them also keeps
-  # each job short: a self-hosted runner losing contact with its coordinator is a real
-  # failure mode on long jobs, and two 40-minute jobs recover better than one 80-minute
-  # one.
+  # each hosted job short, gives failures a narrower retry scope, and provides results for
+  # one engine without waiting for the other.
   mupdf:
     name: MuPDF (Emscripten)
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install exact Node dependencies
@@ -94,6 +93,26 @@ jobs:
           else
             echo "scripts/vendor-mupdf.mjs does not exist yet; nothing to vendor."
           fi
+
+      # Restore the SDK BEFORE setting it up, so the action's own "reuse the existing
+      # checkout" path is what runs on a hit. Moving off a persistent runner turned the
+      # toolchain from something installed once into a ~1 GB download on every job; this
+      # is what keeps that a one-time cost per Emscripten pin.
+      #
+      # Keyed on the pin alone, because that is the only input that changes what gets
+      # installed. Unlike the build-tree cache below, a partial restore here is harmless:
+      # `emsdk install` reconciles whatever it finds against the requested version, and a
+      # wrong or truncated SDK cannot silently produce artifacts that mismatch their
+      # manifest the way stale object files can. So this one does get a restore-key.
+      - name: Cache the Emscripten SDK
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/emsdk
+          key: >-
+            emsdk-${{ runner.os }}-${{
+            hashFiles('vendor/mupdf-wasm/.emscripten-version') }}
+          restore-keys: |
+            emsdk-${{ runner.os }}-
 
       - name: Set up Emscripten
         uses: ./.github/actions/setup-emsdk
@@ -134,16 +153,16 @@ jobs:
 
   pdftext:
     name: pdftext (Rust)
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install exact Node dependencies

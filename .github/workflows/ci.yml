@@ -35,31 +35,30 @@ permissions:
 jobs:
   verify:
     name: Verify and build
-    runs-on: [self-hosted, linux, x64]
-    # Generous enough for a cold cargo cache and a Playwright browser download, tight
-    # enough that a runner which has lost its coordinator fails visibly instead of
-    # holding the queue. Everything genuinely slow (Emscripten, wasm-opt) is in wasm.yml.
+    runs-on: ubuntu-latest
+    # Generous enough for a cold cargo cache and a Playwright browser download, but tight
+    # enough that a stalled hosted job fails visibly instead of holding the queue.
+    # Everything genuinely slow (Emscripten, wasm-opt) is in wasm.yml.
     timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Full history is not needed and costs real time on a large repo, but the
           # default single commit is enough for every gate here.
           fetch-depth: 1
 
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           # A major line, not package.json's `engines` range: resolving ">=22.13.0"
           # would silently follow Node onto a new major the moment one ships.
-          node-version: 22
+          node-version: 24
           cache: npm
 
-      # `--include=dev` rather than a bare `npm ci`: some shells export NODE_ENV=production,
-      # which makes npm omit devDependencies, and a self-hosted runner can carry that in
-      # from its service environment. Without this the install would quietly produce a tree
-      # with no TypeScript, Vite or Vitest in it. NODE_ENV itself is left alone so Vite's
+      # `--include=dev` rather than a bare `npm ci` is a defensive measure. GitHub-hosted
+      # runners do not preset NODE_ENV, but an inherited or future NODE_ENV=production would
+      # make npm omit TypeScript, Vite and Vitest. NODE_ENV itself is left alone so Vite's
       # own production build semantics are not disturbed.
       - name: Install exact Node dependencies
         run: npm ci --include=dev
@@ -69,9 +68,7 @@ jobs:
       # scripts/cargo.mjs hard-fails when CI is set and cargo is missing, which is what
       # keeps the Rust half of `lint` and `test` real rather than quietly skipped. But
       # that only bites once crates/pdftext exists: before then the script skips by
-      # design, so installing a toolchain buys nothing and costs minutes per run. It also
-      # cost correctness once, since touching rustup on this runner image tripped a
-      # cross-device rollback.
+      # design, so installing a toolchain buys nothing and costs minutes per run.
       #
       # This turns itself on in the same commit that adds the crate.
       - name: Detect Rust crate

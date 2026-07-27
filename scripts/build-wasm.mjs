@@ -56,9 +56,10 @@ const ARTIFACTS = [
   'mupdf.js',
   'mupdf.d.ts',
 ];
+// Kept in step with trackedInputs in check-wasm-fresh.mjs, which explains why
+// package-lock.json is absent: nothing in the Emscripten build reads it.
 const TRACKED_INPUTS = [
   join(root, 'package.json'),
-  join(root, 'package-lock.json'),
   join(root, 'scripts', 'build-wasm.mjs'),
   join(root, 'scripts', 'vendor-mupdf.mjs'),
   join(vendorDir, '.emscripten-version'),

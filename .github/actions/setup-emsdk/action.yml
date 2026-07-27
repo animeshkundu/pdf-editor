@@ -1,8 +1,8 @@
 name: Set up Emscripten
 description: >-
-  Installs and activates emsdk idempotently outside the workspace, so the toolchain
-  survives the `git clean -ffdx` that actions/checkout performs on a persistent
-  self-hosted runner.
+  Installs and activates emsdk idempotently outside the workspace. GitHub-hosted runners
+  are ephemeral, so each job provisions its own SDK unless a caller restores
+  ~/.cache/emsdk beforehand, which wasm.yml does.
 
 inputs:
   version:
@@ -19,9 +19,9 @@ inputs:
     default: '6.0.3'
   path:
     description: >-
-      Where to keep the SDK. Deliberately outside the workspace: .gitignore reserves
-      vendor/mupdf-wasm/emsdk/ for local development, but checkout wipes ignored files
-      between runs, which would re-download ~1 GB of toolchain on every job.
+      Where to keep the SDK. Deliberately outside the workspace so checkout cleanup cannot
+      remove it during a job and toolchain state stays separate from repository state.
+      GitHub-hosted runners are ephemeral, so the SDK is provisioned afresh on each run.
     required: false
     default: ''
 
@@ -50,10 +50,10 @@ runs:
           echo "Using vendored pin: $version"
         fi
 
-        # One machine can host several runner processes sharing a $HOME, and this
-        # directory is mutated with `git reset --hard` and `emsdk install`. Two jobs
-        # entering here at once would corrupt the checkout or the toolchain, and the
-        # symptom would be an unreproducible compiler failure. Serialise instead.
+        # Keep setup concurrency-safe if this action is used on a runner where processes
+        # share $HOME. This directory is mutated with `git reset --hard` and `emsdk
+        # install`; simultaneous setup could corrupt the checkout or toolchain. Serialise
+        # instead.
         #
         # flock is in util-linux and present on every ordinary Linux runner, but a
         # minimal container image can omit it. Losing the lock is a correctness risk
@@ -64,7 +64,7 @@ runs:
           flock 9
         else
           echo "::warning::flock not found; concurrent jobs on this runner could race" \
-               "over $emsdk_dir. Install util-linux on the runner image."
+               "over $emsdk_dir. Install util-linux before using this action."
         fi
 
         if [ ! -d "$emsdk_dir/.git" ]; then
@@ -77,8 +77,8 @@ runs:
           git -C "$emsdk_dir" reset --hard FETCH_HEAD
         fi
 
-        # `emsdk install` short-circuits when the version is already unpacked, so the
-        # expensive download happens once per runner per version rather than per job.
+        # `emsdk install` short-circuits when the version is already unpacked within a job.
+        # GitHub-hosted jobs are ephemeral, so each new job provisions its own SDK.
         cd "$emsdk_dir"
         EMSDK_QUIET=1 ./emsdk install "$version"
         EMSDK_QUIET=1 ./emsdk activate "$version"

@@ -2,9 +2,9 @@ name: Nightly performance
 
 # Timing assertions are deliberately NOT a pull-request gate.
 #
-# These runners are shared and self-hosted. A neighbouring job moves first contentful
-# paint further than most code changes do, so a blocking perf check would go red for
-# reasons that have nothing to do with the change under review. The predictable result is
+# GitHub-hosted runners use shared infrastructure with variable performance. Host load can
+# move first contentful paint further than most code changes do, so a blocking perf check
+# would go red for reasons that have nothing to do with the change under review. The predictable result is
 # that people learn to click past it, and then the signal is worth less than no signal.
 #
 # So the numbers are measured on a schedule, against a baseline a human blessed, and a
@@ -32,16 +32,16 @@ permissions:
 jobs:
   measure:
     name: Measure and compare against the baseline
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install exact Node dependencies

@@ -1,8 +1,8 @@
 name: Set up Rust
 description: >-
   Installs rustup, a toolchain and any requested targets idempotently, then restores
-  the cargo and target caches. Safe to run repeatedly on a persistent self-hosted
-  runner and a no-op once the toolchain is already present.
+  the cargo and target caches. Safe to run repeatedly and a no-op once the toolchain is
+  already present.
 
 inputs:
   toolchain:
@@ -37,8 +37,8 @@ runs:
   using: composite
   steps:
     # rustup's own installer is not idempotent in the useful sense: re-running it on a
-    # machine that already has rustup prompts or errors. Probing first is what makes
-    # this safe on a runner whose $HOME survives between jobs.
+    # machine that already has rustup prompts or errors. Probing first makes this safe
+    # wherever the environment or an earlier step already provided rustup.
     - name: Install rustup if absent
       shell: bash
       run: |
@@ -64,16 +64,16 @@ runs:
         set -euo pipefail
         export PATH="$HOME/.cargo/bin:$PATH"
 
-        # Same shared-$HOME hazard as the emsdk action: several runner processes on one
-        # machine write the same ~/.rustup and ~/.cargo. rustup is not concurrency-safe
-        # against itself, and two simultaneous `toolchain install` runs can leave a
-        # half-unpacked toolchain that fails much later with a confusing error.
+        # Keep setup concurrency-safe if this composite action is used on a runner where
+        # processes share $HOME. rustup is not concurrency-safe against itself, and two
+        # simultaneous `toolchain install` runs can leave a half-unpacked toolchain that
+        # fails much later with a confusing error.
         if command -v flock >/dev/null 2>&1; then
           exec 9>"$HOME/.rustup-setup.lock"
           flock 9
         else
           echo "::warning::flock not found; concurrent jobs on this runner could race" \
-               "over ~/.rustup. Install util-linux on the runner image."
+               "over ~/.rustup. Install util-linux before using this action."
         fi
 
         # Every rustup subcommand below is a no-op when already satisfied, so the whole
@@ -85,7 +85,7 @@ runs:
         # image ships a preinstalled toolchain, the toolchain directory and the tmp
         # directory can land on different overlay layers, and the move fails with
         # "Invalid cross-device link (os error 18)" while rolling back a component that
-        # was already correct. Observed on this runner image.
+        # was already correct. This can occur on prebuilt ephemeral environments.
         #
         # So satisfy-then-skip: only touch rustup when something is genuinely missing.
         have_toolchain=0
