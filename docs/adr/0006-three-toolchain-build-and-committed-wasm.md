@@ -58,8 +58,9 @@ provable.
 - `scripts/check-wasm-fresh.mjs` verifies that manifest. It has two modes.
   `--manifest-only` verifies that the committed artifacts match their recorded digests,
   which is fast and is what `npm run build:vercel` runs on every deploy. The default mode
-  additionally verifies the source digests, so a patched shim cannot silently ship stale
-  binaries, and is what CI runs.
+  additionally verifies the source identity and digests, rebuilds all five artifacts, and
+  byte-compares the rebuilt output with the committed output without replacing it. That
+  source-to-artifact proof is what CI runs.
 - Line endings are normalised to LF repository-wide in `.gitattributes`, and `*.wasm` is
   marked binary. Development happens on Windows and CI runs on Linux; without this, an
   identical artifact would produce different digests on the two platforms and the

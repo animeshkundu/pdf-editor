@@ -27,6 +27,7 @@ import {
   readdirSync,
   writeFileSync,
 } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 
@@ -35,6 +36,8 @@ const vendorDir = join(root, 'vendor', 'mupdf-wasm');
 const srcDir = join(vendorDir, 'src');
 const distDir = join(vendorDir, 'dist');
 const wasmSrcDir = join(srcDir, 'platform', 'wasm');
+const patchDir = join(vendorDir, 'patches');
+const verifyOnly = process.argv.includes('--verify-only');
 
 // Dropping `mujs=no` from upstream's default is what enables AcroForm JavaScript. The
 // exports already exist in the shim; the flag is all that gates them. Measured cost:
@@ -46,12 +49,40 @@ const FEATURES = 'brotli=no extract=no xps=no svg=no';
 // binary, which reads exactly like "this flag changes nothing". It cost an hour once.
 const SUFFIX = 'fork';
 
-const ARTIFACTS = ['mupdf-wasm.wasm', 'mupdf-wasm.js', 'mupdf-wasm.d.ts'];
+const ARTIFACTS = [
+  'mupdf-wasm.wasm',
+  'mupdf-wasm.js',
+  'mupdf-wasm.d.ts',
+  'mupdf.js',
+  'mupdf.d.ts',
+];
+const TRACKED_INPUTS = [
+  join(root, 'package.json'),
+  join(root, 'package-lock.json'),
+  join(root, 'scripts', 'build-wasm.mjs'),
+  join(root, 'scripts', 'vendor-mupdf.mjs'),
+  join(vendorDir, '.emscripten-version'),
+  join(vendorDir, 'source-stamp.json'),
+];
 
 function have(cmd) {
   // No shell: passing args through a shell concatenates rather than escapes them.
   const probe = spawnSync(cmd, ['--version'], { stdio: 'ignore', shell: false });
   return probe.status === 0;
+}
+
+function findEmsdk() {
+  const candidates = [
+    process.env.EMSDK,
+    '/opt/emsdk',
+    join(homedir(), 'emsdk'),
+    join(tmpdir(), 'emsdk'),
+  ].filter(Boolean);
+  return candidates.find(
+    (candidate) =>
+      existsSync(join(candidate, 'emsdk_env.sh')) &&
+      existsSync(join(candidate, 'upstream', 'emscripten', 'emcc')),
+  );
 }
 
 function sha256(path) {
@@ -69,6 +100,10 @@ function walk(dir, out = []) {
 }
 
 if (!existsSync(srcDir)) {
+  if (verifyOnly) {
+    console.error('[build-wasm] Cannot verify artifacts without the vendored MuPDF source.');
+    process.exit(1);
+  }
   if (existsSync(distDir) && ARTIFACTS.every((a) => existsSync(join(distDir, a)))) {
     console.log('[build-wasm] Using committed artifacts; vendored source not present.');
     console.log('[build-wasm] Run `node scripts/vendor-mupdf.mjs` to build from source.');
@@ -80,12 +115,17 @@ if (!existsSync(srcDir)) {
 }
 
 let result;
-if (have('emcc')) {
-  console.log('[build-wasm] Building with emcc from PATH.');
+const emsdk = findEmsdk();
+if (have('emcc') || emsdk) {
+  console.log(
+    emsdk
+      ? `[build-wasm] Building with emsdk at ${emsdk}.`
+      : '[build-wasm] Building with emcc from PATH.',
+  );
   result = spawnSync('bash', ['tools/build.sh'], {
     cwd: wasmSrcDir,
     stdio: 'inherit',
-    env: { ...process.env, FEATURES, SUFFIX },
+    env: { ...process.env, ...(emsdk ? { EMSDK: emsdk } : {}), FEATURES, SUFFIX },
   });
 } else {
   const runtime = have('podman') ? 'podman' : have('docker') ? 'docker' : null;
@@ -121,7 +161,7 @@ if (have('emcc')) {
       `FEATURES=${FEATURES}`,
       '-e',
       `SUFFIX=${SUFFIX}`,
-      'docker.io/emscripten/emsdk:latest',
+      'docker.io/emscripten/emsdk:4.0.8',
       'bash',
       '-lc',
       'cd platform/wasm && bash tools/build.sh',
@@ -142,6 +182,27 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
+if (verifyOnly) {
+  let mismatches = 0;
+  for (const artifact of ARTIFACTS) {
+    const built = join(builtDir, artifact);
+    const committed = join(distDir, artifact);
+    const rel = relative(root, committed).replace(/\\/g, '/');
+    if (!existsSync(committed)) {
+      console.error(`[build-wasm] MISSING committed artifact: ${rel}`);
+      mismatches++;
+    } else if (sha256(built) !== sha256(committed)) {
+      console.error(`[build-wasm] REBUILT ARTIFACT MISMATCH: ${rel}`);
+      console.error(`  committed ${sha256(committed)}`);
+      console.error(`  rebuilt   ${sha256(built)}`);
+      mismatches++;
+    }
+  }
+  if (mismatches > 0) process.exit(1);
+  console.log(`[build-wasm] ${ARTIFACTS.length} rebuilt artifact(s) match committed output.`);
+  process.exit(0);
+}
+
 mkdirSync(distDir, { recursive: true });
 for (const artifact of ARTIFACTS) {
   copyFileSync(join(builtDir, artifact), join(distDir, artifact));
@@ -154,6 +215,8 @@ const manifest = {
   builtAt: null, // deliberately absent: a timestamp would make the manifest churn.
   features: FEATURES,
   suffix: SUFFIX,
+  emscripten: '4.0.8',
+  upstream: JSON.parse(readFileSync(join(vendorDir, 'source-stamp.json'), 'utf8')).upstream,
   artifacts: Object.fromEntries(
     ARTIFACTS.map((a) => [
       relative(root, join(distDir, a)).replace(/\\/g, '/'),
@@ -163,6 +226,11 @@ const manifest = {
   sources: Object.fromEntries(
     walk(join(wasmSrcDir, 'lib'))
       .concat(walk(join(wasmSrcDir, 'tools')))
+      .map((f) => [relative(root, f).replace(/\\/g, '/'), sha256(f)]),
+  ),
+  inputs: Object.fromEntries(
+    TRACKED_INPUTS.concat(walk(patchDir))
+      .sort()
       .map((f) => [relative(root, f).replace(/\\/g, '/'), sha256(f)]),
   ),
 };

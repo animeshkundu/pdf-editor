@@ -231,30 +231,35 @@ Acrobat. None of these is a private overlay format.
 
 ## 5. Edit content
 
-This section holds every `OPEN` item in the specification. Everything labelled `OPEN` here
-is decided by Spike A (the null filter) and Spike B (the encoding-inversion hit rate), both
-described in [`../PRODUCT-SPEC.md`](../PRODUCT-SPEC.md#open-text-editing-depth).
+Spike A is red. [ADR 0020](../adr/0020-content-stream-rewriting-failed-stage-one.md)
+supersedes the in-place rewrite design; the labels below record the disclosed overlay
+fallbacks and the capabilities withdrawn with that path.
 
 ### Text
 
-- [ ] `EDIT-001` **Edit existing text in place** `OPEN`, Spikes A and B.
-- [ ] `EDIT-002` **Reflow within a text block after an edit** `OPEN`, Spikes A and B.
-- [ ] `EDIT-003` **Change font, size, colour, spacing, and alignment of existing text** `OPEN`,
-      Spikes A and B.
+- [ ] `EDIT-001` **Edit existing text in place** `DEGRADED`. The fallback is a PDF
+      annotation/overlay and is disclosed as such; it does not replace the original text.
+- [ ] `EDIT-002` **Reflow within a text block after an edit** `DEGRADED`. Reflow is limited
+      to the overlay, never the producer's original run.
+- [ ] `EDIT-003` **Change font, size, colour, spacing, and alignment of existing text**
+      `DEGRADED`, on the disclosed overlay only.
 - [ ] `EDIT-004` **Add a new text block** `LOCAL`. Adding text does not require inverting an existing
       font's encoding, so it is not blocked on either spike.
-- [ ] `EDIT-005` **Delete a text run** `OPEN`, Spike A.
+- [ ] `EDIT-005` **Delete a text run** `EXCLUDED`, withdrawn after Spike A red. Covering
+      text is not deletion.
 - [ ] `EDIT-006` **Surface which path an edit took** (in place, or with a new subset embedded)
       `LOCAL`, and required by acceptance criterion H4.
 
 ### Images and objects
 
-- [ ] `EDIT-007` **Select, move, resize, and rotate an image** `OPEN`, Spike A.
-- [ ] `EDIT-008` **Replace an image** `OPEN`, Spike A.
-- [ ] `EDIT-009` **Delete an image** `OPEN`, Spike A.
-- [ ] `EDIT-010` **Crop an image in place** `OPEN`, Spike A.
+- [ ] `EDIT-007` **Select, move, resize, and rotate an image** `EXCLUDED`, withdrawn after
+      Spike A red.
+- [ ] `EDIT-008` **Replace an image** `EXCLUDED`, withdrawn after Spike A red.
+- [ ] `EDIT-009` **Delete an image** `EXCLUDED`, withdrawn after Spike A red.
+- [ ] `EDIT-010` **Crop an image in place** `EXCLUDED`, withdrawn after Spike A red.
 - [ ] `EDIT-011` **Extract an image to a file** `LOCAL`. Read-only, so no spike dependency.
-- [ ] `EDIT-012` **Arrange: bring forward, send backward, align, distribute** `OPEN`, Spike A.
+- [ ] `EDIT-012` **Arrange: bring forward, send backward, align, distribute** `EXCLUDED`,
+      withdrawn after Spike A red.
 - [ ] `EDIT-013` **Add an image** `LOCAL`
 
 ### Document-level content
@@ -288,11 +293,9 @@ described in [`../PRODUCT-SPEC.md`](../PRODUCT-SPEC.md#open-text-editing-depth).
       resolution, as
       [C7 and C6](../PRODUCT-SPEC.md#c7-and-c6-cannot-both-hold-on-the-same-save).
 - [ ] `EDIT-025` **Optimize: image downsampling and recompression, and font subsetting**
-      `OPEN`, Spike A. Both rewrite the page's resources and the content stream that
-      references them, so they carry exactly the fidelity risk the null-filter spike
-      measures. Split from `EDIT-024` because the two halves of Acrobat's "optimize" have
-      different risk profiles, and labelling them together would let the safe half carry
-      the unsafe one.
+      `EXCLUDED`, withdrawn after Spike A red. Both rewrite the page's resources and the
+      content stream that references them. Split from `EDIT-024` so the safe
+      garbage-collection half does not carry the withdrawn rewrite half.
 
 **Adding** any of the above is independent of the content-stream spikes. **Updating or
 removing** one is not, and the earlier blanket claim that "these document-level items are
@@ -516,15 +519,9 @@ unambiguous parity in the product.
 - [ ] `SIGN-028` **Mark text, images, or a region for redaction** `LOCAL`
 - [ ] `SIGN-029` **Search and mark all occurrences of a term or pattern** `LOCAL`
 - [ ] `SIGN-030` **Redaction properties**: fill colour, overlay text, and repeat overlay `LOCAL`
-- [ ] `SIGN-031` **Apply redaction, removing the content from the content stream** `OPEN`,
-      Spike A. Was labelled `LOCAL` while stating a Spike A dependency in the same
-      sentence, which is the definition of `OPEN` by this document's own rules. The
-      contradiction is corrected here rather than defended.
-      **If Spike A is red, redaction is withdrawn rather than shipped as an overlay.** A
-      black rectangle drawn over text is not redaction and will never be described as such
-      here. If Spike A is conditional, redaction ships only where the failing class can be
-      detected reliably, because a redaction that silently fails on an undetected class is
-      the worst outcome this product can produce.
+- [ ] `SIGN-031` **Apply redaction, removing the content from the content stream**
+      `EXCLUDED`, withdrawn after Spike A red. A black rectangle drawn over text is not
+      redaction and will never be described as such here.
       **Applying a redaction always forces a full, non-incremental save.** An incremental
       save appends, leaving the original unredacted objects physically present in an
       earlier revision of the same file, where a hex editor recovers them even though every
@@ -758,16 +755,11 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 - [ ] `A11Y-034` **Tags panel**: inspect, reorder, retype, and delete tags `LOCAL`, over
       the raw `/StructTreeRoot` per the note above.
 - [ ] `A11Y-035` **Reading order tool**: assign regions to tag types by drawing on the page
-      `OPEN`, Spike A. Assigning a drawn region to a tag type means writing `BDC`/`EMC`
-      marked-content operators with MCIDs **into the content stream**, which raw
-      `/StructTreeRoot` access does not reach. This is content-stream rewriting and carries
-      Spike A's risk.
-- [ ] `A11Y-036` **Autotag document** `OPEN`, Spike A, and `DEGRADED` in quality once
-      unblocked. Two independent problems, and the earlier label named only the second.
-      Applying tags requires writing marked-content operators into the content stream, as
-      `A11Y-035` does, so it is Spike A work. Separately, structure inference is heuristic
-      in every tool including Acrobat's, so results are presented as a proposal to review
-      and never applied silently.
+      `EXCLUDED`, withdrawn after Spike A red because it requires writing `BDC`/`EMC`
+      marked-content operators with MCIDs into the content stream.
+- [ ] `A11Y-036` **Autotag document** `EXCLUDED`, withdrawn after Spike A red. Structure
+      inference without content associations would produce tags that do not identify the
+      rendered content.
 - [ ] `A11Y-037` **Autotag form fields** `DEGRADED`, same reasoning.
 - [ ] `A11Y-038` **Set alternate text**, with a bulk pass over all figures `LOCAL`
 - [ ] `A11Y-039` **Set table headers and scope** `LOCAL`
@@ -845,13 +837,13 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 
 311 items in total.
 
-| Label      | Count | Where it concentrates                                                                                                                                                                                                                                                       |
-| ---------- | ----: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LOCAL`    |   256 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                                                                             |
-| `DEGRADED` |    18 | Office export, OCR, signature revocation status, field auto-detection, autotag, HTML conversion, barcode fields, RC4, scan comparison                                                                                                                                       |
-| `EXCLUDED` |    15 | Cloud review, request e-signatures, rights management, cloud sync, XFA, scanner input, web-page capture, form submit to URL, timestamping, revocation checking, LTV, folder-level JavaScript, prepress, Preflight authoring, sound annotations, Action Wizard compatibility |
-| `OPEN`     |    18 | Editing existing text and existing page objects (Spikes A and B), redaction and marked-content tagging (Spike A), signing (Spike C), signature validation (Spike D), certificate encryption (Spike E)                                                                       |
-| `EQUIV`    |     4 | Find, clipboard, save and save as, Read Out Loud                                                                                                                                                                                                                            |
+| Label      | Count | Where it concentrates                                                                                                                                                                                            |
+| ---------- | ----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LOCAL`    |   256 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                  |
+| `DEGRADED` |    21 | Text editing through disclosed overlays, Office export, OCR, signature revocation status, field auto-detection, HTML conversion, barcode fields, RC4, scan comparison                                            |
+| `EXCLUDED` |    25 | Existing content/object rewrites, true redaction, marked-content tagging, cloud workflows, XFA, scanner input, web capture, timestamping, revocation checking, LTV, prepress, sound, Action Wizard compatibility |
+| `OPEN`     |     5 | Signing (Spike C), signature validation (Spike D), and certificate encryption (Spike E)                                                                                                                          |
+| `EQUIV`    |     4 | Find, clipboard, save and save as, Read Out Loud                                                                                                                                                                 |
 
 By section:
 
@@ -877,22 +869,20 @@ items above, the items are correct.
 The concentration is the point. `EXCLUDED` is almost entirely workflows that need a server,
 which is the trade the product exists to make.
 
-`OPEN` grew from 10 to 18 under adversarial review, and the growth is the document working
-rather than failing. Content-stream rewriting (Spike A) accounts for most of it and reaches
-well beyond text into image editing, redaction, half of optimize, and marked-content
-tagging ([ADR 0012](../adr/0012-content-stream-text-editing.md)). The rest came from
-finding that three capabilities had no demonstrated engine path at all: signing depends on
-bridging a synchronous C callback to asynchronous WebCrypto (Spike C), signature validation
-needs a verifier the shim does not export (Spike D), and certificate-based encryption needs
-PDF's public-key security handler (Spike E). Each was previously labelled as though it
-worked.
+`OPEN` grew from 10 to 18 under adversarial review and then fell to 5 when Spike A supplied
+an answer rather than a promotion. The red result moved three text features to `DEGRADED`
+overlays and withdrew ten rewrite-dependent features to `EXCLUDED`
+([ADR 0020](../adr/0020-content-stream-rewriting-failed-stage-one.md)). The remaining open
+items have no demonstrated engine path: signing depends on bridging a synchronous C
+callback to asynchronous WebCrypto (Spike C), signature validation needs a verifier the
+shim does not export (Spike D), and certificate-based encryption needs PDF's public-key
+security handler (Spike E).
 
-`DEGRADED` is worth reading as a group. It is not one kind of weakness. Three come from
-reconstructing a model the PDF does not contain (Office export, autotag, field detection),
-three from working at the raster level rather than the object level (graphic diff,
-page-move detection, scan comparison), two from a missing network (revocation status), and
-the rest from specific engine or format limits. Each ships with its own disclosure because
-each is weak in a different way.
+`DEGRADED` is worth reading as a group. It is not one kind of weakness. Some reconstruct a
+model the PDF does not contain, three edit text through an overlay rather than replacing
+the original stream, three work at the raster level rather than the object level, and
+others follow from missing network access or format limits. Each ships with its own
+disclosure because each is weak in a different way.
 
 ## Scope, honestly
 

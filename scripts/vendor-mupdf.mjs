@@ -41,7 +41,15 @@
 // needs Emscripten and therefore a Linux environment.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -49,18 +57,55 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const vendorDir = join(root, 'vendor', 'mupdf-wasm');
 const srcDir = join(vendorDir, 'src');
 const patchDir = join(vendorDir, 'patches');
+const overlayDir = join(patchDir, 'files');
 
 // Pinned to the release matching the `mupdf` npm package in package.json. The JS
 // bindings and the C sources must come from the same tag or the generated TypeScript
 // declarations will not match the exports.
 const MUPDF_TAG = '1.28.0';
+const MUPDF_COMMIT = '205b8cf43551279d1215e88fe2845c5d595bade9';
 const MUPDF_REPO = 'https://github.com/ArtifexSoftware/mupdf.git';
+const EMSCRIPTEN_VERSION = '4.0.8';
+const EXPECTED_PATCHED_FILES = new Map([
+  [
+    'platform/wasm/lib/mupdf.c',
+    'c7dd73001a3ac6676cd6cba5c62d319633b171a49c7ee0af54acfb4fcbbd3f20',
+  ],
+  [
+    'platform/wasm/lib/mupdf.ts',
+    '303a62f646412ca6228bb7be6150aa25aef00e7e1314d6ba3cd02aeda020ede5',
+  ],
+  [
+    'platform/wasm/lib/mupdf-js-processor.c',
+    'bb354baf092bc1d2f611c535b8bd9f211dd89b32a061fa0d5628a520d8ea8840',
+  ],
+  [
+    'platform/wasm/tools/build.sh',
+    '362257917de7aeab3eb5a00ebb8322550b112f5f102535b81679933dd020351c',
+  ],
+]);
 
 function run(cmd, args, opts = {}) {
   const r = spawnSync(cmd, args, { stdio: 'inherit', shell: false, ...opts });
   if (r.status !== 0) {
     throw new Error(`${cmd} ${args.join(' ')} failed with status ${r.status}`);
   }
+}
+
+function capture(cmd, args, opts = {}) {
+  const result = spawnSync(cmd, args, {
+    encoding: 'utf8',
+    shell: false,
+    ...opts,
+  });
+  if (result.status !== 0) {
+    throw new Error(`${cmd} ${args.join(' ')} failed: ${result.stderr || result.stdout}`);
+  }
+  return result.stdout;
+}
+
+function sha256(data) {
+  return createHash('sha256').update(data).digest('hex');
 }
 
 if (existsSync(join(srcDir, '.git'))) {
@@ -83,6 +128,26 @@ if (existsSync(join(srcDir, '.git'))) {
   ]);
 }
 
+const remote = capture('git', ['remote', 'get-url', 'origin'], {
+  cwd: srcDir,
+}).trim();
+const head = capture('git', ['rev-parse', 'HEAD'], { cwd: srcDir }).trim();
+if (remote !== MUPDF_REPO || head !== MUPDF_COMMIT) {
+  throw new Error(
+    `vendored source identity mismatch: expected ${MUPDF_REPO}@${MUPDF_COMMIT}, ` +
+      `got ${remote}@${head}`,
+  );
+}
+const submoduleStatus = capture('git', ['submodule', 'status', '--recursive'], { cwd: srcDir });
+if (
+  submoduleStatus
+    .split('\n')
+    .filter(Boolean)
+    .some((line) => line[0] !== ' ')
+) {
+  throw new Error('vendored MuPDF has uninitialized or modified submodules');
+}
+
 const shimPath = join(srcDir, 'platform', 'wasm', 'lib', 'mupdf.c');
 if (!existsSync(shimPath)) {
   console.error(`[vendor-mupdf] Expected shim not found at ${shimPath}.`);
@@ -90,8 +155,22 @@ if (!existsSync(shimPath)) {
   process.exit(1);
 }
 
-const shimLines = readFileSync(shimPath, 'utf8').split('\n').length;
-console.log(`[vendor-mupdf] Shim is ${shimLines} lines.`);
+const overlays = [
+  {
+    source: join(overlayDir, 'mupdf-js-processor.c'),
+    target: join(srcDir, 'platform', 'wasm', 'lib', 'mupdf-js-processor.c'),
+  },
+];
+
+for (const overlay of overlays) {
+  if (!existsSync(overlay.source)) {
+    console.error(`[vendor-mupdf] Missing overlay: ${overlay.source}`);
+    process.exit(1);
+  }
+  mkdirSync(dirname(overlay.target), { recursive: true });
+  copyFileSync(overlay.source, overlay.target);
+  console.log(`[vendor-mupdf] Installed overlay: ${overlay.source}`);
+}
 
 if (!existsSync(patchDir)) {
   console.log('[vendor-mupdf] No patches directory yet; source fetched unmodified.');
@@ -122,13 +201,47 @@ for (const patch of patches) {
   run('git', ['apply', '--verbose', full], { cwd: srcDir });
 }
 
+for (const [path, expected] of EXPECTED_PATCHED_FILES) {
+  const actual = sha256(readFileSync(join(srcDir, path)));
+  if (actual !== expected) {
+    throw new Error(`patched source mismatch for ${path}: expected ${expected}, got ${actual}`);
+  }
+}
+const sourceStatus = capture('git', ['status', '--short', '--untracked-files=all'], {
+  cwd: srcDir,
+})
+  .split('\n')
+  .filter(Boolean)
+  .sort();
+const expectedStatus = [
+  ' M platform/wasm/lib/mupdf.c',
+  ' M platform/wasm/lib/mupdf.ts',
+  ' M platform/wasm/tools/build.sh',
+  '?? platform/wasm/lib/mupdf-js-processor.c',
+].sort();
+if (JSON.stringify(sourceStatus) !== JSON.stringify(expectedStatus)) {
+  throw new Error(
+    `vendored source contains changes outside the patch set:\n${sourceStatus.join('\n')}`,
+  );
+}
+
+const shimLines = readFileSync(shimPath, 'utf8').split('\n').length;
+console.log(`[vendor-mupdf] Patched shim is ${shimLines} lines.`);
+
 // Record exactly what the artifacts will be built from, so check-wasm-fresh.mjs can
 // prove the committed binaries correspond to this source and these patches.
 const stamp = {
   tag: MUPDF_TAG,
   repo: MUPDF_REPO,
+  upstream: {
+    commit: MUPDF_COMMIT,
+    submodulesSha256: sha256(submoduleStatus),
+  },
   patches,
+  overlays: overlays.map((overlay) => overlay.source.slice(root.length + 1)),
   shimLines,
 };
 writeFileSync(join(vendorDir, 'source-stamp.json'), `${JSON.stringify(stamp, null, 2)}\n`);
+writeFileSync(join(vendorDir, '.emscripten-version'), `${EMSCRIPTEN_VERSION}\n`);
 console.log('[vendor-mupdf] Wrote vendor/mupdf-wasm/source-stamp.json');
+console.log('[vendor-mupdf] Wrote vendor/mupdf-wasm/.emscripten-version');

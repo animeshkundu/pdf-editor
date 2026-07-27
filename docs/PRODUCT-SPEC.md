@@ -93,9 +93,9 @@ rather than silence.
 - **Adobe cloud review and shared reviews.** Multi-party review requires a server to hold
   the shared comment stream.
 - **Request e-signatures.** Sending a document to another party for signature is a hosted
-  workflow by definition. Note the asymmetry that matters: we can _sign_ a document
-  ([ADR 0018](adr/0018-signing-via-custom-signer-vtable.md)); we cannot _ask someone else
-  to_.
+  workflow by definition. Local signing remains `OPEN` on Spike C
+  ([ADR 0018](adr/0018-signing-via-custom-signer-vtable.md)); requesting another person's
+  signature is excluded regardless of that result.
 - **LiveCycle and Adobe Experience Manager rights management.** Policy-protected documents
   contact a rights server on every open. That is the opposite of this product.
 - **Cloud storage and cross-device sync.** Document Cloud, recent-files sync, and shared
@@ -136,16 +136,18 @@ entirely on that bridge and never addressed the synchrony mismatch.
 
 ## Open: text-editing depth
 
-Two spikes decide the entire shape of text editing. Neither has run. The outcome is not
-guessed here.
+Two spikes were defined to decide the entire shape of text editing. Spike A has now run
+under the independent-reader rule and is red. Spike B was cancelled because encoding
+inversion cannot restore a write path after the semantic-null filter already perturbed
+unrelated producer classes.
 
-### Spike A: the null filter
+### Spike A: the null filter — red
 
 Run `pdf_filter_page_contents` with a pass-through filter specified to change nothing,
 across a real corpus, and compare before and after with the independent oracles
 ([ADR 0019](adr/0019-correctness-oracles.md)).
 
-This is the cheapest possible question with the largest possible consequence. **If a filter
+This was the cheapest possible question with the largest possible consequence. **If a filter
 that changes nothing still perturbs the document, content-stream rewriting cannot be the
 primary editing path**, and the product's text editing is an annotation-overlay backend
 instead. Those are different products:
@@ -161,9 +163,9 @@ instead. Those are different products:
 The honest position today is that the overlay backend is the fallback, not the plan, and
 that this spike decides which one the product is.
 
-### Spike B: the encoding-inversion hit rate
+### Spike B: the encoding-inversion hit rate — cancelled
 
-Given content-stream rewriting is viable, the second question is how much of a real corpus
+Given content-stream rewriting were viable, the second question would have been how much of a real corpus
 can be edited **in place, reusing the embedded font** (Path A in
 [ADR 0012](adr/0012-content-stream-text-editing.md)) rather than by embedding a new subset
 (Path B).
@@ -179,7 +181,7 @@ so their results are comparable. It is assembled before either spike runs and is
 for the duration, because a corpus that grows during a measurement produces a number that
 means nothing.
 
-It must contain, at minimum: documents from at least eight distinct producers including
+The fixed corpus contains documents from at least eight distinct producers including
 Acrobat Distiller, Word, LaTeX, Ghostscript and at least one mobile scanner app; simple
 and CID fonts; subsetted and fully embedded fonts; at least one Type 3 font; tagged and
 untagged documents; documents with optional content groups, transparency groups, and
@@ -187,13 +189,19 @@ clipping paths; at least one right-to-left and one CJK document; linearised and
 non-linearised files; and at least one document that MuPDF repairs on open. Every
 document is redistributable, so the corpus can live in the repository.
 
-Its composition is recorded with the first spike finding under
+Its composition is executable in `tests/fixtures/pdf-corpus/corpus.ts` and recorded with
+the completed finding under
 [`research/`](research/) and does not change without a note saying why.
 
 ### Spike A decision rule
 
 The measurement: for every page of every corpus document, run the null filter, then
 compare before and after.
+
+**Result:** red. Ghostscript page 5, pdfTeX pages 2 through 28, and LibreOffice page 1
+exceeded C8. The failures are diffuse across unrelated producers and font classes.
+[ADR 0020](adr/0020-content-stream-rewriting-failed-stage-one.md) supersedes ADR 0012.
+Stage 2 was not run because a red stage 1 is conclusive under this rule.
 
 **A page passes** when qpdf reports the output structurally valid, extracted text is
 identical, and the pdf.js render differs by no more than the C8 per-page tolerance.
@@ -219,29 +227,9 @@ label requires both stages, and the finding must report them separately.
 
 ### Spike B decision rule
 
-The measurement: across the corpus, for every text run, attempt `invertEncoding()` against
-the embedded font and record success or the first character that failed. The **hit rate**
-is the proportion of runs where every character inverts, and it is reported per font type
-as well as overall.
-
-There is no threshold at which text editing is withdrawn, because **Path B is a working
-fallback rather than a failure**. The hit rate decides what the product _says_, not
-whether it ships:
-
-| Hit rate        | What shipped copy says                                                                                                                                                 |
-| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| At or above 95% | "Edits reuse the document's own fonts." The Path B case is a rare footnote.                                                                                            |
-| 70% to 95%      | "Edits usually reuse the document's own fonts; some embed a new subset." Both paths are described up front, and the UI names which one an edit took.                   |
-| Below 70%       | Path B is the common case and must be described as the normal behaviour, not the exception. The value of in-place editing is materially lower and the product says so. |
-
-Two results **do** withdraw a capability regardless of hit rate:
-
-- A font class where inversion appears to succeed but produces the **wrong glyph** is
-  worse than failure, because it silently corrupts a document. Any such class must be
-  detected and refused, and if it cannot be detected reliably, in-place editing is
-  withdrawn for that class.
-- Type 3 fonts and fonts with no usable encoding are refused with an explanation, as
-  [ADR 0012](adr/0012-content-stream-text-editing.md) already states.
+This measurement was conditional on Spike A green. It was not run. A hit rate cannot make
+an encoding inversion useful when the required stream rewrite already perturbs unrelated
+document classes. No hit-rate copy or capability claim was promoted.
 
 ### How an OPEN item is resolved
 

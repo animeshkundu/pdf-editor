@@ -111,18 +111,22 @@ The C API comment above that typedef says the callback creates "a signature base
 ranges of bytes", not merely a digest, so the whole CMS operation may need to complete
 synchronously. That makes the problem larger, not smaller.
 
-Possible resolutions, none yet demonstrated:
+Evidence now available:
 
-- **Asyncify**, an Emscripten transform that lets synchronous C call asynchronous
-  JavaScript. It works, and it costs binary size and speed across the whole module, which
-  matters against a 10.4 MB baseline.
+- **Asyncify** suspends and resumes a reduced synchronous-shaped C call, but MuPDF's real
+  signer dispatch, output stream, stack depth, CMS construction, failure propagation, and
+  runtime costs remain untested. The full binary's measured size increase is not a cost
+  bound. See the amended Spike C finding.
 - **JSPI**, the JavaScript Promise Integration proposal. Cleaner, but its availability
   across our browser floor needs checking and would likely raise that floor.
-- **Precompute the digest.** Run the hash before entering the callback, so the callback
-  only returns bytes already in hand. Whether MuPDF's ByteRange handling permits this is
-  exactly what the spike must establish.
-- **Hash synchronously outside WebCrypto** and use WebCrypto only for the signing
-  operation, if the two can be separated at the vtable boundary.
+- **Two phase** was evaluated against MuPDF 1.28.0 source. The private
+  `complete_signatures` writer locates `/ByteRange` and `/Contents`, writes the final
+  ranges, calls `pdf_write_digest`, and destroys unsaved-signature state in one save call.
+  There is no public prepare/install boundary. A two-phase design therefore needs a new
+  fork-owned state object that keeps the partially written output and exact ranges alive
+  across JavaScript re-entry. That is preferred to Asyncify but is not implemented.
+- **Precompute the digest** is not possible before save because the final byte ranges are
+  only known after the output and placeholders have been written.
 
 Until one is demonstrated, **signing is `OPEN` on Spike C** in
 [`../spec/parity-inventory.md`](../spec/parity-inventory.md), and this ADR should be read

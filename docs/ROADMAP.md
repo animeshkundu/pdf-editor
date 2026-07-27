@@ -64,46 +64,42 @@ Eighteen features are `OPEN` across the five.
 The largest block. It gates text editing, image editing, redaction, half of optimize, and
 marked-content tagging, because all of them go through the same filter.
 
-- [ ] **Vendor and build the MuPDF fork.** Apply the patch set, produce
+- [x] **Vendor and build the MuPDF fork.** Apply the patch set, produce
       `vendor/wasm-manifest.json`, and make `npm run check:wasm:fresh` pass in full mode.
       ([ADR 0004](adr/0004-fork-the-mupdf-wasm-build.md),
       [ADR 0006](adr/0006-three-toolchain-build-and-committed-wasm.md))
-      Partly done: `scripts/vendor-mupdf.mjs` fetches and patches, the stock build
-      reproduces Artifex's artifact byte for byte, and `mujs=yes` builds and links at a
-      cost of 240,327 bytes. Remaining: the patch set itself, the manifest, and the
-      freshness gate in full mode.
-- [ ] **`js_processor` end to end.** Walk a real page's content stream from TypeScript and
+      The committed five-artifact build and full source-digest freshness proof are landed.
+- [x] **`js_processor` end to end.** Walk a real page's content stream from TypeScript and
       confirm `op_Tf` yields a resolved `pdf_font_desc`, `op_BDC` yields the cooked
       marked-content dictionary including the MCID, and `op_BI` yields a decoded image.
       Prerequisite for the spike proper.
-- [ ] **Assemble the corpus.** Eight or more producers, simple and CID fonts, subsetted and
+- [x] **Assemble the corpus.** Eight or more producers, simple and CID fonts, subsetted and
       full embeddings, a Type 3, tagged and untagged, OCGs and transparency groups, RTL and
       CJK, linearised and not, and one document MuPDF repairs on open. Fixed before any
       spike runs, and shared with acceptance criteria C1, C2, C5, C8 and R5.
-- [ ] **Spike A stage 1: the null filter.** Run a pass-through filter specified to change
+- [x] **Spike A stage 1: the null filter.** Run a pass-through filter specified to change
       nothing across the corpus and compare with the oracles. Green, conditional or red,
-      per the decision table.
-- [ ] **Spike A stage 2: a non-null rewrite.** A green stage 1 is necessary but **not
+      per the decision table. **Red:** Ghostscript, pdfTeX, and LibreOffice exceed C8.
+- [x] **Spike A stage 2: cancelled by red stage 1.** A green stage 1 is necessary but **not
       sufficient**: a null filter proves the round trip preserves a document told not to
       change, not that a rewrite which changes something is safe. Stage 2 replaces one word
       and deletes one run, then inspects every changed page for collateral damage.
-      Promotion needs both stages, reported separately.
+      Promotion needs both stages, reported separately. The precommitted rule makes a red
+      stage 1 conclusive, so no non-null mutation was run.
 
 ### Spike B: the encoding-inversion hit rate
 
-- [ ] **Build `invertEncoding()` and measure.** Across the corpus, per font type, how often
+- [x] **Cancelled after Spike A red.** `invertEncoding()` was not built or measured. Its
+      result cannot restore a write path after the semantic-null filter already failed.
+      The original task was: across the corpus, per font type, measure how often
       every character of a run inverts against the embedded font. No library in any language
       does this, so there is no prior art to borrow a number from.
-      ([ADR 0012](adr/0012-content-stream-text-editing.md))
-      The rate decides what shipped copy says rather than whether text editing ships, since
-      Path B is a working fallback. Two results withdraw a capability regardless: a font
-      class where inversion silently produces the **wrong glyph**, and fonts with no usable
-      encoding.
+      ([superseded ADR 0012](adr/0012-content-stream-text-editing.md))
 
 ### Spike C: the synchronous signer bridge
 
-**The one that may have no solution, and the most serious risk in the project after the
-encoding inversion.** Blocks `SIGN-005`, `SIGN-006`, `SIGN-008` and part of `SIGN-007`.
+**The one that may have no solution.** Blocks `SIGN-005`, `SIGN-006`, `SIGN-008` and part
+of `SIGN-007`.
 
 - [ ] **Prove the bridge, or fail the design.** `pdf_pkcs7_signer.create_digest` is
       synchronous: it returns `int` and writes into a caller-supplied buffer
@@ -160,7 +156,7 @@ These de-risk the runtime rather than the engine surface, and can run in paralle
       [ADR 0017](adr/0017-persistence-via-opfs.md))
 - [ ] **iOS survival thresholds.** Measure where iOS Safari actually kills the tab and
       reconcile `IOS_BUDGET` against it. ([ADR 0014](adr/0014-resource-ceilings.md))
-- [ ] **The oracles in CI.** pdf.js and qpdf wired in as acceptance readers, with a first
+- [x] **The oracles in CI.** pdf.js and qpdf wired in as acceptance readers, with a first
       test that fails when output is subtly wrong. Every other spike's verdict depends on
       these, so they come first in practice.
       ([ADR 0019](adr/0019-correctness-oracles.md))
@@ -171,12 +167,9 @@ Most of the specification moved earlier, into Phase 0b, because it turned out to
 buildable without the spikes and because writing it found three engine problems that
 planning had not. What is left genuinely depends on results.
 
-- [ ] Write the text-editing depth section of
-      [`PRODUCT-SPEC.md`](PRODUCT-SPEC.md#open-text-editing-depth) from the Spike A and B
-      findings, and promote or withdraw the eighteen `OPEN` items accordingly.
-- [ ] Reconcile every ADR against what the spikes actually showed. An ADR contradicted by
-      evidence gets **superseded, not quietly edited**. ADR 0018 is the likeliest
-      candidate, on Spike C.
+- [x] Write the text-editing depth result from Spike A, cancel Spike B, and resolve the
+      thirteen rewrite-dependent `OPEN` items.
+- [x] Reconcile the contradicted content-stream ADR. ADR 0020 supersedes ADR 0012.
 - [ ] Re-run the self-critique pass over the inventory once the labels move, since a
       promotion is exactly when optimism creeps back in.
 
@@ -194,9 +187,9 @@ planning had not. What is left genuinely depends on results.
 - [ ] Page operations: reorder, rotate, insert, delete, extract, merge, split.
 - [ ] Annotations: highlight, note, ink, shapes, stamps.
 - [ ] Form filling, including AcroForm JavaScript through `mujs=yes`.
-- [ ] Text editing, on whichever paths the spike showed to be honest.
-      ([ADR 0012](adr/0012-content-stream-text-editing.md))
-- [ ] Redaction that removes content from the stream rather than covering it.
+- [ ] Text editing through the disclosed annotation/overlay fallback only.
+      ([ADR 0020](adr/0020-content-stream-rewriting-failed-stage-one.md))
+- [x] True redaction withdrawn after Spike A red; an overlay is not redaction.
 - [ ] Signing. ([ADR 0018](adr/0018-signing-via-custom-signer-vtable.md))
 
 ## Phase 5: beyond
