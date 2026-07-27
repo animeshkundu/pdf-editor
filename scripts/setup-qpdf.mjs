@@ -11,7 +11,6 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,7 +50,10 @@ async function install() {
   }
 
   mkdirSync(cacheRoot, { recursive: true });
-  const tempDir = mkdtempSync(join(tmpdir(), 'pdf-editor-qpdf-'));
+  // Stage inside the cache root, not os.tmpdir(). On a machine where /tmp is a separate
+  // filesystem the final renameSync fails with EXDEV, and rename is what makes the
+  // install atomic, so copying instead would trade one bug for a worse one.
+  const tempDir = mkdtempSync(join(cacheRoot, `qpdf-${VERSION}-staging-`));
   const archivePath = join(tempDir, 'qpdf.zip');
   const extractDir = join(tempDir, 'extract');
   try {
@@ -61,8 +63,14 @@ async function install() {
       encoding: 'utf8',
       shell: false,
     });
+    if (unzip.error) {
+      throw new Error(`failed to run unzip: ${unzip.error.message}`);
+    }
     if (unzip.status !== 0) {
-      throw new Error(`failed to extract qpdf: ${unzip.stderr || unzip.stdout}`);
+      throw new Error(
+        `failed to extract qpdf: unzip exited ${unzip.status}: ` +
+          `${unzip.stderr || unzip.stdout || '(no output)'}`,
+      );
     }
     chmodSync(join(extractDir, 'bin', 'qpdf'), 0o755);
     rmSync(installDir, { recursive: true, force: true });
