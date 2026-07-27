@@ -11,9 +11,14 @@ import { corpus } from './fixtures/pdf-corpus/corpus.js';
 
 Object.assign(globalThis, { DOMMatrix, ImageData, Path2D });
 
-const corpusDir = fileURLToPath(new URL('./fixtures/pdf-corpus/', import.meta.url));
-const cMapUrl = fileURLToPath(new URL('../node_modules/pdfjs-dist/cmaps/', import.meta.url));
-const standardFontDataUrl = fileURLToPath(
+// pdf.js rejects a factory URL containing Windows backslashes, so normalise the
+// separators rather than handing it a native path. Without this the suite cannot run
+// off Linux at all.
+const asFactoryPath = (url: URL) => fileURLToPath(url).replaceAll('\\', '/');
+
+const corpusDir = asFactoryPath(new URL('./fixtures/pdf-corpus/', import.meta.url));
+const cMapUrl = asFactoryPath(new URL('../node_modules/pdfjs-dist/cmaps/', import.meta.url));
+const standardFontDataUrl = asFactoryPath(
   new URL('../node_modules/pdfjs-dist/standard_fonts/', import.meta.url),
 );
 const workDir = mkdtempSync(join(tmpdir(), 'pdf-editor-oracle-'));
