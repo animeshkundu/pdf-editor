@@ -25,9 +25,11 @@ import {
 } from 'lucide-react';
 import type { EngineTypes } from '@/lib/engine/port';
 import { useDocumentStore } from '@/lib/store/document';
+import { useToolStore } from '@/lib/store/tools';
 import { viewportStore } from '@/lib/store/viewport';
 import ActiveTextEntry from '../ActiveTextEntry';
 import FeatureBadge from '../FeatureBadge';
+import { describeRedactionOutcome, snapshotRedactionText } from '../redactionOutcome';
 import type { ToolPanelProps } from './types';
 
 type AnnotationType = EngineTypes['AnnotationType'];
@@ -248,7 +250,7 @@ const TOOLS: readonly ToolDefinition[] = [
     icon: Redo2,
     status: 'LOCAL',
     disclosure:
-      'A mark does not remove or hide content. Ordinary output is blocked while marks remain.',
+      'Choose this tool, then drag the exact page region to redact. For text, select it and use the selection action. A mark does not remove content until applied.',
   },
 ];
 
@@ -339,6 +341,8 @@ export default function MarkupTools({
   onError,
 }: Pick<ToolPanelProps, 'engine' | 'onMutation' | 'onError'>) {
   const [annotations, setAnnotations] = useState<readonly AnnotationInfo[]>([]);
+  const activeEditorTool = useToolStore((state) => state.activeTool);
+  const selectEditorTool = useToolStore((state) => state.selectTool);
   const setRedactionNotice = useDocumentStore((state) => state.setRedactionNotice);
   const [busy, setBusy] = useState(false);
   const [outputState, setOutputState] = useState<EngineTypes['OutputState'] | null>(null);
@@ -796,11 +800,19 @@ export default function MarkupTools({
             onClick={() => {
               setBusy(true);
               setRedactionOutcome(null);
-              void engine
-                .applyRedactions(confirmSignatureInvalidation)
-                .then((report) => {
+              const markedPages = [
+                ...new Set(
+                  annotations
+                    .filter((annotation) => annotation.type === 'Redact')
+                    .map((annotation) => annotation.pageIndex),
+                ),
+              ];
+              void snapshotRedactionText(engine, markedPages)
+                .then(async (before) => {
+                  const report = await engine.applyRedactions(confirmSignatureInvalidation);
                   onMutation(report);
-                  const notice = `Applied ${report.applied} redaction ${report.applied === 1 ? 'mark' : 'marks'} on ${report.pages} ${report.pages === 1 ? 'page' : 'pages'}. Output is unblocked.`;
+                  const after = await snapshotRedactionText(engine, markedPages);
+                  const notice = describeRedactionOutcome(report, before, after);
                   setRedactionOutcome(notice);
                   setRedactionNotice(notice);
                   load();
@@ -834,11 +846,18 @@ export default function MarkupTools({
                   type="button"
                   key={tool.id}
                   disabled={busy}
+                  aria-pressed={
+                    tool.id === 'redaction' ? activeEditorTool === 'redaction-mark' : undefined
+                  }
                   aria-describedby={tool.disclosure ? `disclosure-${tool.id}` : undefined}
                   onClick={() => {
                     if (tool.id === 'image-stamp') imageInput.current?.click();
                     else if (tool.id === 'attachment') attachmentInput.current?.click();
-                    else if (tool.textEntry) setActiveTextTool(tool);
+                    else if (tool.id === 'redaction') {
+                      selectEditorTool(
+                        activeEditorTool === 'redaction-mark' ? 'default' : 'redaction-mark',
+                      );
+                    } else if (tool.textEntry) setActiveTextTool(tool);
                     else add(tool);
                   }}
                 >

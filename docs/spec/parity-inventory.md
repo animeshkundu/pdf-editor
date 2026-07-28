@@ -387,13 +387,20 @@ unambiguous parity in the product.
 
 ### Filling
 
-- [ ] `FORM-009` **Fill every field type** `LOCAL`
-- [ ] `FORM-010` **Tab between fields in tab order** `LOCAL`
-- [ ] `FORM-011` **Highlight fields**, with a toggle `LOCAL`
-- [ ] `FORM-012` **Required-field indication and validation on submit** `LOCAL`
-- [ ] `FORM-013` **Auto-complete from previous entries** `LOCAL`, stored in OPFS, off by default, and
-      clearable. Acrobat's equivalent is on by default; storing what someone typed into a
-      form without asking is not a default we are willing to ship.
+- [ ] `FORM-009` **Fill every field type** `DEGRADED`. Saved values can be entered from the field
+      list, but page-widget click targeting is not wired to the editor.
+- [ ] `FORM-010` **Tab between fields in tab order** `OPEN`, **Spike F (interactive widget
+      surface)**. Tab order can be authored; the spike must prove keyboard focus, value editing, and
+      page-coordinate hit testing without positioned DOM text.
+- [ ] `FORM-011` **Highlight fields**, with a toggle `DEGRADED`. The toggle highlights rows in the
+      field list; page-widget highlighting is not available.
+- [ ] `FORM-012` **Required-field indication and validation on submit** `DEGRADED`. Required fields
+      are indicated and list-entered values can be checked, but there is no interactive page submit
+      flow.
+- [ ] `FORM-013` **Auto-complete from previous entries** `OPEN`, **Spike G (consented local form
+      history)**. The spike must prove opt-in, clearable OPFS storage that cannot cross document
+      boundaries accidentally. Acrobat's equivalent is on by default; storing what someone typed
+      into a form without asking is not a default we are willing to ship.
 - [ ] `FORM-014` **Reset form** `LOCAL`
 - [ ] `FORM-015` **Save a partially filled form and resume** `LOCAL`
 

@@ -735,6 +735,7 @@ export default function EditorShell({
               selectionModeRef={selectionModeRef}
               onFind={openFind}
               onSelectionAction={setSelectionAction}
+              onMutation={onMutation}
               onError={setError}
             />
           ) : (

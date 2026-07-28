@@ -225,8 +225,8 @@ export const COMMANDS: readonly CommandDefinition[] = [
   {
     id: 'forms',
     parityId: 'FORM-009',
-    status: 'LOCAL',
-    label: 'Fill and prepare forms',
+    status: 'DEGRADED',
+    label: 'Prepare forms (filling via field list)',
     action: 'forms',
     requiresDocument: true,
     pipelineSafe: false,

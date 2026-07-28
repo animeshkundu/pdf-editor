@@ -405,7 +405,9 @@ describe('Phase 3 viewer acceptance', () => {
     });
 
     expect(engine.applyRedactions).toHaveBeenCalledWith(false);
-    expect(container.textContent).toContain('Output is unblocked.');
+    expect(container.textContent).toContain('removed no extractable text');
+    expect(container.textContent).toContain('Do not treat this redaction as successful');
+    expect(container.textContent).not.toContain('Output is unblocked.');
   });
 
   it('SIGN-031 renders a refusal category and remedy at the apply action', async () => {

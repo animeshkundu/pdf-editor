@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, type RefObject } fr
 import engineErrors, { type EngineTypes } from '@/lib/engine/port';
 import renderLayout from '@/lib/render/layout';
 import type { PageRotation } from '@/lib/render/layout';
+import { useToolStore } from '@/lib/store/tools';
 import { viewportStore } from '@/lib/store/viewport';
 import type { SelectionAction } from './SelectionActionBar';
 
@@ -34,6 +35,7 @@ interface DocumentViewportProps {
   readonly selectionModeRef: RefObject<HTMLButtonElement | null>;
   readonly onFind: () => void;
   readonly onSelectionAction: (action: SelectionAction | null) => void;
+  readonly onMutation: (result: EngineTypes['MutationResult']) => void;
   readonly onError: (message: string) => void;
 }
 
@@ -148,6 +150,7 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
       selectionModeRef,
       onFind,
       onSelectionAction,
+      onMutation,
       onError,
     },
     ref,
@@ -157,6 +160,8 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
     const readingRef = useRef<HTMLDivElement>(null);
     const analysisRef = useRef<HTMLParagraphElement>(null);
     const apiRef = useRef<DocumentViewportHandle | null>(null);
+    const activeTool = useToolStore((state) => state.activeTool);
+    const resetTool = useToolStore((state) => state.resetTool);
 
     useImperativeHandle(ref, () => ({
       goToPage(pageIndex) {
@@ -366,6 +371,34 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           const start = dragStart.point;
           const end = pointFromEvent(event, pageIndex);
           dragStart = null;
+          if (activeTool === 'redaction-mark') {
+            const rect: EngineTypes['PdfRect'] = [
+              Math.min(start[0], end[0]),
+              Math.min(start[1], end[1]),
+              Math.max(start[0], end[0]),
+              Math.max(start[1], end[1]),
+            ];
+            if (rect[2] - rect[0] < 1 || rect[3] - rect[1] < 1) {
+              onError('Drag over the exact region to redact. No mark was created.');
+              return;
+            }
+            void engine
+              .addAnnotation({
+                pageIndex,
+                type: 'Redact',
+                rect,
+                contents: 'Unapplied region redaction mark',
+                color: [0, 0, 0],
+                opacity: 1,
+                flags: 4,
+              })
+              .then((result) => {
+                onMutation(result);
+                resetTool();
+              })
+              .catch((error: unknown) => reportError('Adding region redaction mark', error));
+            return;
+          }
           void engine
             .selectText(pageIndex, start, end, controller.signal)
             .then((result) => {
@@ -694,12 +727,15 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         scroller.removeEventListener('keydown', onKeyDown);
       };
     }, [
+      activeTool,
       analysisStatusRef,
       currentPageRef,
       engine,
       onError,
       onFind,
+      onMutation,
       onSelectionAction,
+      resetTool,
       selectionModeRef,
       zoomRef,
     ]);

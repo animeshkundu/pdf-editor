@@ -239,7 +239,7 @@ button:disabled {
 
 .global-bar {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1.5fr) minmax(0, auto);
+  grid-template-columns: max-content minmax(0, 1fr) minmax(0, max-content);
   align-items: center;
   gap: var(--space-200);
   min-width: 0;
@@ -295,7 +295,10 @@ button:disabled {
 }
 
 .document-title {
+  width: 100%;
+  max-width: 100%;
   align-items: center;
+  justify-self: stretch;
   text-align: center;
 }
 
@@ -1611,6 +1614,12 @@ button:disabled {
   background: var(--danger-surface);
 }
 
+.loading-toast {
+  min-width: min(24rem, calc(100% - var(--space-400)));
+  min-height: var(--control-height);
+  line-height: 1.4;
+}
+
 .error-toast button {
   min-height: var(--control-height);
   border: 0;
@@ -1627,6 +1636,16 @@ button:disabled {
   color: var(--text-primary);
   cursor: pointer;
   text-decoration: underline;
+}
+
+@media (max-width: 1100px) {
+  .global-bar {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+
+  .document-title {
+    display: none;
+  }
 }
 
 @media (max-width: 760px) {

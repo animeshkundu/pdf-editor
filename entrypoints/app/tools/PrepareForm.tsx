@@ -339,8 +339,14 @@ export default function PrepareForm({
           <span className="eyebrow">AcroForm</span>
           <h2>Forms</h2>
         </div>
-        <FeatureBadge status="LOCAL" />
+        <FeatureBadge status="DEGRADED" />
       </div>
+
+      <p className="warning-card" role="status">
+        DEGRADED: saved form values can be entered only by selecting a field in the list below
+        and choosing Edit field value or Toggle field. Clicking a field on the PDF page is not
+        wired to the editor.
+      </p>
 
       <div className="form-mode-bar">
         <button

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { EngineTypes } from '@/lib/engine/port';
 import { useDocumentStore } from '@/lib/store/document';
 import FeatureBadge from '../FeatureBadge';
+import { describeRedactionOutcome, snapshotRedactionText } from '../redactionOutcome';
 import type { ToolPanelProps } from './types';
 
 export default function Security({
@@ -72,13 +73,23 @@ export default function Security({
               setApplyingRedactions(true);
               setRedactionOutcome(null);
               void engine
-                .applyRedactions(confirmRewrite)
-                .then((report) => {
+                .listAnnotations()
+                .then((annotations) => [
+                  ...new Set(
+                    annotations
+                      .filter((annotation) => annotation.type === 'Redact')
+                      .map((annotation) => annotation.pageIndex),
+                  ),
+                ])
+                .then(async (markedPages) => {
+                  const before = await snapshotRedactionText(engine, markedPages);
+                  const report = await engine.applyRedactions(confirmRewrite);
                   onMutation(report);
                   setState((current) =>
                     current ? { ...current, unappliedRedactions: 0 } : current,
                   );
-                  const notice = `Applied ${report.applied} redaction ${report.applied === 1 ? 'mark' : 'marks'} on ${report.pages} ${report.pages === 1 ? 'page' : 'pages'}. Output is unblocked.`;
+                  const after = await snapshotRedactionText(engine, markedPages);
+                  const notice = describeRedactionOutcome(report, before, after);
                   setRedactionOutcome(notice);
                   setRedactionNotice(notice);
                 })

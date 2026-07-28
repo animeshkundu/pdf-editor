@@ -4,6 +4,7 @@ import {
   Highlighter,
   MessageSquareText,
   PencilLine,
+  ShieldAlert,
   Strikethrough,
   Underline,
 } from 'lucide-react';
@@ -36,14 +37,13 @@ export default function SelectionActionBar({
   const x = Math.max(8, Math.min(window.innerWidth - 280, (left + right) / 2 - 140));
   const y = placeBelow ? bottom + 8 : top - 52;
 
-  const add = (type: 'Highlight' | 'Underline' | 'StrikeOut' | 'Text') => {
-    const quad = action.selection.quads[0];
-    if (!quad) {
+  const add = (type: 'Highlight' | 'Underline' | 'StrikeOut' | 'Text' | 'Redact') => {
+    if (action.selection.quads.length === 0) {
       onError('The selection has no writable text geometry.');
       return;
     }
-    const xs = [quad[0], quad[2], quad[4], quad[6]];
-    const ys = [quad[1], quad[3], quad[5], quad[7]];
+    const xs = action.selection.quads.flatMap((quad) => [quad[0], quad[2], quad[4], quad[6]]);
+    const ys = action.selection.quads.flatMap((quad) => [quad[1], quad[3], quad[5], quad[7]]);
     const rect: EngineTypes['PdfRect'] = [
       Math.min(...xs),
       Math.min(...ys),
@@ -55,8 +55,18 @@ export default function SelectionActionBar({
         pageIndex: action.selection.pageIndex,
         type,
         rect,
-        contents: type === 'Text' ? action.selection.text : '',
-        color: type === 'Highlight' ? [1, 0.84, 0.2] : [0.29, 0.42, 0.97],
+        contents:
+          type === 'Text'
+            ? action.selection.text
+            : type === 'Redact'
+              ? 'Unapplied redaction mark'
+              : '',
+        color:
+          type === 'Redact'
+            ? [0, 0, 0]
+            : type === 'Highlight'
+              ? [1, 0.84, 0.2]
+              : [0.29, 0.42, 0.97],
         opacity: type === 'Highlight' ? 0.35 : 1,
         flags: 4,
         ...(type === 'Text' ? {} : { quadPoints: action.selection.quads }),
@@ -160,6 +170,13 @@ export default function SelectionActionBar({
           </button>
           <button type="button" aria-label="Comment on selection" onClick={() => add('Text')}>
             <MessageSquareText aria-hidden="true" size={16} />
+          </button>
+          <button
+            type="button"
+            aria-label="Mark selected text for redaction"
+            onClick={() => add('Redact')}
+          >
+            <ShieldAlert aria-hidden="true" size={16} />
           </button>
         </>
       )}
