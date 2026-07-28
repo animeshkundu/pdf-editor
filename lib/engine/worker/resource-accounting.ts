@@ -1,11 +1,14 @@
 import type * as mupdf from '../../../vendor/mupdf-wasm/dist/mupdf.js';
 import { persistenceSnapshot } from './save';
 
-// MuPDF defines PDF_JS_LIMIT_MEMORY as (100 << 20) in source/pdf/pdf-js.c. The limit is
-// per JS context, and all actions in a document share that context, so script count cannot
-// multiply this reserve. Normal mutations use one context; console evaluation clones the
-// PDF and temporarily owns a second context.
-export const JAVASCRIPT_CONTEXT_MEMORY_LIMIT = 100 << 20;
+// The engine admits at most sixteen executions at 16 MiB each for one document lifetime.
+// MuJS does not refund its allowance when memory is released, so project the full cumulative
+// allowance before creating the context. Console evaluation clones the PDF and temporarily
+// owns a separately bounded context that is destroyed before the request returns.
+export const JAVASCRIPT_EXECUTION_MEMORY_ALLOWANCE = 16 << 20;
+export const JAVASCRIPT_EXECUTION_LIMIT = 16;
+export const JAVASCRIPT_CONTEXT_MEMORY_LIMIT =
+  JAVASCRIPT_EXECUTION_MEMORY_ALLOWANCE * JAVASCRIPT_EXECUTION_LIMIT;
 
 export function javaScriptContextProjection(hasScripts: boolean): number {
   return hasScripts ? JAVASCRIPT_CONTEXT_MEMORY_LIMIT : 0;
@@ -33,5 +36,7 @@ export class DocumentSizeAccounting {
 export default {
   DocumentSizeAccounting,
   JAVASCRIPT_CONTEXT_MEMORY_LIMIT,
+  JAVASCRIPT_EXECUTION_LIMIT,
+  JAVASCRIPT_EXECUTION_MEMORY_ALLOWANCE,
   javaScriptContextProjection,
 };

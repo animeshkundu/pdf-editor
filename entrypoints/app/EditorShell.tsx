@@ -299,6 +299,8 @@ export default function EditorShell({
           handleEngineEvent(event);
           if (event.event === 'persistence-error') {
             setError(`Crash recovery failed. ${event.message}`);
+          } else if (event.event === 'javascript-disabled') {
+            setError(event.message);
           }
         });
         currentEngineRef.current = nextEngine;

@@ -53,7 +53,7 @@ export const useDocumentStore = create<DocumentState>((set) => ({
   setRedactionNotice: (redactionNotice) => set({ redactionNotice }),
   handleEngineEvent: (event) => {
     if (event.event === 'persistence-error') set({ persistenceError: event.message });
-    else if (!event.available)
+    else if (event.event === 'persistence-status' && !event.available)
       set({ persistenceError: event.reason ?? 'Crash recovery is unavailable.' });
   },
   markSaved: () =>

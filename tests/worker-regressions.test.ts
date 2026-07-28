@@ -2,6 +2,8 @@ import * as mupdf from '../vendor/mupdf-wasm/dist/mupdf.js';
 import {
   DocumentSizeAccounting,
   JAVASCRIPT_CONTEXT_MEMORY_LIMIT,
+  JAVASCRIPT_EXECUTION_LIMIT,
+  JAVASCRIPT_EXECUTION_MEMORY_ALLOWANCE,
   javaScriptContextProjection,
 } from '../lib/engine/worker/resource-accounting';
 import { journalHistory, journalOperation } from '../lib/engine/worker/mutations/transaction';
@@ -19,10 +21,12 @@ function createDocument(): mupdf.PDFDocument {
 }
 
 describe('document worker resource regressions', () => {
-  it('reserves one MuJS context independent of script or edited-field count', () => {
+  it('projects the full lifetime MuJS allowance before scripts can run', () => {
     expect(javaScriptContextProjection(false)).toBe(0);
     expect(javaScriptContextProjection(true)).toBe(JAVASCRIPT_CONTEXT_MEMORY_LIMIT);
-    expect(JAVASCRIPT_CONTEXT_MEMORY_LIMIT).toBe(100 << 20);
+    expect(JAVASCRIPT_EXECUTION_LIMIT).toBe(16);
+    expect(JAVASCRIPT_EXECUTION_MEMORY_ALLOWANCE).toBe(16 << 20);
+    expect(JAVASCRIPT_CONTEXT_MEMORY_LIMIT).toBe(256 << 20);
   });
 
   it('refreshes size accounting from the actual document after undo', () => {

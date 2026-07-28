@@ -273,7 +273,14 @@ export interface EngineTypes {
   };
   JavaScriptEvent: {
     readonly type:
-      'alert' | 'print' | 'launch-url' | 'mail-doc' | 'submit' | 'exec-menu-item' | 'console';
+      | 'alert'
+      | 'print'
+      | 'launch-url'
+      | 'mail-doc'
+      | 'submit'
+      | 'exec-menu-item'
+      | 'console'
+      | 'budget-exhausted';
     readonly detail: string;
     readonly blocked: boolean;
   };
@@ -852,6 +859,10 @@ export interface EngineTypes {
   EngineEvent:
     | {
         readonly event: 'persistence-error';
+        readonly message: string;
+      }
+    | {
+        readonly event: 'javascript-disabled';
         readonly message: string;
       }
     | {

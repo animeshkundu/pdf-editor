@@ -25,6 +25,11 @@ import {
 } from './resource-accounting';
 import { persistenceSnapshot, saveDocument, snapshotDocument } from './save';
 
+type BoundedPDFDocument = mupdf.PDFDocument & {
+  setJSExecutionEnabled(enabled: boolean): void;
+  isJSExecutionEnabled(): boolean;
+  isJSBudgetExhausted(): boolean;
+};
 type AnnotationInfo = EngineTypes['AnnotationInfo'];
 type AttachmentInfo = EngineTypes['AttachmentInfo'];
 type DocumentInfo = EngineTypes['DocumentInfo'];
@@ -48,6 +53,7 @@ const MAX_JAVASCRIPT_EVENT_DETAIL = 4_096;
 const cancelled = new Set<number>();
 const javaScriptEvents: EngineTypes['JavaScriptEvent'][] = [];
 let activeJavaScriptEvents: EngineTypes['JavaScriptEvent'][] | null = null;
+let javaScriptExhaustionSurfaced = false;
 
 let documentName = '';
 let iosBudget = false;
@@ -93,9 +99,37 @@ function assertSecondDocumentCost(byteLength: number): void {
 
 function projectedJavaScriptMutationBytes(
   document: mupdf.PDFDocument,
-  scope: 'document' | 'field',
+  scope: 'document' | 'field' | 'any',
 ): number {
-  return javaScriptContextProjection(formMutations.countJavaScriptActions(document, scope) > 0);
+  const hasScripts =
+    scope === 'any'
+      ? formMutations.countJavaScriptActions(document, 'document') > 0 ||
+        formMutations.countJavaScriptActions(document, 'field') > 0
+      : formMutations.countJavaScriptActions(document, scope) > 0;
+  return javaScriptContextProjection(hasScripts);
+}
+
+function boundedJavaScript(document: mupdf.PDFDocument): BoundedPDFDocument {
+  return document as BoundedPDFDocument;
+}
+
+function surfaceJavaScriptExhaustion(document: mupdf.PDFDocument): void {
+  if (!boundedJavaScript(document).isJSBudgetExhausted() || javaScriptExhaustionSurfaced)
+    return;
+  javaScriptExhaustionSurfaced = true;
+  const message =
+    'PDF scripts reached this document’s safety limit. Further scripts were stopped; viewing and editing remain available.';
+  javaScriptEvents.push({ type: 'budget-exhausted', detail: message, blocked: true });
+  if (javaScriptEvents.length > MAX_JAVASCRIPT_EVENTS) javaScriptEvents.shift();
+  postEvent(scope, { event: 'javascript-disabled', message });
+}
+
+function withJavaScriptExecution<T>(document: mupdf.PDFDocument, operation: () => T): T {
+  try {
+    return operation();
+  } finally {
+    surfaceJavaScriptExhaustion(document);
+  }
 }
 
 function recordJavaScriptEvent(event: mupdf.PDFJSEvent): void {
@@ -292,17 +326,18 @@ async function openDocument(
     documentSize.reset(payload.data.byteLength);
     journalRevision = 0;
     javaScriptEvents.length = 0;
+    javaScriptExhaustionSurfaced = false;
     let openedWithJavaScriptMutation = false;
     let openedJavaScriptBytes = 0;
     if (document instanceof mupdf.PDFDocument) {
       document.setJSEventListener(recordJavaScriptEvent);
       document.enableJournal();
-      const projectedBytes = projectedJavaScriptMutationBytes(document, 'document');
+      const projectedBytes = projectedJavaScriptMutationBytes(document, 'any');
       if (projectedBytes > 0) assertMutationCost(projectedBytes);
       const before = document.getJournal();
       document.beginOperation('Run document JavaScript');
       try {
-        document.enableJS();
+        withJavaScriptExecution(document, () => document.enableJS());
         document.endOperation();
       } catch (error) {
         document.abandonOperation();
@@ -363,10 +398,18 @@ async function renderTile(
     );
     pixmap.clear(255);
     const device = arena.keep(new mupdf.DrawDevice(mupdf.Matrix.identity, pixmap));
+    const pdfDocument = asPdfDocument();
+    const boundedDocument = pdfDocument ? boundedJavaScript(pdfDocument) : null;
+    const restoreJavaScript = boundedDocument?.isJSExecutionEnabled() ?? false;
+    if (restoreJavaScript) boundedDocument?.setJSExecutionEnabled(false);
     try {
       page.run(device, matrix);
     } finally {
-      device.close();
+      try {
+        if (restoreJavaScript) boundedDocument?.setJSExecutionEnabled(true);
+      } finally {
+        device.close();
+      }
     }
     const pixels = Uint8ClampedArray.from(pixmap.getPixels()).buffer;
     return {
@@ -452,7 +495,7 @@ function mutationResult<T extends AnnotationInfo | undefined>(
     name,
     () => assertMutationCost(projectedBytes),
     (arena) => {
-      const annotation = mutate(arena, document);
+      const annotation = withJavaScriptExecution(document, () => mutate(arena, document));
       const info = documentInfo(false);
       return annotation ? { info, annotation } : { info };
     },
@@ -525,7 +568,9 @@ function executeJavaScript(source: string): EngineTypes['JavaScriptExecutionResu
       evaluationDocument.setJSEventListener(recordJavaScriptEvent);
       formMutations.disableDocumentScriptsForEvaluation(evaluationDocument);
       evaluationDocument.enableJS();
-      return evaluationDocument.executeJS(source, 'Papertrail console');
+      return withJavaScriptExecution(evaluationDocument, () =>
+        evaluationDocument.executeJS(source, 'Papertrail console'),
+      );
     });
   } finally {
     activeJavaScriptEvents = null;

@@ -1,0 +1,190 @@
+diff --git a/include/mupdf/pdf/javascript.h b/include/mupdf/pdf/javascript.h
+index 373cd25..1fd60bb 100644
+--- a/include/mupdf/pdf/javascript.h
++++ b/include/mupdf/pdf/javascript.h
+@@ -28,6 +28,9 @@
+ 
+ void pdf_enable_js(fz_context *ctx, pdf_document *doc);
+ void pdf_enable_js_with_console(fz_context *ctx, pdf_document *doc, pdf_js_console *console, void *user);
++void pdf_set_js_execution_enabled(fz_context *ctx, pdf_document *doc, int enabled);
++int pdf_js_execution_enabled(fz_context *ctx, pdf_document *doc);
++int pdf_js_budget_exhausted(fz_context *ctx, pdf_document *doc);
+ void pdf_disable_js(fz_context *ctx, pdf_document *doc);
+ int pdf_js_supported(fz_context *ctx, pdf_document *doc);
+ void pdf_drop_js(fz_context *ctx, pdf_js *js);
+diff --git a/platform/wasm/lib/mupdf.c b/platform/wasm/lib/mupdf.c
+index b46c78f..0a73c1e 100644
+--- a/platform/wasm/lib/mupdf.c
++++ b/platform/wasm/lib/mupdf.c
+@@ -1701,6 +1701,24 @@ void wasm_pdf_disable_js(pdf_document *doc)
+ 	VOID(pdf_disable_js, doc)
+ }
+ 
++EXPORT
++void wasm_pdf_set_js_execution_enabled(pdf_document *doc, boolean enabled)
++{
++	TRY(pdf_set_js_execution_enabled(ctx, doc, enabled))
++}
++
++EXPORT
++int wasm_pdf_js_execution_enabled(pdf_document *doc)
++{
++	NUMBER(pdf_js_execution_enabled, doc)
++}
++
++EXPORT
++int wasm_pdf_js_budget_exhausted(pdf_document *doc)
++{
++	NUMBER(pdf_js_budget_exhausted, doc)
++}
++
+ EXPORT
+ void wasm_pdf_set_js_event_listener(pdf_document *doc, boolean enabled)
+ {
+diff --git a/platform/wasm/lib/mupdf.ts b/platform/wasm/lib/mupdf.ts
+index e859410..e57404e 100644
+--- a/platform/wasm/lib/mupdf.ts
++++ b/platform/wasm/lib/mupdf.ts
+@@ -3129,6 +3129,18 @@ export class PDFDocument extends Document {
+ 		libmupdf._wasm_pdf_disable_js(this.pointer)
+ 	}
+ 
++	setJSExecutionEnabled(enabled: boolean) {
++		libmupdf._wasm_pdf_set_js_execution_enabled(this.pointer, enabled)
++	}
++
++	isJSExecutionEnabled() {
++		return !!libmupdf._wasm_pdf_js_execution_enabled(this.pointer)
++	}
++
++	isJSBudgetExhausted() {
++		return !!libmupdf._wasm_pdf_js_budget_exhausted(this.pointer)
++	}
++
+ 	setJSEventListener(listener: PDFJSEventListener | null) {
+ 		if (listener !== null && typeof listener !== "function")
+ 			throw new TypeError("PDF JavaScript event listener must be a function or null")
+diff --git a/source/pdf/pdf-form.c b/source/pdf/pdf-form.c
+index cf0bdb7..58e2bfe 100644
+--- a/source/pdf/pdf-form.c
++++ b/source/pdf/pdf-form.c
+@@ -480,7 +480,7 @@ static void set_check_grp(fz_context *ctx, pdf_document *doc, pdf_obj *grp, pdf_
+ 
+ void pdf_calculate_form(fz_context *ctx, pdf_document *doc)
+ {
+-	if (doc->js)
++	if (pdf_js_execution_enabled(ctx, doc))
+ 	{
+ 		fz_try(ctx)
+ 		{
+diff --git a/source/pdf/pdf-js.c b/source/pdf/pdf-js.c
+index 115ea84..f2d900e 100644
+--- a/source/pdf/pdf-js.c
++++ b/source/pdf/pdf-js.c
+@@ -26,9 +26,12 @@
+ #if FZ_ENABLE_JS
+ 
+ // set limits to how much memory and cpu malicious/broken scripts can use up
+-#define PDF_JS_LIMIT_RUNTIME (10 << 20) // ten million instructions
+-#define PDF_JS_LIMIT_MEMORY (100 << 20) // one hundred megabytes
++#define PDF_JS_LIMIT_RUNTIME (2 << 20) // two million instructions per execution
++#define PDF_JS_LIMIT_MEMORY (16 << 20) // sixteen megabytes per execution
+ #define PDF_JS_LIMIT_SOURCE (4 << 20) // four megabytes decoded source per action
++#define PDF_JS_LIMIT_EXECUTIONS 16
++#define PDF_JS_TOTAL_RUNTIME (32 << 20)
++#define PDF_JS_TOTAL_MEMORY (256 << 20)
+ 
+ #include "mujs.h"
+ 
+@@ -42,6 +45,10 @@ struct pdf_js
+ 	js_State *imp;
+ 	pdf_js_console *console;
+ 	void *console_user;
++	int execution_enabled;
++	int executions_remaining;
++	int runtime_remaining;
++	int memory_remaining;
+ };
+ 
+ FZ_NORETURN static void rethrow(pdf_js *js)
+@@ -1253,23 +1260,33 @@ void pdf_js_execute(pdf_js *js, const char *name, const char *source, char **res
+ {
+ 	fz_context *ctx;
+ 	js_State *J;
++	int runtime_limit;
++	int memory_limit;
+ 
+-	if (!js)
++	if (!js || !js->execution_enabled)
++		return;
++	if (js->executions_remaining <= 0 || js->runtime_remaining <= 0 || js->memory_remaining <= 0)
+ 		return;
+ 
+ 	ctx = js->ctx;
+ 	J = js->imp;
++	runtime_limit = fz_min(PDF_JS_LIMIT_RUNTIME, js->runtime_remaining);
++	memory_limit = fz_min(PDF_JS_LIMIT_MEMORY, js->memory_remaining);
++	js->executions_remaining--;
++	js->runtime_remaining -= runtime_limit;
++	js->memory_remaining -= memory_limit;
+ 
+ 	pdf_begin_implicit_operation(ctx, js->doc);
+ 	fz_try(ctx)
+ 	{
++		/* Compilation allocates in the same MuJS heap and must share this allowance. */
++		js_setlimit(J, runtime_limit, memory_limit);
+ 		if (js_ploadstring(J, name, source)) {
+ 			if (result)
+ 				*result = fz_strdup(ctx, js_trystring(J, -1, "Error"));
+ 			js_pop(J, 1);
+ 		} else {
+ 			js_pushundefined(J);
+-			js_setlimit(J, PDF_JS_LIMIT_RUNTIME, PDF_JS_LIMIT_MEMORY);
+ 			if (js_pcall(J, 0)) {
+ 				if (result)
+ 					*result = fz_strdup(ctx, js_trystring(J, -1, "Error"));
+@@ -1313,6 +1330,10 @@ void pdf_enable_js_with_console(fz_context *ctx, pdf_document *doc, pdf_js_conso
+ 	if (!doc->js)
+ 	{
+ 		doc->js = pdf_new_js(ctx, doc);
++		doc->js->execution_enabled = 1;
++		doc->js->executions_remaining = PDF_JS_LIMIT_EXECUTIONS;
++		doc->js->runtime_remaining = PDF_JS_TOTAL_RUNTIME;
++		doc->js->memory_remaining = PDF_JS_TOTAL_MEMORY;
+ 		if (console)
+ 			pdf_js_set_console(ctx, doc, console, user);
+ 		pdf_js_load_document_level(doc->js);
+@@ -1324,6 +1345,23 @@ void pdf_enable_js(fz_context *ctx, pdf_document *doc)
+ 	pdf_enable_js_with_console(ctx, doc, NULL, NULL);
+ }
+ 
++void pdf_set_js_execution_enabled(fz_context *ctx, pdf_document *doc, int enabled)
++{
++	if (doc && doc->js)
++		doc->js->execution_enabled = !!enabled;
++}
++
++int pdf_js_budget_exhausted(fz_context *ctx, pdf_document *doc)
++{
++	return doc && doc->js && (doc->js->executions_remaining <= 0 ||
++		doc->js->runtime_remaining <= 0 || doc->js->memory_remaining <= 0);
++}
++
++int pdf_js_execution_enabled(fz_context *ctx, pdf_document *doc)
++{
++	return doc && doc->js && doc->js->execution_enabled && !pdf_js_budget_exhausted(ctx, doc);
++}
++
+ void pdf_disable_js(fz_context *ctx, pdf_document *doc)
+ {
+ 	pdf_drop_js(ctx, doc->js);
+@@ -1340,6 +1378,9 @@ int pdf_js_supported(fz_context *ctx, pdf_document *doc)
+ void pdf_drop_js(fz_context *ctx, pdf_js *js) { }
+ void pdf_enable_js(fz_context *ctx, pdf_document *doc) { }
+ void pdf_enable_js_with_console(fz_context *ctx, pdf_document *doc, pdf_js_console *console, void *user) { }
++void pdf_set_js_execution_enabled(fz_context *ctx, pdf_document *doc, int enabled) { }
++int pdf_js_execution_enabled(fz_context *ctx, pdf_document *doc) { return 0; }
++int pdf_js_budget_exhausted(fz_context *ctx, pdf_document *doc) { return 0; }
+ void pdf_disable_js(fz_context *ctx, pdf_document *doc) { }
+ int pdf_js_supported(fz_context *ctx, pdf_document *doc) { return 0; }
+ void pdf_js_event_init(pdf_js *js, pdf_obj *target, const char *value, int willCommit) { }
