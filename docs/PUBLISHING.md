@@ -25,7 +25,33 @@ Deployment needs three repository secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID` and
 `VERCEL_PROJECT_ID`. Without them the workflow says so in its summary and exits green,
 the same way `scripts/cargo.mjs` skips for a contributor with no Rust toolchain.
 
-### Deployment Protection and the smoke test
+### Mounting the app under a path
+
+`vite.web.config.ts` reads `PDF_EDITOR_BASE` and defaults to `/`, which is what a
+standalone deployment serves and what every gate and the Playwright suite assume. Set it
+at build time to mount the app under a path:
+
+```sh
+PDF_EDITOR_BASE=/pdf-editor/ npm run build:web
+```
+
+The value must have a leading and trailing slash. Vite joins it to asset paths verbatim,
+so a missing trailing slash silently produces `/pdf-editorassets/...`; the config rejects
+that rather than shipping it. On Git Bash for Windows, MSYS path conversion rewrites a
+leading-slash value into a Windows path, so prefix the command with `MSYS_NO_PATHCONV=1`.
+
+The prefix reaches more than the HTML. Verified on a `/pdf-editor/` build: the entry
+chunk, the stylesheet, `doc.worker`, `search.worker` and `mupdf-wasm.wasm` all resolve
+under it. That matters because the workers are loaded through
+`new Worker(new URL(...))` and the engine through a `?url` import, and a base that failed
+to reach them would produce an app that renders its shell and then cannot open a
+document.
+
+This exists because a sibling deployment mounts several apps on one domain, each serving
+assets from a distinct prefix so two apps cannot collide over `/assets/`. Routing the
+path itself is a deployment concern outside this repository: something must rewrite
+`/<path>/*` to this project. The build only controls where the app expects its own assets
+to live.
 
 With Vercel's Deployment Protection enabled, an unauthenticated request to a deployment
 answers `302` to `vercel.com/sso-api` with a `text/plain` body. Every header assertion in
