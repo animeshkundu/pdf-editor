@@ -134,6 +134,14 @@ function makeEngine(
     updateMetadata: vi.fn(async () => mutation),
     save: vi.fn(async () => new ArrayBuffer(0)),
     exportPdf: vi.fn(async () => new ArrayBuffer(0)),
+    applyRedactions: vi.fn(async () => ({
+      data: new ArrayBuffer(0),
+      document: info,
+      journal: mutation.journal,
+      fidelity: 'DEGRADED' as const,
+      applied: 1,
+      pages: 1,
+    })),
     redactPages: vi.fn(async () => ({
       data: new ArrayBuffer(0),
       document: info,

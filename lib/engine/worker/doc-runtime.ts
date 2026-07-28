@@ -1231,6 +1231,32 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
       } else if (request.operation === 'save' || request.operation === 'exportPdf') {
         const data = saveForOutput(request.payload);
         postSuccess(scope, request.id, data, [data]);
+      } else if (request.operation === 'applyRedactions') {
+        const document = requirePdfDocument();
+        const preflight = redactionMutations.inspectApplyRedactions(document);
+        const completed = journalOperation(
+          document,
+          'Apply redactions',
+          () => {
+            assertOutputCost();
+            redactionMutations.assertApplyRedactions(
+              preflight,
+              request.payload.confirmSignatureInvalidation,
+            );
+          },
+          (arena) => {
+            const report = redactionMutations.applyRedactions(arena, document, preflight);
+            return { report, info: documentInfo(false) };
+          },
+        );
+        refreshSourceByteLength(document);
+        const result: EngineTypes['ApplyRedactionsReport'] = {
+          ...completed.report,
+          document: completed.info,
+          journal: journalState(document, ++journalRevision),
+        };
+        schedulePersistence();
+        postSuccess(scope, request.id, result, [result.data]);
       } else if (request.operation === 'redactPages') {
         const document = requirePdfDocument();
         const signatures = redactionMutations.signatureCount(document);

@@ -8,7 +8,15 @@ interface SanitizePreflight {
   readonly unsupported: readonly string[];
 }
 
+export interface ApplyRedactionsPreflight {
+  readonly marks: number;
+  readonly pageIndices: readonly number[];
+  readonly signatures: number;
+  readonly unsupported: readonly string[];
+}
+
 type ContentRemovalOutput = Omit<EngineTypes['SanitizeReport'], 'document' | 'journal'>;
+type ApplyRedactionsOutput = Omit<EngineTypes['ApplyRedactionsReport'], 'document' | 'journal'>;
 
 function forEachObject(
   document: mupdf.PDFDocument,
@@ -56,6 +64,125 @@ export function countUnappliedRedactions(document: mupdf.PDFDocument): number {
     }
   });
   return redactions;
+}
+
+function objectHasMetadata(arena: Arena, object: mupdf.PDFObject): boolean {
+  if (!object.isDictionary()) return false;
+  return (
+    !arena.keep(object.get('Metadata')).isNull() ||
+    !arena.keep(object.get('PieceInfo')).isNull()
+  );
+}
+
+export function inspectApplyRedactions(document: mupdf.PDFDocument): ApplyRedactionsPreflight {
+  const unsupported = new Set<string>();
+  const pageIndices: number[] = [];
+  let marks = 0;
+
+  forEachObject(document, (arena, object, objectNumber) => {
+    if (objectHasMetadata(arena, object)) {
+      unsupported.add(
+        `object metadata (XMP or PieceInfo) in object ${objectNumber}, which can retain the redacted text; remove it with Sanitize before applying redactions`,
+      );
+    }
+  });
+
+  withArenaSync((arena) => {
+    for (let pageIndex = 0; pageIndex < document.countPages(); pageIndex += 1) {
+      const page = arena.keep(document.loadPage(pageIndex));
+      const annotations = page.getAnnotations();
+      for (const annotation of annotations) {
+        arena.keep(annotation);
+        if (annotation.getType() === 'Redact') marks += 1;
+        const annotationObject = arena.keep(annotation.getObject());
+        if (objectHasMetadata(arena, annotationObject)) {
+          unsupported.add(
+            `object metadata (XMP or PieceInfo) on page ${pageIndex + 1}, which can retain the redacted text; remove it with Sanitize before applying redactions`,
+          );
+        }
+      }
+      if (annotations.every((annotation) => annotation.getType() !== 'Redact')) continue;
+      pageIndices.push(pageIndex);
+
+      const pageObject = arena.keep(page.getObject());
+      if (objectHasMetadata(arena, pageObject)) {
+        unsupported.add(
+          `object metadata (XMP or PieceInfo) on page ${pageIndex + 1}, which can retain the redacted text; remove it with Sanitize before applying redactions`,
+        );
+      }
+      const trace = arena.keep(page.processContents());
+      const records = trace.getRecords();
+      if (records.some((record) => record.operator === 'Do_form')) {
+        unsupported.add(
+          `Form XObject content on page ${pageIndex + 1}; this engine cannot prove that recoverable text inside the form is removed`,
+        );
+      }
+      if (
+        records.some(
+          (record) =>
+            record.operator === 'BDC' && record.cooked !== undefined && !record.cooked.isNull(),
+        )
+      ) {
+        unsupported.add(
+          `marked-content property dictionaries on page ${pageIndex + 1}; they can retain recoverable text outside the painted glyphs`,
+        );
+      }
+    }
+  });
+
+  return {
+    marks,
+    pageIndices,
+    signatures: countSignatures(document),
+    unsupported: [...unsupported],
+  };
+}
+
+export function assertApplyRedactions(
+  preflight: ApplyRedactionsPreflight,
+  confirmSignatureInvalidation: boolean,
+): void {
+  if (preflight.marks === 0)
+    throw new Error('Add at least one redaction mark before applying.');
+  if (preflight.unsupported.length > 0) {
+    throw new Error(
+      `Apply redactions refused because ${preflight.unsupported.join('; ')}. Remove the marks, run Sanitize, then place the marks again. The document was not changed.`,
+    );
+  }
+  if (preflight.signatures > 0 && !confirmSignatureInvalidation) {
+    throw new Error(
+      'Apply redactions requires confirmation because the garbage-collecting full rewrite invalidates existing signatures.',
+    );
+  }
+}
+
+export function applyRedactions(
+  arena: Arena,
+  document: mupdf.PDFDocument,
+  preflight: ApplyRedactionsPreflight,
+): ApplyRedactionsOutput {
+  for (const pageIndex of preflight.pageIndices) {
+    const page = arena.keep(document.loadPage(pageIndex));
+    page.applyRedactions(
+      true,
+      mupdf.PDFPage.REDACT_IMAGE_REMOVE,
+      mupdf.PDFPage.REDACT_LINE_ART_REMOVE_IF_COVERED,
+      mupdf.PDFPage.REDACT_TEXT_REMOVE,
+    );
+    page.update();
+  }
+  const remaining = countUnappliedRedactions(document);
+  if (remaining > 0) {
+    throw new Error(
+      `Apply redactions left ${remaining} unapplied redaction ${remaining === 1 ? 'mark' : 'marks'}; the operation was rolled back.`,
+    );
+  }
+  return {
+    data: saveDocument(document, SAFE_FULL_SAVE),
+    fidelity: 'DEGRADED',
+    applied: preflight.marks,
+    pages: preflight.pageIndices.length,
+  };
 }
 
 export function inspectSanitize(document: mupdf.PDFDocument): SanitizePreflight {
@@ -217,7 +344,10 @@ export function signatureCount(document: mupdf.PDFDocument): number {
 }
 
 export default {
+  applyRedactions,
+  assertApplyRedactions,
   countUnappliedRedactions,
+  inspectApplyRedactions,
   inspectSanitize,
   redactPages,
   sanitize,

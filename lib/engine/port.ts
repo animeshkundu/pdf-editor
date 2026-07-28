@@ -350,6 +350,14 @@ export interface EngineTypes {
       readonly detail: string;
     }[];
   };
+  ApplyRedactionsReport: {
+    readonly data: ArrayBuffer;
+    readonly document: EngineTypes['DocumentInfo'];
+    readonly journal: EngineTypes['JournalState'];
+    readonly fidelity: 'DEGRADED';
+    readonly applied: number;
+    readonly pages: number;
+  };
   SanitizeReport: {
     readonly data: ArrayBuffer;
     readonly document: EngineTypes['DocumentInfo'];
@@ -477,6 +485,9 @@ export interface EngineTypes {
     ): Promise<EngineTypes['MutationResult']>;
     save(options: EngineTypes['SaveOptions']): Promise<ArrayBuffer>;
     exportPdf(options: EngineTypes['SaveOptions']): Promise<ArrayBuffer>;
+    applyRedactions(
+      confirmSignatureInvalidation: boolean,
+    ): Promise<EngineTypes['ApplyRedactionsReport']>;
     redactPages(
       pageIndices: readonly number[],
       confirmSignatureInvalidation: boolean,
@@ -745,6 +756,11 @@ export interface EngineTypes {
       }
     | {
         readonly id: number;
+        readonly operation: 'applyRedactions';
+        readonly payload: { readonly confirmSignatureInvalidation: boolean };
+      }
+    | {
+        readonly id: number;
         readonly operation: 'redactPages';
         readonly payload: {
           readonly pageIndices: readonly number[];
@@ -797,6 +813,7 @@ export interface EngineTypes {
     | EngineTypes['JavaScriptState']
     | EngineTypes['JavaScriptExecutionResult']
     | readonly EngineTypes['ExportedPdf'][]
+    | EngineTypes['ApplyRedactionsReport']
     | EngineTypes['SanitizeReport']
     | ArrayBuffer;
   EngineResponse:

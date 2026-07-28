@@ -671,6 +671,17 @@ class WorkerPdfEngine implements PdfEngine {
     return this.#mutationRequest({ operation: 'exportPdf', payload: options });
   }
 
+  async applyRedactions(
+    confirmSignatureInvalidation: boolean,
+  ): Promise<EngineTypes['ApplyRedactionsReport']> {
+    const report = await this.#mutationRequest<EngineTypes['ApplyRedactionsReport']>({
+      operation: 'applyRedactions',
+      payload: { confirmSignatureInvalidation },
+    });
+    this.#acceptMutation(report);
+    return report;
+  }
+
   async redactPages(
     pageIndices: readonly number[],
     confirmSignatureInvalidation: boolean,
