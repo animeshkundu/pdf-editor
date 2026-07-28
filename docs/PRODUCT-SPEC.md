@@ -65,6 +65,8 @@ The three that matter:
   Safari do not implement it, so both degrade to a download. The degradation is announced,
   not discovered: a browser without the API shows "Download" rather than a "Save" that
   silently does something else.
+  The stable inventory join key for Save, Save As, and the announced fallback is
+  `VIEW-037`.
 
 ### `DEGRADED`, reachable but worse, and said so
 
@@ -346,7 +348,7 @@ overclaim this specification is structured to prevent.
 | C4  | A save specified to change nothing produces an **equivalent** document, defined as: identical page count; per page, identical extracted text (`stext` order and content) and identical rendered raster within the C8 tolerance; identical annotation set by subtype, rect and contents; identical form field names and values; and identical outline structure. Byte equality is explicitly **not** required, because any save rewrites the cross-reference table | `exec`. The definition is enumerated so an implementer cannot satisfy it by comparing page counts alone.                                                                                                                                                                                                                                  |
 | C5  | An operation that fails leaves the document byte-identical to its pre-operation state                                                                                                                                                                                                                                                                                                                                                                             | `exec` for failures a test can inject. A WASM trap kills the instance, so the guarantee there is that the on-disk document is untouched, not that the in-memory one is recoverable.                                                                                                                                                       |
 | C6  | Existing signatures still validate, outside our stack, after an unrelated incremental save                                                                                                                                                                                                                                                                                                                                                                        | `exec`, but **not in the browser**. This gate runs in Node in CI and shells out to an external verifier, because chain validation needs a PKI stack and a trust store the browser does not expose to us. The shipped product's own validation is `SIGN-010`, which is `DEGRADED` for exactly this reason. See also the C7 conflict below. |
-| C7  | **Applying a redaction forces a full, non-incremental rewrite**, and the redacted content is absent from the resulting file's bytes: every stream in the output is decompressed and then searched for the redacted string and for the redacted image's bytes                                                                                                                                                                                                      | `exec`. Three parts are load-bearing and none may be dropped. See the note below.                                                                                                                                                                                                                                                         |
+| C7  | **Every supported content-removal operation (`SIGN-032` and `SIGN-033`) forces a full, non-incremental rewrite**, and known removed content is absent from the resulting file's inflated whole-file bytes across the enumerated scope, or the operation refuses the document                                                                                                                                                                                      | `exec`. Three parts are load-bearing and none may be dropped. See the note below.                                                                                                                                                                                                                                                         |
 | C8  | Rendered output matches pdf.js within a stated per-page tolerance across the corpus                                                                                                                                                                                                                                                                                                                                                                               | `exec`. The tolerance is set once the two renderers have been compared on the corpus; a tolerance chosen before measurement would be a number invented to pass.                                                                                                                                                                           |
 
 #### C7 and C6 cannot both hold on the same save
@@ -361,8 +363,8 @@ pass a naive C7 completely legitimately and ship a product that leaks every reda
 
 That is why C7 has three parts, and why none may be dropped:
 
-1. **Full rewrite.** Applying a redaction forces a non-incremental save. There is no
-   configuration in which a redaction is written incrementally.
+1. **Full rewrite.** Wholesale page removal and sanitizing force a non-incremental save.
+   There is no configuration in which either content-removal operation is incremental.
 2. **Decompress, then search.** The test decompresses every stream before searching.
    A raw byte grep over the file misses FLATE-compressed content streams, which is how
    content is stored in practice, so a grep-only test passes vacuously. This is the same
@@ -371,14 +373,14 @@ That is why C7 has three parts, and why none may be dropped:
    the current cross-reference table is still caught.
 
 **The conflict.** C6 requires existing signatures to survive an incremental save. C7
-requires a redaction to force a full rewrite. A full rewrite invalidates every existing
+requires content removal to force a full rewrite. A full rewrite invalidates every existing
 signature, because the bytes those signatures covered no longer exist. So on a document
-that is both signed and being redacted, **the two criteria cannot both be satisfied, and
-redaction wins.**
+that is both signed and undergoing wholesale page removal or sanitizing, **the two criteria
+cannot both be satisfied, and content removal wins.**
 
 This is correct rather than unfortunate. A signature attests to content; removing content
 must break it. Acrobat behaves the same way. The product must therefore warn before
-redacting a signed document, state that existing signatures will be invalidated, and
+removing content from a signed document, state that existing signatures will be invalidated, and
 require confirmation. Silently invalidating a signature, or silently declining to redact
 in order to preserve one, would both be worse than the warning.
 

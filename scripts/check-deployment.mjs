@@ -47,7 +47,7 @@ const FORBIDDEN_HEADERS = ['cross-origin-opener-policy', 'cross-origin-embedder-
 // the INERT_HOST list in scripts/check-no-egress.mjs: this check is the runtime half of
 // the same promise, and a host allowed there must be allowed here or the two disagree.
 const INERT_HOST =
-  /(w3\.org|schema\.org|spdx\.org|gnu\.org|purl\.org|react\.dev\/errors|tailwindcss\.com|artifex\.com|mupdf\.com)/i;
+  /(w3\.org|schema\.org|spdx\.org|gnu\.org|purl\.org|ns\.adobe\.com\/xfdf|react\.dev\/errors|tailwindcss\.com|artifex\.com|mupdf\.com)/i;
 
 const ABSOLUTE_URL = /(?:https?:)?\/\/[a-z0-9.-]+\.[a-z]{2,}(?:[/:?#][^\s'"`)]*)?/gi;
 

@@ -1,6 +1,7 @@
 import type { EngineTypes } from '../engine/port';
 
 type PageInfo = EngineTypes['PageInfo'];
+export type PageRotation = 0 | 90 | 180 | 270;
 const PDF_POINT_SCALE = 96 / 72;
 const PAGE_GAP = 24;
 const MAX_TILE_SIZE = 512;
@@ -35,13 +36,15 @@ class PageLayout {
     pages: readonly PageInfo[],
     readonly zoom: number,
     readonly gap = PAGE_GAP,
+    readonly rotation: PageRotation = 0,
   ) {
     const scale = PDF_POINT_SCALE * zoom;
     const placements: PagePlacement[] = [];
     let top = gap;
     for (const page of pages) {
-      const width = Math.max(1, page.width * scale);
-      const height = Math.max(1, page.height * scale);
+      const rotated = rotation === 90 || rotation === 270;
+      const width = Math.max(1, (rotated ? page.height : page.width) * scale);
+      const height = Math.max(1, (rotated ? page.width : page.height) * scale);
       placements.push({ index: page.index, top, width, height });
       top += height + gap;
     }

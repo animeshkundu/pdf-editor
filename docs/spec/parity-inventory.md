@@ -111,6 +111,11 @@ marked **(unverified)**. Nothing in this document is a benchmark or a measuremen
       ([ADR 0017](../adr/0017-persistence-via-opfs.md)). Acrobat has no equivalent because
       it has no equivalent failure mode; this is a cost of the architecture paid back as a
       feature.
+- [ ] `VIEW-037` **Save, Save As, and announced Download fallback** `EQUIV`. Chromium writes
+      back to an opened File System Access handle and offers Save As. Browsers without that
+      API label the action Download before invocation; OPFS crash insurance remains separate
+      and never substitutes for explicit output
+      ([ADR 0023](../adr/0023-save-command-and-file-system-access.md)).
 
 ---
 
@@ -237,10 +242,24 @@ fallbacks and the capabilities withdrawn with that path.
 
 ### Text
 
-- [ ] `EDIT-001` **Edit existing text in place** `DEGRADED`. The fallback is a PDF
-      annotation/overlay and is disclosed as such; it does not replace the original text.
-- [ ] `EDIT-002` **Reflow within a text block after an edit** `DEGRADED`. Reflow is limited
-      to the overlay, never the producer's original run.
+- [ ] `EDIT-001` **Edit existing text in place** `OPEN`, blocked on the **commit-verification
+      spike**: proving with an independent reader, before the journal operation commits, that
+      the replacement was actually written.
+      It was briefly `DEGRADED` and wired, and browser QA found it silently destroying a
+      document: selecting `사회복지법인` in `cjk-itext.pdf` and replacing it with the
+      subset-supported `사회` closed the editor with no error, and the saved file contained
+      zero text items where the original had one. Both the original and the replacement were
+      gone. Verified independently with pdf.js, and reproduced by `pdftotext`.
+      The shape of the bug is why the label moved rather than the guard being tightened.
+      Path B removes the original glyphs and then writes an overlay, so any failure after the
+      removal destroys content, and no pre-flight check can be complete enough to prevent
+      that class of failure. The mutation now refuses before touching the document.
+      **Ships only when it can verify its own output**, not when the guards look thorough.
+      Adding a new text block (`EDIT-004`) is unaffected: it invents no encoding and removes
+      nothing.
+- [ ] `EDIT-002` **Reflow within a text block after an edit** `OPEN`, blocked on the same
+      **commit-verification spike** as `EDIT-001`. There is nothing to reflow until an edit
+      can be committed at all.
 - [ ] `EDIT-003` **Change font, size, colour, spacing, and alignment of existing text**
       `DEGRADED`, on the disclosed overlay only.
 - [ ] `EDIT-004` **Add a new text block** `LOCAL`. Adding text does not require inverting an existing
@@ -368,13 +387,20 @@ unambiguous parity in the product.
 
 ### Filling
 
-- [ ] `FORM-009` **Fill every field type** `LOCAL`
-- [ ] `FORM-010` **Tab between fields in tab order** `LOCAL`
-- [ ] `FORM-011` **Highlight fields**, with a toggle `LOCAL`
-- [ ] `FORM-012` **Required-field indication and validation on submit** `LOCAL`
-- [ ] `FORM-013` **Auto-complete from previous entries** `LOCAL`, stored in OPFS, off by default, and
-      clearable. Acrobat's equivalent is on by default; storing what someone typed into a
-      form without asking is not a default we are willing to ship.
+- [ ] `FORM-009` **Fill every field type** `DEGRADED`. Saved values can be entered from the field
+      list, but page-widget click targeting is not wired to the editor.
+- [ ] `FORM-010` **Tab between fields in tab order** `OPEN`, **Spike F (interactive widget
+      surface)**. Tab order can be authored; the spike must prove keyboard focus, value editing, and
+      page-coordinate hit testing without positioned DOM text.
+- [ ] `FORM-011` **Highlight fields**, with a toggle `DEGRADED`. The toggle highlights rows in the
+      field list; page-widget highlighting is not available.
+- [ ] `FORM-012` **Required-field indication and validation on submit** `DEGRADED`. Required fields
+      are indicated and list-entered values can be checked, but there is no interactive page submit
+      flow.
+- [ ] `FORM-013` **Auto-complete from previous entries** `OPEN`, **Spike G (consented local form
+      history)**. The spike must prove opt-in, clearable OPFS storage that cannot cross document
+      boundaries accidentally. Acrobat's equivalent is on by default; storing what someone typed
+      into a form without asking is not a default we are willing to ship.
 - [ ] `FORM-014` **Reset form** `LOCAL`
 - [ ] `FORM-015` **Save a partially filled form and resume** `LOCAL`
 
@@ -386,7 +412,7 @@ unambiguous parity in the product.
 - [ ] `FORM-019` **Validate**, by range or by script `LOCAL`
 - [ ] `FORM-020` **Calculate**: sum, product, average, minimum, maximum, and simplified field
       notation `LOCAL`
-- [ ] `FORM-021` **Custom JavaScript for format, validate, calculate, and keystroke** `LOCAL`, via
+- [x] `FORM-021` **Custom JavaScript for format, validate, calculate, and keystroke** `LOCAL`, via
       `mujs=yes` in the fork ([ADR 0004](../adr/0004-fork-the-mupdf-wasm-build.md)).
       Real-world government and enterprise forms depend on these, and a form that silently
       does not calculate is worse than one that refuses to open.
@@ -520,15 +546,36 @@ unambiguous parity in the product.
 - [ ] `SIGN-029` **Search and mark all occurrences of a term or pattern** `LOCAL`
 - [ ] `SIGN-030` **Redaction properties**: fill colour, overlay text, and repeat overlay `LOCAL`
 - [ ] `SIGN-031` **Apply redaction, removing the content from the content stream**
-      `EXCLUDED`, withdrawn after Spike A red. A black rectangle drawn over text is not
-      redaction and will never be described as such here.
+      `DEGRADED`. Previously `EXCLUDED`, which was the wrong label: `EXCLUDED` means
+      "impossible without a server, or absent from the engine", and this is neither.
+      `applyRedactions` is present in the engine, exercised, and now wired. It was
+      withdrawn by decision after Spike A, and the vocabulary had no code for
+      "engine-capable, withdrawn by policy", so `EXCLUDED` was made to carry a meaning it
+      does not have — while erasing the fact a maintainer most needs, that re-enabling was
+      a wiring change rather than an engine port.
+      **What makes it `DEGRADED` and not `LOCAL`** is measured, not assumed. Redaction
+      writes through `pdf_filter_page_contents`, and that filter perturbs rendering on
+      documents it should leave alone: pdfTeX misses the C8 tolerance by 58x and
+      LibreOffice by 96x
+      ([the research](../research/2026-07-26-redaction-and-editing-on-the-forked-engine.md),
+      [ADR 0020](../adr/0020-content-stream-rewriting-failed-stage-one.md)). Redaction adds
+      no collateral damage of its own — the changed-pixel counts outside the redacted box
+      match the null filter exactly — but it inherits all of the filter's.
+      Two categories the engine does **not** clear, and which are therefore swept or
+      refused rather than silently left: marked-content property dictionaries carrying the
+      text as `/Artifact <</Contents (…)>> BDC`, and XMP metadata. Form XObject content is
+      the third. A document that cannot be swept is refused with the category named, which
+      is honest; leaving recoverable text is not.
       **Applying a redaction always forces a full, non-incremental save.** An incremental
       save appends, leaving the original unredacted objects physically present in an
       earlier revision of the same file, where a hex editor recovers them even though every
       extraction tool reports them gone. There is no configuration in which a redaction is
-      written incrementally.
+      written incrementally. The save must also garbage-collect: a non-collecting full save
+      leaves the pre-redaction content stream as an orphan, from which inflating the file
+      recovers the text verbatim. Measured on `apache-fop.pdf`, which more than halved once
+      collected.
 - [ ] `SIGN-035` **Warn before redacting a signed document, and require confirmation**
-      `LOCAL`. The full rewrite that `SIGN-031` requires invalidates every existing
+      `LOCAL`. The full rewrite that `SIGN-032` and `SIGN-033` require invalidates every existing
       signature, because the bytes those signatures covered no longer exist. That is
       correct behaviour and Acrobat does the same. The user is told before it happens.
       Silently invalidating a signature, or silently declining to redact in order to
@@ -824,8 +871,10 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 - [ ] `AUTO-005` **Import a pipeline** `LOCAL`, with every step it will perform shown before it runs.
       An importable automation format is an execution vector, so a pipeline is never run on
       import.
-- [ ] `AUTO-006` **Document-level JavaScript for forms** `LOCAL`, via `mujs=yes`.
-- [ ] `AUTO-007` **A JavaScript console for authoring form scripts** `LOCAL`
+- [x] `AUTO-006` **Document-level JavaScript for forms** `LOCAL`, via `mujs=yes`. External
+      launch, mail, submit, print, and menu requests are observed and blocked.
+- [x] `AUTO-007` **A JavaScript console for authoring form scripts** `LOCAL`, inside the
+      document worker with MuJS runtime and memory limits.
 - [ ] `AUTO-008` **Folder-level JavaScript** `EXCLUDED`. It has no browser meaning: there is no
       application folder to install scripts into.
 - [ ] `AUTO-009` **Acrobat Action Wizard file compatibility** `EXCLUDED` on scope. Our pipelines are
@@ -835,7 +884,7 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 
 ## Coverage summary
 
-311 items in total.
+312 items in total.
 
 | Label      | Count | Where it concentrates                                                                                                                                                                                            |
 | ---------- | ----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -843,13 +892,13 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 | `DEGRADED` |    21 | Text editing through disclosed overlays, Office export, OCR, signature revocation status, field auto-detection, HTML conversion, barcode fields, RC4, scan comparison                                            |
 | `EXCLUDED` |    25 | Existing content/object rewrites, true redaction, marked-content tagging, cloud workflows, XFA, scanner input, web capture, timestamping, revocation checking, LTV, prepress, sound, Action Wizard compatibility |
 | `OPEN`     |     5 | Signing (Spike C), signature validation (Spike D), and certificate encryption (Spike E)                                                                                                                          |
-| `EQUIV`    |     4 | Find, clipboard, save and save as, Read Out Loud                                                                                                                                                                 |
+| `EQUIV`    |     5 | Find, clipboard, save and save as, print, Read Out Loud                                                                                                                                                          |
 
 By section:
 
 | Section                               | Items |
 | ------------------------------------- | ----: |
-| 1. Viewing and navigation (`VIEW`)    |    36 |
+| 1. Viewing and navigation (`VIEW`)    |    37 |
 | 2. Search and text selection (`FIND`) |    14 |
 | 3. Comment and markup (`MARK`)        |    35 |
 | 4. Comment management (`CMNT`)        |    13 |
@@ -886,7 +935,7 @@ disclosure because each is weak in a different way.
 
 ## Scope, honestly
 
-311 items is a very large surface. Two things follow, and neither is softened here.
+312 items is a very large surface. Two things follow, and neither is softened here.
 
 **This is a multi-year contract, not a release plan.** Acrobat is thirty years of
 accumulated work. Nothing about writing the list down shortens that. The phase order in

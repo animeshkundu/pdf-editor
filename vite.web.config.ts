@@ -3,6 +3,24 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 
+const PRODUCTION_CSP =
+  "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' blob: data:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'";
+const DEVELOPMENT_CSP =
+  "default-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws:; img-src 'self' blob: data:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'";
+
+function developmentCsp() {
+  return {
+    name: 'development-csp',
+    apply: 'serve' as const,
+    transformIndexHtml(html: string) {
+      if (!html.includes(PRODUCTION_CSP)) {
+        throw new Error('The production CSP changed without updating the dev-only transform.');
+      }
+      return html.replace(PRODUCTION_CSP, DEVELOPMENT_CSP);
+    },
+  };
+}
+
 function engineChunk(id: string): string | undefined {
   return id.includes('node_modules/mupdf') || id.includes('/vendor/mupdf-wasm/')
     ? 'engine'
@@ -16,7 +34,7 @@ function engineChunk(id: string): string | undefined {
 // meta-framework's bundler assumptions would fight that for features we never use.
 export default defineConfig({
   root: 'web',
-  plugins: [react(), tailwindcss()],
+  plugins: [developmentCsp(), react(), tailwindcss()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('.', import.meta.url)) },
   },

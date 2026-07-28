@@ -35,8 +35,10 @@ worker, so the constraint costs nothing.
 Persist to OPFS, written from the document worker through `createSyncAccessHandle()`.
 
 - **Scope.** The original document bytes plus the current edit state, per open document,
-  under a stable per-document key. The user's own file on disk is never touched: a save
-  is an explicit download.
+  under a stable per-document key. OPFS never touches the user's own file on disk. The
+  separate `VIEW-037` Save command may write to an opened File System Access handle on
+  Chromium; elsewhere the command is named Download before it is invoked
+  ([ADR 0023](0023-save-command-and-file-system-access.md)).
 - **Placement.** Only the document worker writes. The main thread does not hold a sync
   access handle, and could not, since the API is worker-only.
 - **Cadence.** After each committed journal operation
@@ -70,6 +72,9 @@ Persist to OPFS, written from the document worker through `createSyncAccessHandl
 - **Privacy.** OPFS is origin-private and never leaves the device, which keeps
   [ADR 0002](0002-client-side-only-zero-egress.md) intact. It is still user data on their
   machine, so there is an explicit, discoverable way to clear it.
+- **Availability.** `createSyncAccessHandle()` is feature-detected. Crash persistence is
+  `LOCAL` where the primitive exists and is disclosed as unavailable on Chromium 95 through
+  101 rather than silently promised by the engine's lower browser floor.
 
 ## Consequences
 
