@@ -26,13 +26,13 @@
   "inputs": {
     "package.json": "9b633d1acdc62e89a5616d688dde2e8a0a6104ae8fbb663c7fcf840349b7653d",
     "scripts/build-wasm.mjs": "07b08ce78ce5a6f0c3fd4f282994bb2dbc43784aa5d3707a635f1071085fbe79",
-    "scripts/vendor-mupdf.mjs": "5f4aa78498c042999bf9ad5869f9c29823556b8a788427b6417e497cd41b85dc",
+    "scripts/vendor-mupdf.mjs": "130030e255e1bae204af311b68558989e51067ab851570b621b9138cb18d30fe",
     "vendor/mupdf-wasm/.emscripten-version": "f88f603fa5b8bbbdd6be6f7c9e65590259014ad190f144c673e89ecf536c1912",
     "vendor/mupdf-wasm/patches/0001-buffered-processor-and-filter-export.patch": "50e4315799be22e31b26f48fb9f799faa98d959a1259588c82bc40b74dd2879d",
     "vendor/mupdf-wasm/patches/0002-typescript-processor-bindings.patch": "f80fbde3f3d02aa3361218a760de258f186a52532c88ae8a3803f77e82182bce",
     "vendor/mupdf-wasm/patches/0003-observable-javascript.patch": "f84d52e85a45a6541954202f85c09d6bf787116796d767cf6d8e282b1b239e95",
     "vendor/mupdf-wasm/patches/0004-bounded-javascript-execution.patch": "5d9fd902707bf2ee602ee34cb88e8793e1d8aa0ce49a941a26be985156f189f4",
     "vendor/mupdf-wasm/patches/files/mupdf-js-processor.c": "bb354baf092bc1d2f611c535b8bd9f211dd89b32a061fa0d5628a520d8ea8840",
-    "vendor/mupdf-wasm/source-stamp.json": "93370b7cddf60b0303e94ffb5986f9b88d52d65aae8a8c2828cc7c4d2526bab6"
+    "vendor/mupdf-wasm/source-stamp.json": "9b5d960533df574fe58b9b2bfb58772ab5294dcea771401b86ad936b1e6fd3f0"
   }
 }

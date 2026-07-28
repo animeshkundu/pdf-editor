@@ -85,9 +85,9 @@ const EXPECTED_PATCHED_FILES = new Map([
   ],
   [
     'include/mupdf/pdf/javascript.h',
-    '6afc5eae60d76d45d25f26ab995aef4a4717c3fe4305abc670d134b494c1ba0f',
+    'a4c36497ff42a206cd3e96dbb841f79b5b0d9f851f25af5500c392485ef1249a',
   ],
-  ['source/pdf/pdf-js.c', 'dc4ef4709537a719b604deec6cc896bad7bd65f2cf3ab5b63574be2db52cc6e2'],
+  ['source/pdf/pdf-js.c', '854be81cb1f2e4974c421343937fa7327abc4a210eaf5cbae89e177c89f4d5ea'],
   [
     'include/mupdf/pdf/object.h',
     '469d03e7bfc8a15d48b35622fed46ea1d284ad6b4bce7de427249db33d38ecff',
@@ -96,7 +96,7 @@ const EXPECTED_PATCHED_FILES = new Map([
     'source/pdf/pdf-parse.c',
     '05dcb42b0925afa1efae77c47a5a150354abc2ff28d185a9238a935c6a850745',
   ],
-  ['source/pdf/pdf-form.c', '89130b86652e5e052b98870c6c4fe2e344ba7216d5db5b5025a214e58a20d573'],
+  ['source/pdf/pdf-form.c', 'f3dbdb4795a03d6bdc2f606ecb715fefc10fe11b56eb503db7cf639a4ca84052'],
 ]);
 
 function run(cmd, args, opts = {}) {
