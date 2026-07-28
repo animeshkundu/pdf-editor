@@ -525,13 +525,34 @@ unambiguous parity in the product.
 - [ ] `SIGN-029` **Search and mark all occurrences of a term or pattern** `LOCAL`
 - [ ] `SIGN-030` **Redaction properties**: fill colour, overlay text, and repeat overlay `LOCAL`
 - [ ] `SIGN-031` **Apply redaction, removing the content from the content stream**
-      `EXCLUDED`, withdrawn after Spike A red. A black rectangle drawn over text is not
-      redaction and will never be described as such here.
+      `DEGRADED`. Previously `EXCLUDED`, which was the wrong label: `EXCLUDED` means
+      "impossible without a server, or absent from the engine", and this is neither.
+      `applyRedactions` is present in the engine, exercised, and now wired. It was
+      withdrawn by decision after Spike A, and the vocabulary had no code for
+      "engine-capable, withdrawn by policy", so `EXCLUDED` was made to carry a meaning it
+      does not have — while erasing the fact a maintainer most needs, that re-enabling was
+      a wiring change rather than an engine port.
+      **What makes it `DEGRADED` and not `LOCAL`** is measured, not assumed. Redaction
+      writes through `pdf_filter_page_contents`, and that filter perturbs rendering on
+      documents it should leave alone: pdfTeX misses the C8 tolerance by 58x and
+      LibreOffice by 96x
+      ([the research](../research/2026-07-26-redaction-and-editing-on-the-forked-engine.md),
+      [ADR 0020](../adr/0020-content-stream-rewriting-failed-stage-one.md)). Redaction adds
+      no collateral damage of its own — the changed-pixel counts outside the redacted box
+      match the null filter exactly — but it inherits all of the filter's.
+      Two categories the engine does **not** clear, and which are therefore swept or
+      refused rather than silently left: marked-content property dictionaries carrying the
+      text as `/Artifact <</Contents (…)>> BDC`, and XMP metadata. Form XObject content is
+      the third. A document that cannot be swept is refused with the category named, which
+      is honest; leaving recoverable text is not.
       **Applying a redaction always forces a full, non-incremental save.** An incremental
       save appends, leaving the original unredacted objects physically present in an
       earlier revision of the same file, where a hex editor recovers them even though every
       extraction tool reports them gone. There is no configuration in which a redaction is
-      written incrementally.
+      written incrementally. The save must also garbage-collect: a non-collecting full save
+      leaves the pre-redaction content stream as an orphan, from which inflating the file
+      recovers the text verbatim. Measured on `apache-fop.pdf`, which more than halved once
+      collected.
 - [ ] `SIGN-035` **Warn before redacting a signed document, and require confirmation**
       `LOCAL`. The full rewrite that `SIGN-032` and `SIGN-033` require invalidates every existing
       signature, because the bytes those signatures covered no longer exist. That is
