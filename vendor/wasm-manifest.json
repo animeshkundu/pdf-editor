@@ -5,20 +5,20 @@
   "emscripten": "4.0.8",
   "upstream": {
     "commit": "205b8cf43551279d1215e88fe2845c5d595bade9",
-    "submodulesSha256": "266c7b2641877326730668fadd304391a740f2d8d83bebcadbea92380ee791de"
+    "submodulesSha256": "55efe81352c6723c81035fbb5ad8cabb5522e80eb8f918c8c59c0e71f7cc49dd"
   },
   "artifacts": {
-    "vendor/mupdf-wasm/dist/mupdf-wasm.wasm": "7daf8ca49110e68d562d75aff9c0c7f42314123e1bc6fc5eda40a00572aad263",
-    "vendor/mupdf-wasm/dist/mupdf-wasm.js": "b26f2d4f76e3bd0af2290bf71a1633aebb335e8726db0e78da19e782cb8d7e8f",
-    "vendor/mupdf-wasm/dist/mupdf-wasm.d.ts": "5ea574e8efb0acf45e8869a43b51fd1f0e7edd9d6b08c93d1ec96c05f7437fd6",
-    "vendor/mupdf-wasm/dist/mupdf.js": "26602dd6e375c9389e7bdde99932d49f2b4aa90980dcdcd133442b4d7445d37d",
-    "vendor/mupdf-wasm/dist/mupdf.d.ts": "6d9830dd653843bf2ddd42196361d0eb04a2718f1c17d73525d5a4f8d33f1f65"
+    "vendor/mupdf-wasm/dist/mupdf-wasm.wasm": "9e57a7ecf2a0e934c7b53923e1bf6738fb26362260d52354ed5e31d58d8f97ec",
+    "vendor/mupdf-wasm/dist/mupdf-wasm.js": "4d85280de3a1297d7d14ef3f3b7258f810d93fae3e7498296af1fa4effb4b853",
+    "vendor/mupdf-wasm/dist/mupdf-wasm.d.ts": "a0f38138be026b377e220ce6536cfb9807fefcc7dd9b4115d35ac542d0e44403",
+    "vendor/mupdf-wasm/dist/mupdf.js": "b906097a913cfcead8687fda53136bae45c881f92847f596292d6d3fabe4fd67",
+    "vendor/mupdf-wasm/dist/mupdf.d.ts": "72e596b5a92be751cc25f59082bfae80817e9bc6c90ef9062d1e12809bed1cbd"
   },
   "sources": {
     "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf-js-processor.c": "bb354baf092bc1d2f611c535b8bd9f211dd89b32a061fa0d5628a520d8ea8840",
-    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf-wasm.d.ts": "5ea574e8efb0acf45e8869a43b51fd1f0e7edd9d6b08c93d1ec96c05f7437fd6",
-    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf.c": "2c0dc0aa47b70f2a6a89b48c2844ab49fc6afbee9f4781a1b560d873d64dba3f",
-    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf.ts": "776e28f79fe3a01ca87556b7310bf0ac66c5fcac33efd0a89cc7f6eac2a92988",
+    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf-wasm.d.ts": "a0f38138be026b377e220ce6536cfb9807fefcc7dd9b4115d35ac542d0e44403",
+    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf.c": "45aa3d2f9ae9200c574290e82a8e9b944204688b40fae1b5aed29092d458ec5d",
+    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf.ts": "b3451abfec7a3dc2c10dc0ec0c1521109cf0483954a4ab8fc82164ce6744c231",
     "vendor/mupdf-wasm/src/platform/wasm/tools/build.sh": "362257917de7aeab3eb5a00ebb8322550b112f5f102535b81679933dd020351c",
     "vendor/mupdf-wasm/src/platform/wasm/tools/compress.sh": "c88a89126ce951a34a0cdbb041f8ae15237419d6928c4c7e12659f379eccfd7a",
     "vendor/mupdf-wasm/src/platform/wasm/tools/make-wasm-type.js": "30449067538ebbb7185e983c24fbca4cd02dd9b72808e8d6dcb7c825114c0872"
@@ -26,12 +26,13 @@
   "inputs": {
     "package.json": "9b633d1acdc62e89a5616d688dde2e8a0a6104ae8fbb663c7fcf840349b7653d",
     "scripts/build-wasm.mjs": "07b08ce78ce5a6f0c3fd4f282994bb2dbc43784aa5d3707a635f1071085fbe79",
-    "scripts/vendor-mupdf.mjs": "64aac4999c07f51ee13b239d7fd70c854d1c549a15d296fe17fdcd48e8c21de2",
+    "scripts/vendor-mupdf.mjs": "5f4aa78498c042999bf9ad5869f9c29823556b8a788427b6417e497cd41b85dc",
     "vendor/mupdf-wasm/.emscripten-version": "f88f603fa5b8bbbdd6be6f7c9e65590259014ad190f144c673e89ecf536c1912",
     "vendor/mupdf-wasm/patches/0001-buffered-processor-and-filter-export.patch": "50e4315799be22e31b26f48fb9f799faa98d959a1259588c82bc40b74dd2879d",
     "vendor/mupdf-wasm/patches/0002-typescript-processor-bindings.patch": "f80fbde3f3d02aa3361218a760de258f186a52532c88ae8a3803f77e82182bce",
     "vendor/mupdf-wasm/patches/0003-observable-javascript.patch": "f84d52e85a45a6541954202f85c09d6bf787116796d767cf6d8e282b1b239e95",
+    "vendor/mupdf-wasm/patches/0004-bounded-javascript-execution.patch": "5d9fd902707bf2ee602ee34cb88e8793e1d8aa0ce49a941a26be985156f189f4",
     "vendor/mupdf-wasm/patches/files/mupdf-js-processor.c": "bb354baf092bc1d2f611c535b8bd9f211dd89b32a061fa0d5628a520d8ea8840",
-    "vendor/mupdf-wasm/source-stamp.json": "a96f236f09d4a7da336e01e84276021f988ad691c270da345d91125bb340549a"
+    "vendor/mupdf-wasm/source-stamp.json": "93370b7cddf60b0303e94ffb5986f9b88d52d65aae8a8c2828cc7c4d2526bab6"
   }
 }

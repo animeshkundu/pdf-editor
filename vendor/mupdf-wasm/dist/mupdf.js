@@ -2316,6 +2316,15 @@ export class PDFDocument extends Document {
 	disableJS() {
 		libmupdf._wasm_pdf_disable_js(this.pointer);
 	}
+	setJSExecutionEnabled(enabled) {
+		libmupdf._wasm_pdf_set_js_execution_enabled(this.pointer, enabled);
+	}
+	isJSExecutionEnabled() {
+		return !!libmupdf._wasm_pdf_js_execution_enabled(this.pointer);
+	}
+	isJSBudgetExhausted() {
+		return !!libmupdf._wasm_pdf_js_budget_exhausted(this.pointer);
+	}
 	setJSEventListener(listener) {
 		if (listener !== null && typeof listener !== "function")
 			throw new TypeError("PDF JavaScript event listener must be a function or null");

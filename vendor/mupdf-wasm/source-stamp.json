@@ -3,7 +3,7 @@
   "repo": "https://github.com/ArtifexSoftware/mupdf.git",
   "upstream": {
     "commit": "205b8cf43551279d1215e88fe2845c5d595bade9",
-    "submodulesSha256": "266c7b2641877326730668fadd304391a740f2d8d83bebcadbea92380ee791de"
+    "submodulesSha256": "55efe81352c6723c81035fbb5ad8cabb5522e80eb8f918c8c59c0e71f7cc49dd"
   },
   "patches": [
     "0001-buffered-processor-and-filter-export.patch",

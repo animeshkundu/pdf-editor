@@ -23,7 +23,7 @@ index b46c78f..0a73c1e 100644
 +EXPORT
 +void wasm_pdf_set_js_execution_enabled(pdf_document *doc, boolean enabled)
 +{
-+	TRY(pdf_set_js_execution_enabled(ctx, doc, enabled))
++	TRY({ pdf_set_js_execution_enabled(ctx, doc, enabled); })
 +}
 +
 +EXPORT

@@ -600,6 +600,9 @@ export declare class PDFDocument extends Document {
     isJSSupported(): boolean;
     enableJS(): void;
     disableJS(): void;
+    setJSExecutionEnabled(enabled: boolean): void;
+    isJSExecutionEnabled(): boolean;
+    isJSBudgetExhausted(): boolean;
     setJSEventListener(listener: PDFJSEventListener | null): void;
     executeJS(source: string, name?: string): string;
     rearrangePages(pages: number[]): void;

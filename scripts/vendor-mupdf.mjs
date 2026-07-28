@@ -69,11 +69,11 @@ const EMSCRIPTEN_VERSION = '4.0.8';
 const EXPECTED_PATCHED_FILES = new Map([
   [
     'platform/wasm/lib/mupdf.c',
-    '2c0dc0aa47b70f2a6a89b48c2844ab49fc6afbee9f4781a1b560d873d64dba3f',
+    '45aa3d2f9ae9200c574290e82a8e9b944204688b40fae1b5aed29092d458ec5d',
   ],
   [
     'platform/wasm/lib/mupdf.ts',
-    '776e28f79fe3a01ca87556b7310bf0ac66c5fcac33efd0a89cc7f6eac2a92988',
+    'b3451abfec7a3dc2c10dc0ec0c1521109cf0483954a4ab8fc82164ce6744c231',
   ],
   [
     'platform/wasm/lib/mupdf-js-processor.c',
