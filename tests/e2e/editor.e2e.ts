@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url';
 const fixture = fileURLToPath(
   new URL('../fixtures/pdf-corpus/distiller-tagged-linearized.pdf', import.meta.url),
 );
+const redactionFixture = fileURLToPath(
+  new URL('../fixtures/pdf-corpus/latex-pdftex.pdf', import.meta.url),
+);
 
 test('MARK-001/PAGE-020 adds and undoes one interoperable annotation action', async ({
   page,
@@ -31,27 +34,48 @@ test('MARK-001/PAGE-020 adds and undoes one interoperable annotation action', as
 test('SIGN-028 redaction marks block ordinary output and never claim removal', async ({
   page,
 }) => {
+  const downloads: string[] = [];
+  page.on('download', (download) => downloads.push(download.suggestedFilename()));
+
   await page.goto('/');
-  await page.getByLabel('Open PDF').setInputFiles(fixture);
-  await expect(page.getByText('1 page · LOCAL')).toBeVisible();
+  await page.getByLabel('Open PDF').setInputFiles(redactionFixture);
+  await expect(page.getByText('28 pages · LOCAL')).toBeVisible();
   await page.getByRole('button', { name: 'Markup' }).click();
-  await page
-    .getByRole('button', {
-      name: /Redaction mark LOCAL A mark does not remove or hide content/,
-    })
-    .click();
+  await page.getByRole('button', { name: 'Redaction mark' }).click();
+
+  const pdfPage = page.locator('.pdf-page').first();
+  const pageBox = await pdfPage.boundingBox();
+  expect(pageBox).not.toBeNull();
+  if (!pageBox) return;
+
+  await page.mouse.click(pageBox.x + 8, pageBox.y + 8);
+  await expect(page.getByRole('alert')).toContainText(
+    'Drag over the exact region to redact. No mark was created.',
+  );
+  await expect(page.getByText('0 annotations in this document')).toBeVisible();
+  await page.getByRole('button', { name: 'Dismiss' }).click();
+
+  await page.mouse.move(pageBox.x + 4, pageBox.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(pageBox.x + 12, pageBox.y + 12);
+  await page.mouse.up();
   await expect(page.getByText('1 annotation in this document')).toBeVisible();
 
   await page.getByRole('button', { name: 'Download' }).click();
-  await expect(page.getByRole('alert')).toContainText(
-    'unapplied redaction mark blocks Save, Export, and Print',
-  );
-  await page.getByRole('button', { name: 'Dismiss' }).click();
-  await page.getByRole('button', { name: 'Protect' }).click();
-  await page.getByRole('button', { name: 'Sanitize document and download' }).click();
   await expect(
-    page.getByRole('alert').filter({ hasText: 'Sanitizing the document failed' }),
-  ).toContainText('unapplied redaction mark blocks Save, Export, and Print');
+    page.getByRole('alert').filter({
+      hasText: 'unapplied redaction mark blocks Save, Export, and Print',
+    }),
+  ).toBeVisible();
+  expect(downloads).toEqual([]);
+  await page.getByRole('button', { name: 'Dismiss' }).click();
+
+  await page.getByRole('button', { name: 'Apply redaction marks' }).click();
+  const redactionOutcome = page.getByRole('status').filter({
+    hasText: 'removed no extractable text',
+  });
+  await expect(redactionOutcome).toBeVisible();
+  await expect(redactionOutcome).not.toContainText('Output is unblocked');
 });
 
 test('FORM-021/AUTO-006/AUTO-007 authors and observes worker-local JavaScript', async ({
