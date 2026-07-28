@@ -127,6 +127,13 @@ jobs:
       # point can see it: those headers exist only once the platform has served the file.
       - name: Assert the deployed headers and MIME types
         if: steps.guard.outputs.ready == 'true'
+        env:
+          # Deployment Protection answers an unauthenticated request with a 302 to
+          # vercel.com/sso-api and a text/plain body, so every header assertion fails on
+          # a deployment that is actually fine. The bypass header is the supported way
+          # through; check-deployment.mjs already reads this and sends
+          # x-vercel-protection-bypass when it is set.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: node scripts/check-deployment.mjs "${{ steps.deploy.outputs.url }}"
 
       - name: Report the deployment

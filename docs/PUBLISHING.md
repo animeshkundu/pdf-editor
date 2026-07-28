@@ -15,13 +15,26 @@ a URL. The workflow triggers on the CI run completing, refuses to proceed unless
 succeeded, and checks out the exact commit CI verified. `main` goes to production and
 every other branch gets a preview.
 
-**The Git integration must stay disconnected.** Two mechanisms deploying the same project
-would race for the production alias, and the ungated one winning would make the gate
-pointless.
+**The Git integration must stay disconnected once this is in effect.** Two mechanisms
+deploying the same project would race for the production alias, and the ungated one
+winning would make the gate pointless. As of 2026-07-27 the Git integration IS connected
+and is what deploys; `deploy.yml` holds no credentials and skips, so nothing conflicts
+yet. Disconnect it before setting the three secrets below.
 
 Deployment needs three repository secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID` and
 `VERCEL_PROJECT_ID`. Without them the workflow says so in its summary and exits green,
 the same way `scripts/cargo.mjs` skips for a contributor with no Rust toolchain.
+
+### Deployment Protection and the smoke test
+
+With Vercel's Deployment Protection enabled, an unauthenticated request to a deployment
+answers `302` to `vercel.com/sso-api` with a `text/plain` body. Every header assertion in
+`scripts/check-deployment.mjs` then fails against a deployment that is perfectly healthy,
+because the check is reading the SSO redirect rather than the app.
+
+`VERCEL_AUTOMATION_BYPASS_SECRET` is the supported way through. The script reads it and
+sends `x-vercel-protection-bypass`; `deploy-check.yml` and `deploy.yml` both pass it. Set
+it whenever protection is on, or the smoke test reports ten failures that mean nothing.
 
 The project configuration lives in `vercel.json` at the repository root, which pins the
 framework preset to `null`, the build command to `npm run build:vercel`, the output

@@ -4,8 +4,16 @@ Date: 2026-07-27
 
 ## Status
 
-Accepted. Amends [ADR 0006](0006-three-toolchain-build-and-committed-wasm.md) and the
-deployment mechanism recorded in [`docs/PUBLISHING.md`](../PUBLISHING.md).
+Accepted, and **not yet in effect**. Amends
+[ADR 0006](0006-three-toolchain-build-and-committed-wasm.md) and the deployment mechanism
+recorded in [`docs/PUBLISHING.md`](../PUBLISHING.md).
+
+The Git integration was connected on 2026-07-27 and is currently the mechanism that
+deploys, producing the first production deployment at 23:37 UTC that day. `deploy.yml`
+holds no credentials and therefore skips, so the two do not conflict today. **Adding
+`VERCEL_TOKEN`, `VERCEL_ORG_ID` and `VERCEL_PROJECT_ID` without first disconnecting the
+Git integration would put two mechanisms on the same production alias.** Pick one before
+setting those secrets.
 
 ## Context
 
