@@ -862,7 +862,7 @@ export default function EditorShell({
 
       <input
         ref={fileInputRef}
-        className="sr-only"
+        hidden
         type="file"
         accept="application/pdf,.pdf"
         aria-label="Open PDF"

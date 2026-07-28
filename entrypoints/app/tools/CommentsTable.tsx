@@ -302,9 +302,20 @@ export default function CommentsTable({
             <Upload aria-hidden="true" size={15} /> Preview import
           </button>
         </div>
+        {/*
+          `hidden` rather than the `sr-only` class. A file input is opened by the visible
+          "Preview import" button calling .click() on this ref, so it never needs to be
+          reachable on its own and gains nothing from being merely visually hidden.
+
+          It also has to be OUT of layout, not just clipped. Under `sr-only` this input
+          measured 1600px wide at x=1321 and stretched the document to 2921px against a
+          1600px viewport, leaving ~1300px of blank page and a status bar spanning the
+          overflow. A file input's "Choose File" control lives in shadow DOM and does not
+          reliably honour the width and clip that `sr-only` applies to the host element.
+        */}
         <input
           ref={importInput}
-          className="sr-only"
+          hidden
           type="file"
           aria-label={`Import ${format.toLocaleUpperCase()} comments`}
           onChange={chooseImport}

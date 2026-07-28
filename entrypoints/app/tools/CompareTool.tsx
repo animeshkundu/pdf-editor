@@ -53,7 +53,7 @@ export default function CompareTool({
       </button>
       <input
         ref={input}
-        className="sr-only"
+        hidden
         type="file"
         accept="application/pdf,.pdf"
         aria-label="PDF to compare"

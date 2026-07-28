@@ -160,7 +160,7 @@ export default function AutomationBuilder({
       </div>
       <input
         ref={input}
-        className="sr-only"
+        hidden
         type="file"
         accept="application/json,.json"
         aria-label="Import automation pipeline"

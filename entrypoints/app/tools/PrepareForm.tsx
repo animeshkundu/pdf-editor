@@ -778,7 +778,7 @@ export default function PrepareForm({
             </p>
             <input
               ref={importInput}
-              className="sr-only"
+              hidden
               type="file"
               aria-label={`Import ${format.toLocaleUpperCase()} form data`}
               onChange={importValues}

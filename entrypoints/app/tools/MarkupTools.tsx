@@ -857,7 +857,7 @@ export default function MarkupTools({
 
       <input
         ref={imageInput}
-        className="sr-only"
+        hidden
         type="file"
         accept="image/png,image/jpeg"
         aria-label="Image for custom stamp"
@@ -865,7 +865,7 @@ export default function MarkupTools({
       />
       <input
         ref={attachmentInput}
-        className="sr-only"
+        hidden
         type="file"
         aria-label="File to attach as a comment"
         onChange={(event) => selectFile(event, 'attachment')}

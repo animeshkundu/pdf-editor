@@ -596,7 +596,7 @@ export default function OrganizePages({
         </div>
         <input
           ref={mergeInput}
-          className="sr-only"
+          hidden
           type="file"
           accept="application/pdf,.pdf"
           aria-label="Source PDF for page organization"

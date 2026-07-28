@@ -128,10 +128,10 @@ export default function ActiveTextEntry({
         </p>
       ) : kind === 'existing-text' ? (
         <p className="scope-note">
-          DEGRADED · Commit redacts the original glyphs and adds replacement text with the
-          page&apos;s own font object. The content-stream filter can perturb rendering on some
-          documents. Pages using Form XObjects are only partly analysable and unsupported fonts
-          or glyphs are refused.
+          OPEN · Editing existing text is unavailable. It is blocked on being able to prove,
+          with an independent reader before the change is committed, that the replacement was
+          actually written. Until then a commit is refused and your document is left untouched.
+          Add a text annotation above the page instead.
         </p>
       ) : (
         <p className="scope-note">

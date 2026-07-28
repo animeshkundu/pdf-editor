@@ -242,10 +242,24 @@ fallbacks and the capabilities withdrawn with that path.
 
 ### Text
 
-- [ ] `EDIT-001` **Edit existing text in place** `DEGRADED`. The fallback is a PDF
-      annotation/overlay and is disclosed as such; it does not replace the original text.
-- [ ] `EDIT-002` **Reflow within a text block after an edit** `DEGRADED`. Reflow is limited
-      to the overlay, never the producer's original run.
+- [ ] `EDIT-001` **Edit existing text in place** `OPEN`, blocked on the **commit-verification
+      spike**: proving with an independent reader, before the journal operation commits, that
+      the replacement was actually written.
+      It was briefly `DEGRADED` and wired, and browser QA found it silently destroying a
+      document: selecting `사회복지법인` in `cjk-itext.pdf` and replacing it with the
+      subset-supported `사회` closed the editor with no error, and the saved file contained
+      zero text items where the original had one. Both the original and the replacement were
+      gone. Verified independently with pdf.js, and reproduced by `pdftotext`.
+      The shape of the bug is why the label moved rather than the guard being tightened.
+      Path B removes the original glyphs and then writes an overlay, so any failure after the
+      removal destroys content, and no pre-flight check can be complete enough to prevent
+      that class of failure. The mutation now refuses before touching the document.
+      **Ships only when it can verify its own output**, not when the guards look thorough.
+      Adding a new text block (`EDIT-004`) is unaffected: it invents no encoding and removes
+      nothing.
+- [ ] `EDIT-002` **Reflow within a text block after an edit** `OPEN`, blocked on the same
+      **commit-verification spike** as `EDIT-001`. There is nothing to reflow until an edit
+      can be committed at all.
 - [ ] `EDIT-003` **Change font, size, colour, spacing, and alignment of existing text**
       `DEGRADED`, on the disclosed overlay only.
 - [ ] `EDIT-004` **Add a new text block** `LOCAL`. Adding text does not require inverting an existing
