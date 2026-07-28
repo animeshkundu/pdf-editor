@@ -6,14 +6,17 @@ interface Destroyable {
 }
 
 interface WorkerScope {
-  postMessage(message: EngineTypes['EngineResponse'], transfer?: Transferable[]): void;
+  postMessage(
+    message: EngineTypes['EngineResponse'] | EngineTypes['EngineEvent'],
+    transfer?: Transferable[],
+  ): void;
   addEventListener(
     type: 'message',
     listener: (event: MessageEvent<EngineTypes['EngineRequest']>) => void,
   ): void;
 }
 
-class Arena {
+export class Arena {
   readonly #handles: Destroyable[] = [];
 
   keep<T extends Destroyable>(handle: T): T {
@@ -65,10 +68,19 @@ function releaseRetained(key?: string): void {
   }
 }
 
-async function withArena<T>(work: (arena: Arena) => T | Promise<T>): Promise<T> {
+export async function withArena<T>(work: (arena: Arena) => T | Promise<T>): Promise<T> {
   const arena = new Arena();
   try {
     return await work(arena);
+  } finally {
+    arena.release();
+  }
+}
+
+export function withArenaSync<T>(work: (arena: Arena) => T): T {
+  const arena = new Arena();
+  try {
+    return work(arena);
   } finally {
     arena.release();
   }
@@ -105,11 +117,17 @@ function postFailure(scope: WorkerScope, id: number, error: unknown): void {
   } satisfies EngineTypes['EngineResponse']);
 }
 
+function postEvent(scope: WorkerScope, event: EngineTypes['EngineEvent']): void {
+  scope.postMessage(event);
+}
+
 export default {
   postFailure,
+  postEvent,
   postSuccess,
   releaseRetained,
   retain,
   retained,
   withArena,
+  withArenaSync,
 };

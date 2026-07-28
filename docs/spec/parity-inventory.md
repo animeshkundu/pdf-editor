@@ -111,6 +111,11 @@ marked **(unverified)**. Nothing in this document is a benchmark or a measuremen
       ([ADR 0017](../adr/0017-persistence-via-opfs.md)). Acrobat has no equivalent because
       it has no equivalent failure mode; this is a cost of the architecture paid back as a
       feature.
+- [ ] `VIEW-037` **Save, Save As, and announced Download fallback** `EQUIV`. Chromium writes
+      back to an opened File System Access handle and offers Save As. Browsers without that
+      API label the action Download before invocation; OPFS crash insurance remains separate
+      and never substitutes for explicit output
+      ([ADR 0023](../adr/0023-save-command-and-file-system-access.md)).
 
 ---
 
@@ -386,7 +391,7 @@ unambiguous parity in the product.
 - [ ] `FORM-019` **Validate**, by range or by script `LOCAL`
 - [ ] `FORM-020` **Calculate**: sum, product, average, minimum, maximum, and simplified field
       notation `LOCAL`
-- [ ] `FORM-021` **Custom JavaScript for format, validate, calculate, and keystroke** `LOCAL`, via
+- [x] `FORM-021` **Custom JavaScript for format, validate, calculate, and keystroke** `LOCAL`, via
       `mujs=yes` in the fork ([ADR 0004](../adr/0004-fork-the-mupdf-wasm-build.md)).
       Real-world government and enterprise forms depend on these, and a form that silently
       does not calculate is worse than one that refuses to open.
@@ -528,7 +533,7 @@ unambiguous parity in the product.
       extraction tool reports them gone. There is no configuration in which a redaction is
       written incrementally.
 - [ ] `SIGN-035` **Warn before redacting a signed document, and require confirmation**
-      `LOCAL`. The full rewrite that `SIGN-031` requires invalidates every existing
+      `LOCAL`. The full rewrite that `SIGN-032` and `SIGN-033` require invalidates every existing
       signature, because the bytes those signatures covered no longer exist. That is
       correct behaviour and Acrobat does the same. The user is told before it happens.
       Silently invalidating a signature, or silently declining to redact in order to
@@ -824,8 +829,10 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 - [ ] `AUTO-005` **Import a pipeline** `LOCAL`, with every step it will perform shown before it runs.
       An importable automation format is an execution vector, so a pipeline is never run on
       import.
-- [ ] `AUTO-006` **Document-level JavaScript for forms** `LOCAL`, via `mujs=yes`.
-- [ ] `AUTO-007` **A JavaScript console for authoring form scripts** `LOCAL`
+- [x] `AUTO-006` **Document-level JavaScript for forms** `LOCAL`, via `mujs=yes`. External
+      launch, mail, submit, print, and menu requests are observed and blocked.
+- [x] `AUTO-007` **A JavaScript console for authoring form scripts** `LOCAL`, inside the
+      document worker with MuJS runtime and memory limits.
 - [ ] `AUTO-008` **Folder-level JavaScript** `EXCLUDED`. It has no browser meaning: there is no
       application folder to install scripts into.
 - [ ] `AUTO-009` **Acrobat Action Wizard file compatibility** `EXCLUDED` on scope. Our pipelines are
@@ -835,7 +842,7 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 
 ## Coverage summary
 
-311 items in total.
+312 items in total.
 
 | Label      | Count | Where it concentrates                                                                                                                                                                                            |
 | ---------- | ----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -843,13 +850,13 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 | `DEGRADED` |    21 | Text editing through disclosed overlays, Office export, OCR, signature revocation status, field auto-detection, HTML conversion, barcode fields, RC4, scan comparison                                            |
 | `EXCLUDED` |    25 | Existing content/object rewrites, true redaction, marked-content tagging, cloud workflows, XFA, scanner input, web capture, timestamping, revocation checking, LTV, prepress, sound, Action Wizard compatibility |
 | `OPEN`     |     5 | Signing (Spike C), signature validation (Spike D), and certificate encryption (Spike E)                                                                                                                          |
-| `EQUIV`    |     4 | Find, clipboard, save and save as, Read Out Loud                                                                                                                                                                 |
+| `EQUIV`    |     5 | Find, clipboard, save and save as, print, Read Out Loud                                                                                                                                                          |
 
 By section:
 
 | Section                               | Items |
 | ------------------------------------- | ----: |
-| 1. Viewing and navigation (`VIEW`)    |    36 |
+| 1. Viewing and navigation (`VIEW`)    |    37 |
 | 2. Search and text selection (`FIND`) |    14 |
 | 3. Comment and markup (`MARK`)        |    35 |
 | 4. Comment management (`CMNT`)        |    13 |
@@ -886,7 +893,7 @@ disclosure because each is weak in a different way.
 
 ## Scope, honestly
 
-311 items is a very large surface. Two things follow, and neither is softened here.
+312 items is a very large surface. Two things follow, and neither is softened here.
 
 **This is a multi-year contract, not a release plan.** Acrobat is thirty years of
 accumulated work. Nothing about writing the list down shortens that. The phase order in

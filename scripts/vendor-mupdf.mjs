@@ -69,11 +69,11 @@ const EMSCRIPTEN_VERSION = '4.0.8';
 const EXPECTED_PATCHED_FILES = new Map([
   [
     'platform/wasm/lib/mupdf.c',
-    'c7dd73001a3ac6676cd6cba5c62d319633b171a49c7ee0af54acfb4fcbbd3f20',
+    '2c0dc0aa47b70f2a6a89b48c2844ab49fc6afbee9f4781a1b560d873d64dba3f',
   ],
   [
     'platform/wasm/lib/mupdf.ts',
-    '303a62f646412ca6228bb7be6150aa25aef00e7e1314d6ba3cd02aeda020ede5',
+    '776e28f79fe3a01ca87556b7310bf0ac66c5fcac33efd0a89cc7f6eac2a92988',
   ],
   [
     'platform/wasm/lib/mupdf-js-processor.c',
@@ -83,6 +83,20 @@ const EXPECTED_PATCHED_FILES = new Map([
     'platform/wasm/tools/build.sh',
     '362257917de7aeab3eb5a00ebb8322550b112f5f102535b81679933dd020351c',
   ],
+  [
+    'include/mupdf/pdf/javascript.h',
+    '6afc5eae60d76d45d25f26ab995aef4a4717c3fe4305abc670d134b494c1ba0f',
+  ],
+  ['source/pdf/pdf-js.c', 'dc4ef4709537a719b604deec6cc896bad7bd65f2cf3ab5b63574be2db52cc6e2'],
+  [
+    'include/mupdf/pdf/object.h',
+    '469d03e7bfc8a15d48b35622fed46ea1d284ad6b4bce7de427249db33d38ecff',
+  ],
+  [
+    'source/pdf/pdf-parse.c',
+    '05dcb42b0925afa1efae77c47a5a150354abc2ff28d185a9238a935c6a850745',
+  ],
+  ['source/pdf/pdf-form.c', '89130b86652e5e052b98870c6c4fe2e344ba7216d5db5b5025a214e58a20d573'],
 ]);
 
 function run(cmd, args, opts = {}) {
@@ -214,9 +228,14 @@ const sourceStatus = capture('git', ['status', '--short', '--untracked-files=all
   .filter(Boolean)
   .sort();
 const expectedStatus = [
+  ' M include/mupdf/pdf/javascript.h',
+  ' M include/mupdf/pdf/object.h',
   ' M platform/wasm/lib/mupdf.c',
   ' M platform/wasm/lib/mupdf.ts',
   ' M platform/wasm/tools/build.sh',
+  ' M source/pdf/pdf-form.c',
+  ' M source/pdf/pdf-js.c',
+  ' M source/pdf/pdf-parse.c',
   '?? platform/wasm/lib/mupdf-js-processor.c',
 ].sort();
 if (JSON.stringify(sourceStatus) !== JSON.stringify(expectedStatus)) {

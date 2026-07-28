@@ -7,10 +7,11 @@
   },
   "patches": [
     "0001-buffered-processor-and-filter-export.patch",
-    "0002-typescript-processor-bindings.patch"
+    "0002-typescript-processor-bindings.patch",
+    "0003-observable-javascript.patch"
   ],
   "overlays": [
     "vendor/mupdf-wasm/patches/files/mupdf-js-processor.c"
   ],
-  "shimLines": 2947
+  "shimLines": 3120
 }

@@ -1,13 +1,41 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import engineErrors, { type EngineTypes } from '@/lib/engine/port';
 import renderLayout from '@/lib/render/layout';
+import type { ResolvedCommand } from '@/lib/commands/registry';
+import AccessibilityTools from './tools/AccessibilityTools';
+import AutomationBuilder from './tools/AutomationBuilder';
+import CompareTool from './tools/CompareTool';
+import ConversionTools from './tools/ConversionTools';
+import CommentsTable from './tools/CommentsTable';
+import HistoryPanel from './tools/HistoryPanel';
+import MarkupTools from './tools/MarkupTools';
+import OrganizePages from './tools/OrganizePages';
+import PrepareForm from './tools/PrepareForm';
+import PrintTools from './tools/PrintTools';
+import Security from './tools/Security';
 
 type AttachmentInfo = EngineTypes['AttachmentInfo'];
 type OutlineNode = EngineTypes['OutlineNode'];
 type PageInfo = EngineTypes['PageInfo'];
 type PdfEngine = EngineTypes['PdfEngine'];
 type SearchHit = EngineTypes['SearchHit'];
-type PanelKind = 'pages' | 'outline' | 'attachments' | 'search' | 'capabilities';
+type PanelKind =
+  | 'pages'
+  | 'outline'
+  | 'attachments'
+  | 'search'
+  | 'markup'
+  | 'comments'
+  | 'organize'
+  | 'forms'
+  | 'security'
+  | 'compare'
+  | 'convert'
+  | 'accessibility'
+  | 'print'
+  | 'automation'
+  | 'history'
+  | 'capabilities';
 const { WorkerCrashedError } = engineErrors;
 const { PDF_POINT_SCALE } = renderLayout;
 
@@ -17,6 +45,10 @@ interface PanelProps {
   readonly searchInputRef: RefObject<HTMLInputElement | null>;
   readonly onNavigate: (pageIndex: number) => void;
   readonly onSearchHit: (hit: SearchHit) => void;
+  readonly onMutation: (result: EngineTypes['MutationResult']) => void;
+  readonly onOutput: (data: ArrayBuffer, name: string) => void;
+  readonly onRotateView: (degrees: 90 | -90) => void;
+  readonly commands: readonly ResolvedCommand[];
   readonly onError: (message: string) => void;
 }
 
@@ -381,15 +413,23 @@ function CapabilitiesPanel() {
         <div>
           <dt>Existing-text editing</dt>
           <dd>
-            <StatusBadge>DEGRADED</StatusBadge> Not available in this viewer release. The only
-            permitted future path is a disclosed annotation overlay; original text remains.
+            <StatusBadge>DEGRADED</StatusBadge> Available only as a disclosed FreeText
+            annotation overlay. Original text remains; replacement, producer reflow, and removal
+            are not claimed.
           </dd>
         </div>
         <div>
-          <dt>True redaction</dt>
+          <dt>True redaction (selective apply)</dt>
           <dd>
             <StatusBadge>EXCLUDED</StatusBadge> Withdrawn after the content rewrite failed its
             fidelity gate. A black box is never presented as redaction.
+          </dd>
+        </div>
+        <div>
+          <dt>Wholesale page removal and sanitize</dt>
+          <dd>
+            <StatusBadge>LOCAL</StatusBadge> Full garbage-collecting output only. Sanitize
+            removes its enumerated scope or refuses the document.
           </dd>
         </div>
         <div>
@@ -411,6 +451,23 @@ export default function DocumentPanel(props: PanelProps) {
       {props.kind === 'outline' ? <OutlinePanel {...props} /> : null}
       {props.kind === 'attachments' ? <AttachmentsPanel {...props} /> : null}
       {props.kind === 'search' ? <SearchPanel {...props} /> : null}
+      {props.kind === 'markup' ? <MarkupTools {...props} /> : null}
+      {props.kind === 'comments' ? <CommentsTable {...props} /> : null}
+      {props.kind === 'organize' ? <OrganizePages {...props} /> : null}
+      {props.kind === 'forms' ? <PrepareForm {...props} /> : null}
+      {props.kind === 'security' ? <Security {...props} /> : null}
+      {props.kind === 'compare' ? <CompareTool {...props} /> : null}
+      {props.kind === 'convert' ? <ConversionTools {...props} /> : null}
+      {props.kind === 'accessibility' ? <AccessibilityTools {...props} /> : null}
+      {props.kind === 'print' ? <PrintTools {...props} /> : null}
+      {props.kind === 'automation' ? (
+        <AutomationBuilder
+          engine={props.engine}
+          commands={props.commands}
+          onError={props.onError}
+        />
+      ) : null}
+      {props.kind === 'history' ? <HistoryPanel {...props} /> : null}
       {props.kind === 'capabilities' ? <CapabilitiesPanel /> : null}
     </aside>
   );

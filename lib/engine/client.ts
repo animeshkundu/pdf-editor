@@ -9,8 +9,9 @@ import engineErrors, { type EngineTypes } from './port';
 
 type DocumentInfo = EngineTypes['DocumentInfo'];
 type EngineRequest = EngineTypes['EngineRequest'];
-type EngineResponse = EngineTypes['EngineResponse'];
+type EngineEvent = EngineTypes['EngineEvent'];
 type EngineResponseValue = EngineTypes['EngineResponseValue'];
+type WorkerMessage = EngineTypes['WorkerMessage'];
 type PageText = EngineTypes['PageText'];
 type PdfEngine = EngineTypes['PdfEngine'];
 type PdfEngineFactory = EngineTypes['PdfEngineFactory'];
@@ -25,7 +26,7 @@ interface WorkerLike {
   postMessage(message: EngineRequest, transfer?: Transferable[]): void;
   addEventListener(
     type: 'message',
-    listener: (event: MessageEvent<EngineResponse>) => void,
+    listener: (event: MessageEvent<WorkerMessage>) => void,
   ): void;
   addEventListener(type: 'error' | 'messageerror', listener: (event: Event) => void): void;
   terminate(): void;
@@ -52,6 +53,7 @@ function abortReason(signal: AbortSignal): unknown {
 
 class WorkerRpc {
   readonly #pending = new Map<number, PendingRequest>();
+  readonly #eventListeners = new Set<(event: EngineEvent) => void>();
   readonly #ready: Promise<void>;
   readonly #resolveReady: () => void;
   readonly #startupTimer: ReturnType<typeof setTimeout>;
@@ -144,7 +146,16 @@ class WorkerRpc {
     }
   }
 
-  #onMessage = (event: MessageEvent<EngineResponse>) => {
+  subscribe(listener: (event: EngineEvent) => void): () => void {
+    this.#eventListeners.add(listener);
+    return () => this.#eventListeners.delete(listener);
+  }
+
+  #onMessage = (event: MessageEvent<WorkerMessage>) => {
+    if ('event' in event.data) {
+      for (const listener of this.#eventListeners) listener(event.data);
+      return;
+    }
     if (event.data.id === 0 && event.data.ok) {
       clearTimeout(this.#startupTimer);
       this.#resolveReady();
@@ -185,20 +196,30 @@ class WorkerPdfEngine implements PdfEngine {
   readonly #tileQueue: PendingTile[] = [];
   #searchRpcPromise: Promise<WorkerRpc> | null = null;
   #renderingTile = false;
+  #renderIdle: Promise<void> = Promise.resolve();
   #closed = false;
+  #info: DocumentInfo;
+  #documentRevision = 0;
 
   private constructor(
-    readonly info: DocumentInfo,
+    info: DocumentInfo,
     private readonly documentRpc: WorkerRpc,
     private readonly sourceFile: File,
     private readonly budget: Budget,
     private readonly ios: boolean,
-  ) {}
+  ) {
+    this.#info = info;
+  }
+
+  get info(): DocumentInfo {
+    return this.#info;
+  }
 
   static async open(file: File, signal?: AbortSignal): Promise<WorkerPdfEngine> {
     const budget = budgetFor(navigator);
     assertFileSize(file.size, budget);
     assertHeadroom(0, file.size * 2, budget);
+    const persistenceKey = await documentPersistenceKey(file);
     const bytes = await file.arrayBuffer();
     if (signal?.aborted) throw abortReason(signal);
 
@@ -209,7 +230,10 @@ class WorkerPdfEngine implements PdfEngine {
 
     try {
       const info = await documentRpc.request<DocumentInfo>(
-        { operation: 'open', payload: { name: file.name, ios, data: bytes } },
+        {
+          operation: 'open',
+          payload: { name: file.name, ios, data: bytes, persistenceKey },
+        },
         [bytes],
         signal,
       );
@@ -286,6 +310,420 @@ class WorkerPdfEngine implements PdfEngine {
     );
   }
 
+  listAnnotations(pageIndex?: number): Promise<readonly EngineTypes['AnnotationInfo'][]> {
+    return this.documentRpc.request({
+      operation: 'listAnnotations',
+      payload: pageIndex === undefined ? {} : { pageIndex },
+    });
+  }
+
+  async addAnnotation(
+    input: EngineTypes['AnnotationInput'],
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>(
+        {
+          operation: 'addAnnotation',
+          payload: input,
+        },
+        [input.stampImage, input.attachment?.data].filter(
+          (value): value is ArrayBuffer => value !== undefined,
+        ),
+      ),
+    );
+  }
+
+  async addAnnotations(
+    inputs: readonly EngineTypes['AnnotationInput'][],
+  ): Promise<EngineTypes['MutationResult']> {
+    const transfer = inputs.flatMap((input) =>
+      [input.stampImage, input.attachment?.data].filter(
+        (value): value is ArrayBuffer => value !== undefined,
+      ),
+    );
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>(
+        {
+          operation: 'addAnnotations',
+          payload: { inputs },
+        },
+        transfer,
+      ),
+    );
+  }
+
+  async updateAnnotation(
+    pageIndex: number,
+    annotationId: number,
+    changes: EngineTypes['AnnotationUpdate'],
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>(
+        {
+          operation: 'updateAnnotation',
+          payload: { pageIndex, annotationId, changes },
+        },
+        [changes.stampImage, changes.attachment?.data].filter(
+          (value): value is ArrayBuffer => value !== undefined,
+        ),
+      ),
+    );
+  }
+
+  async deleteAnnotation(
+    pageIndex: number,
+    annotationId: number,
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'deleteAnnotation',
+        payload: { pageIndex, annotationId },
+      }),
+    );
+  }
+
+  async reorderPages(order: readonly number[]): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'reorderPages',
+        payload: { order },
+      }),
+    );
+  }
+
+  async rotatePages(
+    pageIndices: readonly number[],
+    degrees: 90 | 180 | 270 | -90 | -180 | -270,
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'rotatePages',
+        payload: { pageIndices, degrees },
+      }),
+    );
+  }
+
+  async insertBlankPage(
+    at: number,
+    size?: EngineTypes['PdfRect'],
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'insertBlankPage',
+        payload: size === undefined ? { at } : { at, size },
+      }),
+    );
+  }
+
+  async deletePages(pageIndices: readonly number[]): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'deletePages',
+        payload: { pageIndices },
+      }),
+    );
+  }
+
+  async setPageBoxes(
+    pageIndices: readonly number[],
+    box: EngineTypes['PageBox'],
+    rect: EngineTypes['PdfRect'],
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'setPageBoxes',
+        payload: { pageIndices, box, rect },
+      }),
+    );
+  }
+
+  async setPageLabels(
+    at: number,
+    style: EngineTypes['PageLabelStyle'],
+    prefix: string,
+    start: number,
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'setPageLabels',
+        payload: { at, style, prefix, start },
+      }),
+    );
+  }
+
+  async extractPages(
+    pageIndices: readonly number[],
+    deleteOriginals = false,
+  ): Promise<EngineTypes['ExportedPdf']> {
+    const output = await this.#mutationRequest<EngineTypes['ExportedPdf']>({
+      operation: 'extractPages',
+      payload: { pageIndices, deleteOriginals },
+    });
+    if (deleteOriginals) await this.#refreshInfo(true);
+    return output;
+  }
+
+  async mergeDocument(
+    name: string,
+    data: ArrayBuffer,
+    insertAt: number,
+    sourcePages?: readonly number[],
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>(
+        {
+          operation: 'mergeDocument',
+          payload:
+            sourcePages === undefined
+              ? { name, data, insertAt }
+              : { name, data, insertAt, sourcePages },
+        },
+        [data],
+      ),
+    );
+  }
+
+  async composePages(
+    name: string,
+    order: readonly EngineTypes['PageCompositionItem'][],
+    data?: ArrayBuffer,
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>(
+        {
+          operation: 'composePages',
+          payload: data === undefined ? { name, order } : { name, order, data },
+        },
+        data === undefined ? [] : [data],
+      ),
+    );
+  }
+
+  inspectIncomingDocument(
+    name: string,
+    data: ArrayBuffer,
+  ): Promise<EngineTypes['IncomingDocumentInfo']> {
+    return this.documentRpc.request(
+      {
+        operation: 'inspectIncomingDocument',
+        payload: { name, data },
+      },
+      [data],
+    );
+  }
+
+  compareDocument(name: string, data: ArrayBuffer): Promise<EngineTypes['CompareResult']> {
+    return this.documentRpc.request(
+      {
+        operation: 'compareDocument',
+        payload: { name, data },
+      },
+      [data],
+    );
+  }
+
+  validatePdfA(): Promise<EngineTypes['PdfAReport']> {
+    return this.documentRpc.request({ operation: 'validatePdfA', payload: {} });
+  }
+
+  splitDocument(
+    ranges: readonly (readonly [number, number])[],
+  ): Promise<readonly EngineTypes['ExportedPdf'][]> {
+    return this.documentRpc.request({
+      operation: 'splitDocument',
+      payload: { ranges },
+    });
+  }
+
+  listFields(): Promise<readonly EngineTypes['FormFieldInfo'][]> {
+    return this.documentRpc.request({ operation: 'listFields', payload: {} });
+  }
+
+  async setFieldValue(
+    name: string,
+    value: string | boolean,
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'setFieldValue',
+        payload: { name, value },
+      }),
+    );
+  }
+
+  async setFieldValues(
+    values: Readonly<Record<string, string | boolean>>,
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'setFieldValues',
+        payload: { values },
+      }),
+    );
+  }
+
+  async createFormField(
+    input: EngineTypes['FormFieldInput'],
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'createFormField',
+        payload: input,
+      }),
+    );
+  }
+
+  async updateFormField(
+    name: string,
+    changes: EngineTypes['FormFieldUpdate'],
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'updateFormField',
+        payload: { name, changes },
+      }),
+    );
+  }
+
+  async updateFormFields(
+    updates: readonly {
+      readonly name: string;
+      readonly changes: EngineTypes['FormFieldUpdate'];
+    }[],
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'updateFormFields',
+        payload: { updates },
+      }),
+    );
+  }
+
+  async reorderFormFields(names: readonly string[]): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'reorderFormFields',
+        payload: { names },
+      }),
+    );
+  }
+
+  async resetForm(): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'resetForm',
+        payload: {},
+      }),
+    );
+  }
+
+  getJavaScriptState(): Promise<EngineTypes['JavaScriptState']> {
+    return this.documentRpc.request({ operation: 'getJavaScriptState', payload: {} });
+  }
+
+  async setJavaScriptAction(
+    input: EngineTypes['JavaScriptActionInput'],
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'setJavaScriptAction',
+        payload: input,
+      }),
+    );
+  }
+
+  async deleteJavaScriptAction(
+    input: EngineTypes['JavaScriptActionIdentity'],
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'deleteJavaScriptAction',
+        payload: input,
+      }),
+    );
+  }
+
+  async executeJavaScript(source: string): Promise<EngineTypes['JavaScriptExecutionResult']> {
+    return this.#mutationRequest<EngineTypes['JavaScriptExecutionResult']>({
+      operation: 'executeJavaScript',
+      payload: { source },
+    });
+  }
+
+  async updateMetadata(
+    values: Readonly<
+      Partial<Record<'title' | 'author' | 'subject' | 'keywords' | 'language', string>>
+    >,
+  ): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'updateMetadata',
+        payload: { values },
+      }),
+    );
+  }
+
+  save(options: EngineTypes['SaveOptions']): Promise<ArrayBuffer> {
+    return this.#mutationRequest({ operation: 'save', payload: options });
+  }
+
+  exportPdf(options: EngineTypes['SaveOptions']): Promise<ArrayBuffer> {
+    return this.#mutationRequest({ operation: 'exportPdf', payload: options });
+  }
+
+  async redactPages(
+    pageIndices: readonly number[],
+    confirmSignatureInvalidation: boolean,
+  ): Promise<EngineTypes['SanitizeReport']> {
+    const report = await this.#mutationRequest<EngineTypes['SanitizeReport']>({
+      operation: 'redactPages',
+      payload: { pageIndices, confirmSignatureInvalidation },
+    });
+    this.#acceptMutation(report);
+    return report;
+  }
+
+  async sanitize(
+    confirmSignatureInvalidation: boolean,
+  ): Promise<EngineTypes['SanitizeReport']> {
+    const report = await this.#mutationRequest<EngineTypes['SanitizeReport']>({
+      operation: 'sanitize',
+      payload: { confirmSignatureInvalidation },
+    });
+    this.#acceptMutation(report);
+    return report;
+  }
+
+  async undo(): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'undo',
+        payload: {},
+      }),
+    );
+  }
+
+  async redo(): Promise<EngineTypes['MutationResult']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['MutationResult']>({
+        operation: 'redo',
+        payload: {},
+      }),
+    );
+  }
+
+  getJournal(): Promise<EngineTypes['JournalState']> {
+    return this.documentRpc.request({ operation: 'getJournal', payload: {} });
+  }
+
+  getOutputState(): Promise<EngineTypes['OutputState']> {
+    return this.documentRpc.request({ operation: 'getOutputState', payload: {} });
+  }
+
+  subscribe(listener: (event: EngineEvent) => void): () => void {
+    return this.documentRpc.subscribe(listener);
+  }
+
   async close(): Promise<void> {
     this.#closed = true;
     for (const tile of this.#tileQueue.splice(0)) {
@@ -319,7 +757,13 @@ class WorkerPdfEngine implements PdfEngine {
   }
 
   async #createSearchRpc(): Promise<WorkerRpc> {
-    const bytes = await this.sourceFile.arrayBuffer();
+    const bytes =
+      this.#documentRevision === 0
+        ? await this.sourceFile.arrayBuffer()
+        : await this.documentRpc.request<ArrayBuffer>({
+            operation: 'snapshotForSearch',
+            payload: {},
+          });
     if (this.#closed) {
       throw new WorkerCrashedError('The document was closed.', 'engine_closed');
     }
@@ -352,20 +796,64 @@ class WorkerPdfEngine implements PdfEngine {
       return;
     }
     this.#renderingTile = true;
-    void this.documentRpc
-      .request<TileResult>(
-        { operation: 'renderTile', payload: next.request },
-        [],
-        next.signal,
-        true,
-      )
-      .then(next.resolve, next.reject)
-      .finally(() => {
-        next.removeAbortListener();
-        this.#renderingTile = false;
-        this.#renderNextTile();
-      });
+    const rendering = this.documentRpc.request<TileResult>(
+      { operation: 'renderTile', payload: next.request },
+      [],
+      next.signal,
+      true,
+    );
+    this.#renderIdle = rendering.then(
+      () => undefined,
+      () => undefined,
+    );
+    void rendering.then(next.resolve, next.reject).finally(() => {
+      next.removeAbortListener();
+      this.#renderingTile = false;
+      this.#renderNextTile();
+    });
   }
+
+  async #mutationRequest<T>(
+    request: Omit<EngineRequest, 'id'>,
+    transfer: Transferable[] = [],
+  ): Promise<T> {
+    for (const tile of this.#tileQueue.splice(0)) {
+      tile.removeAbortListener();
+      tile.reject(new DOMException('Superseded by a document change.', 'AbortError'));
+    }
+    await this.#renderIdle;
+    return this.documentRpc.request<T>(request, transfer);
+  }
+
+  #acceptMutation(result: EngineTypes['MutationResult']): EngineTypes['MutationResult'] {
+    this.#info = result.document;
+    this.#documentRevision += 1;
+    this.#invalidateSearch();
+    return result;
+  }
+
+  async #refreshInfo(changed = false): Promise<void> {
+    this.#info = await this.documentRpc.request({
+      operation: 'getDocumentInfo',
+      payload: {},
+    });
+    if (changed) {
+      this.#documentRevision += 1;
+      this.#invalidateSearch();
+    }
+  }
+
+  #invalidateSearch(): void {
+    const pending = this.#searchRpcPromise;
+    this.#searchRpcPromise = null;
+    if (pending) void pending.then((rpc) => rpc.close()).catch(() => undefined);
+  }
+}
+
+async function documentPersistenceKey(file: File): Promise<string> {
+  const identity = new TextEncoder().encode(`${file.name}\0${file.size}\0${file.lastModified}`);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', identity));
+  return [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 const openPdfEngine: PdfEngineFactory = WorkerPdfEngine.open;

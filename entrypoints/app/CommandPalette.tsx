@@ -1,12 +1,17 @@
 import { useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Command } from 'lucide-react';
+import type { EngineTypes } from '@/lib/engine/port';
+import FeatureBadge from './FeatureBadge';
 
 interface EditorCommand {
   readonly id: string;
   readonly label: string;
   readonly shortcut?: string;
-  readonly run: () => void;
+  readonly status: EngineTypes['FeatureStatus'];
+  readonly disabled: boolean;
+  readonly disabledReason?: string;
+  readonly run: () => void | Promise<void>;
 }
 
 interface CommandPaletteProps {
@@ -58,14 +63,21 @@ export default function CommandPalette({ open, commands, onClose }: CommandPalet
                   type="button"
                   role="option"
                   aria-selected="false"
+                  aria-disabled={command.disabled}
+                  title={command.disabledReason}
                   key={command.id}
                   onClick={() => {
-                    command.run();
+                    if (command.disabled) return;
+                    void command.run();
                     setQuery('');
                     onClose();
                   }}
                 >
-                  <span>{command.label}</span>
+                  <span>
+                    {command.label}
+                    <FeatureBadge status={command.status} />
+                    {command.disabledReason ? <small>{command.disabledReason}</small> : null}
+                  </span>
                   {command.shortcut ? <kbd>{command.shortcut}</kbd> : null}
                 </button>
               ))}

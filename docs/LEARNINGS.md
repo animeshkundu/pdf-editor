@@ -18,6 +18,66 @@ to do next time.
 - Development happens on Windows; CI runs on Linux. `.gitattributes` normalises line
   endings to LF because the WASM freshness gate compares bytes.
 
+## 2026-07-28: MuJS support and observable events are separate WASM surfaces
+
+- **Context.** Enabling Acrobat-compatible form scripts in the browser build.
+- **What happened.** `mujs=yes` made `pdf_enable_js` functional, but the committed high-level
+  wrapper still threw from `setJSEventListener`, and the shim had no console-execution export.
+  Runtime support therefore remained unobservable even though the interpreter linked.
+- **What to do next time.** Prove all three layers: enable MuJS, bridge `pdf_doc_event_cb` and
+  `pdf_js_console` into the worker, and export bounded `pdf_js_execute`. Install the console
+  before startup actions, cap decoded action streams natively before parsing, reserve MuJS
+  memory even when scripts only mutate globals, and evaluate console input on a disposable
+  snapshot with startup scripts removed. Keep external URL, mail, submit, print, and menu
+  requests as serializable observations; never honor them.
+
+## 2026-07-28: qpdf test setup is a shared installation transaction
+
+- **Context.** Several Vitest files independently ask the pinned qpdf bootstrap for the
+  executable path during parallel suite startup.
+- **What happened.** Each process could delete and replace the same cache directory while
+  another process was loading its bundled libraries. That produced both a missing
+  `libunistring.so.2` at execution time and an `ENOTEMPTY` cleanup race.
+- **What to do next time.** Treat tool bootstrap as a cross-process transaction: test the
+  binary and bundled libraries, acquire a directory lock, stage beside the destination, and
+  atomically rename. Re-check readiness while waiting so only one process downloads.
+
+## 2026-07-28: raw PDF strings are not JavaScript strings
+
+- **Context.** Creating an AcroForm Widget through the exported raw object graph.
+- **What happened.** Passing a JavaScript string directly to `PDFObject.put()` produced a PDF
+  name (`/full_name`) rather than a PDF string (`(full_name)`). pdf.js could interpret the
+  saved experiment only when `/T`, `/TU`, `/V`, `/DV`, `/DA`, and choice options were created
+  explicitly with `newString()`.
+- **What to do next time.** Use `newName()` only for enum-like PDF names such as `/Tx` and
+  `/Off`; use `newString()` for human text and field values. Verify authoring with
+  `pdf.js.getFieldObjects()` before relying on MuPDF's Widget accessor cache.
+
+## 2026-07-27: `new PDFDocument(existing)` retains the same native document
+
+- **Context.** Producing a full garbage-collecting output without disturbing the active
+  journal.
+- **What happened.** The wrapper constructor looks like a clone API, but its implementation
+  keeps the same native pointer. Garbage collection through that second wrapper renumbered
+  the active object graph, and a later undo retained an inserted page even though the journal
+  position moved back.
+- **What to do next time.** Stage a plain full buffer, reopen those bytes as an independent
+  document, and run garbage collection or encryption only on that independent instance.
+  Test page count and order again after save-then-undo; annotation-only coverage does not
+  expose page-tree aliasing.
+
+## 2026-07-27: worker configuration must run before the engine chunk
+
+- **Context.** Keeping Emscripten's diagnostic stderr visible without turning expected MuPDF
+  cache-invalidation diagnostics into browser `console.error` failures.
+- **What happened.** A side-effect import beside static MuPDF imports ran too late because the
+  engine chunk was evaluated with the worker dependency graph. The module configuration hook
+  had already been consumed.
+- **What to do next time.** Use a tiny worker bootstrap that installs worker-local module
+  configuration and only then dynamically imports the runtime that depends on MuPDF.
+  Operation failures still travel through typed WorkerRpc rejection; diagnostic stderr is a
+  warning stream.
+
 ## 2026-07-27: module workers need an explicit ready handshake
 
 - **Context.** Sending an `open` request immediately after constructing the production

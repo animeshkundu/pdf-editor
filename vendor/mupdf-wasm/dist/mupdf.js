@@ -170,6 +170,66 @@ export function setLog(log) {
 	}
 	libmupdf._wasm_enable_log_callback(log !== null);
 }
+const $libmupdf_js_event_table = new Map();
+function jsEventString(pointer) {
+	return pointer ? fromString(pointer) : "";
+}
+function emitJSEvent(id, event) {
+	try {
+		$libmupdf_js_event_table.get(id)?.(event);
+	}
+	catch (error) {
+		console.warn("PDF JavaScript event listener failed", error);
+	}
+}
+globalThis.$libmupdf_js_event = {
+	drop(id) {
+		$libmupdf_js_event_table.delete(id);
+	},
+	alert(id, title, message, iconType, buttonGroupType, hasCheckBox, checkBoxMessage, initiallyChecked, buttonPressed) {
+		emitJSEvent(id, {
+			type: "alert",
+			title: jsEventString(title),
+			message: jsEventString(message),
+			iconType,
+			buttonGroupType,
+			hasCheckBox: !!hasCheckBox,
+			checkBoxMessage: jsEventString(checkBoxMessage),
+			initiallyChecked: !!initiallyChecked,
+			buttonPressed,
+		});
+	},
+	print(id) {
+		emitJSEvent(id, { type: "print" });
+	},
+	launch_url(id, url, newFrame) {
+		emitJSEvent(id, { type: "launch-url", url: jsEventString(url), newFrame: !!newFrame });
+	},
+	mail_doc(id, askUser, to, cc, bcc, subject, message) {
+		emitJSEvent(id, {
+			type: "mail-doc",
+			askUser: !!askUser,
+			to: jsEventString(to),
+			cc: jsEventString(cc),
+			bcc: jsEventString(bcc),
+			subject: jsEventString(subject),
+			message: jsEventString(message),
+		});
+	},
+	submit(id) {
+		emitJSEvent(id, { type: "submit" });
+	},
+	exec_menu_item(id, item) {
+		emitJSEvent(id, { type: "exec-menu-item", item: jsEventString(item) });
+	},
+	console(id, action, message) {
+		emitJSEvent(id, {
+			type: "console",
+			action: ["show", "hide", "clear", "write"][action],
+			message: jsEventString(message),
+		});
+	},
+};
 /* -------------------------------------------------------------------------- */
 // To pass Rect and Matrix as pointer arguments
 const _wasm_int = Malloc(4);
@@ -2256,8 +2316,25 @@ export class PDFDocument extends Document {
 	disableJS() {
 		libmupdf._wasm_pdf_disable_js(this.pointer);
 	}
-	setJSEventListener(_listener) {
-		throw "TODO";
+	setJSEventListener(listener) {
+		if (listener !== null && typeof listener !== "function")
+			throw new TypeError("PDF JavaScript event listener must be a function or null");
+		libmupdf._wasm_pdf_set_js_event_listener(this.pointer, listener !== null);
+		if (listener)
+			$libmupdf_js_event_table.set(this.pointer, listener);
+		else
+			$libmupdf_js_event_table.delete(this.pointer);
+	}
+	executeJS(source, name = "console") {
+		checkType(source, "string");
+		checkType(name, "string");
+		let buffer = new Buffer(libmupdf._wasm_pdf_execute_js(this.pointer, STRING(name), STRING2(source)));
+		try {
+			return buffer.asString();
+		}
+		finally {
+			buffer.destroy();
+		}
 	}
 	rearrangePages(pages) {
 		let n = pages.length;
@@ -2596,6 +2673,10 @@ export class PDFObject extends Userdata {
 		return libmupdf.HEAPU8.slice(ptr, ptr + len);
 	}
 	readStream() { return new Buffer(libmupdf._wasm_pdf_load_stream(this.pointer)); }
+	readStreamMax(maxBytes) {
+		checkType(maxBytes, "number");
+		return new Buffer(libmupdf._wasm_pdf_load_stream_max(this.pointer, maxBytes));
+	}
 	readRawStream() { return new Buffer(libmupdf._wasm_pdf_load_raw_stream(this.pointer)); }
 	writeObject(obj) {
 		if (!this.isIndirect())

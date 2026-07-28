@@ -93,7 +93,7 @@ describe.sequential('committed WASM provenance', () => {
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
     expect(result.stdout).toContain('5 artifact(s) match the manifest');
-    expect(result.stdout).toContain('8 tracked build input(s) match the manifest');
+    expect(result.stdout).toContain('9 tracked build input(s) match the manifest');
     expect(result.stdout).toContain(
       existsSync(processorSource)
         ? '5 rebuilt artifact(s) match committed output'

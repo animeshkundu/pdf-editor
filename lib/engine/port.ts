@@ -1,4 +1,5 @@
 export interface EngineTypes {
+  FeatureStatus: 'LOCAL' | 'EQUIV' | 'DEGRADED' | 'EXCLUDED' | 'OPEN';
   PdfRect: readonly [number, number, number, number];
   PdfPoint: readonly [number, number];
   PdfQuad: readonly [number, number, number, number, number, number, number, number];
@@ -69,6 +70,299 @@ export interface EngineTypes {
     readonly hits: readonly EngineTypes['SearchHit'][];
     readonly truncated: boolean;
   };
+  AnnotationType:
+    | 'Text'
+    | 'FreeText'
+    | 'Line'
+    | 'Square'
+    | 'Circle'
+    | 'Polygon'
+    | 'PolyLine'
+    | 'Highlight'
+    | 'Underline'
+    | 'Squiggly'
+    | 'StrikeOut'
+    | 'Redact'
+    | 'Stamp'
+    | 'Caret'
+    | 'Ink'
+    | 'FileAttachment';
+  AnnotationLineEnding:
+    | 'None'
+    | 'Square'
+    | 'Circle'
+    | 'Diamond'
+    | 'OpenArrow'
+    | 'ClosedArrow'
+    | 'Butt'
+    | 'ROpenArrow'
+    | 'RClosedArrow'
+    | 'Slash';
+  AnnotationBorderStyle: 'Solid' | 'Dashed' | 'Beveled' | 'Inset' | 'Underline';
+  AnnotationIntent:
+    | 'FreeTextCallout'
+    | 'FreeTextTypeWriter'
+    | 'LineArrow'
+    | 'LineDimension'
+    | 'PloyLine'
+    | 'PolygonCloud'
+    | 'PolygonDimension'
+    | 'StampImage';
+  AnnotationAttachment: {
+    readonly name: string;
+    readonly mimeType: string;
+    readonly data: ArrayBuffer;
+  };
+  AnnotationState: 'Accepted' | 'Rejected' | 'Cancelled' | 'Completed' | 'None';
+  AnnotationInput: {
+    readonly pageIndex: number;
+    readonly type: EngineTypes['AnnotationType'];
+    readonly rect: EngineTypes['PdfRect'];
+    readonly contents?: string;
+    readonly author?: string;
+    readonly subject?: string;
+    readonly color?: readonly [number, number, number];
+    readonly interiorColor?: readonly [number, number, number];
+    readonly opacity?: number;
+    readonly quadPoints?: readonly EngineTypes['PdfQuad'][];
+    readonly inkList?: readonly (readonly EngineTypes['PdfPoint'][])[];
+    readonly vertices?: readonly EngineTypes['PdfPoint'][];
+    readonly line?: readonly [EngineTypes['PdfPoint'], EngineTypes['PdfPoint']];
+    readonly lineEndingStyles?: readonly [
+      EngineTypes['AnnotationLineEnding'],
+      EngineTypes['AnnotationLineEnding'],
+    ];
+    readonly borderWidth?: number;
+    readonly borderStyle?: EngineTypes['AnnotationBorderStyle'];
+    readonly borderDashPattern?: readonly number[];
+    readonly borderEffect?: 'None' | 'Cloudy';
+    readonly borderEffectIntensity?: number;
+    readonly icon?: string;
+    readonly intent?: EngineTypes['AnnotationIntent'];
+    readonly quadding?: 0 | 1 | 2;
+    readonly calloutLine?: readonly EngineTypes['PdfPoint'][];
+    readonly stampImage?: ArrayBuffer;
+    readonly attachment?: EngineTypes['AnnotationAttachment'];
+    readonly replyTo?: {
+      readonly pageIndex: number;
+      readonly annotationId: number;
+    };
+    readonly clientId?: string;
+    readonly replyToClientId?: string;
+    readonly state?: EngineTypes['AnnotationState'];
+    readonly flags?: number;
+  };
+  AnnotationUpdate: {
+    readonly rect?: EngineTypes['PdfRect'];
+    readonly contents?: string;
+    readonly author?: string;
+    readonly subject?: string;
+    readonly color?: readonly [number, number, number];
+    readonly interiorColor?: readonly [number, number, number];
+    readonly opacity?: number;
+    readonly quadPoints?: readonly EngineTypes['PdfQuad'][];
+    readonly inkList?: readonly (readonly EngineTypes['PdfPoint'][])[];
+    readonly vertices?: readonly EngineTypes['PdfPoint'][];
+    readonly line?: readonly [EngineTypes['PdfPoint'], EngineTypes['PdfPoint']];
+    readonly lineEndingStyles?: readonly [
+      EngineTypes['AnnotationLineEnding'],
+      EngineTypes['AnnotationLineEnding'],
+    ];
+    readonly borderWidth?: number;
+    readonly borderStyle?: EngineTypes['AnnotationBorderStyle'];
+    readonly borderDashPattern?: readonly number[];
+    readonly borderEffect?: 'None' | 'Cloudy';
+    readonly borderEffectIntensity?: number;
+    readonly icon?: string;
+    readonly intent?: EngineTypes['AnnotationIntent'];
+    readonly quadding?: 0 | 1 | 2;
+    readonly calloutLine?: readonly EngineTypes['PdfPoint'][];
+    readonly stampImage?: ArrayBuffer;
+    readonly attachment?: EngineTypes['AnnotationAttachment'];
+    readonly state?: EngineTypes['AnnotationState'];
+    readonly flags?: number;
+  };
+  AnnotationInfo: {
+    readonly id: number;
+    readonly name: string;
+    readonly pageIndex: number;
+    readonly type: string;
+    readonly rect: EngineTypes['PdfRect'];
+    readonly contents: string;
+    readonly author: string;
+    readonly subject: string;
+    readonly color: readonly number[];
+    readonly opacity: number;
+    readonly borderWidth: number;
+    readonly borderStyle: string;
+    readonly lineEndingStyles: readonly [string, string];
+    readonly icon: string;
+    readonly state: EngineTypes['AnnotationState'];
+    readonly replyToId: number | null;
+    readonly flags: number;
+  };
+  FormFieldInfo: {
+    readonly id: number;
+    readonly pageIndex: number;
+    readonly name: string;
+    readonly label: string;
+    readonly type: string;
+    readonly value: string;
+    readonly readOnly: boolean;
+    readonly required: boolean;
+    readonly multiline: boolean;
+    readonly password: boolean;
+    readonly options: readonly string[];
+    readonly rect: EngineTypes['PdfRect'];
+  };
+  FormFieldType: 'text' | 'checkbox' | 'radio' | 'combo' | 'list' | 'button' | 'signature';
+  FormFieldInput: {
+    readonly pageIndex: number;
+    readonly name: string;
+    readonly label?: string;
+    readonly type: EngineTypes['FormFieldType'];
+    readonly rect: EngineTypes['PdfRect'];
+    readonly required?: boolean;
+    readonly readOnly?: boolean;
+    readonly multiline?: boolean;
+    readonly password?: boolean;
+    readonly comb?: boolean;
+    readonly editable?: boolean;
+    readonly multiple?: boolean;
+    readonly options?: readonly string[];
+  };
+  FormFieldUpdate: {
+    readonly name?: string;
+    readonly label?: string;
+    readonly rect?: EngineTypes['PdfRect'];
+    readonly required?: boolean;
+    readonly readOnly?: boolean;
+  };
+  JavaScriptTrigger: 'keystroke' | 'format' | 'validate' | 'calculate';
+  JavaScriptAction: {
+    readonly id: string;
+    readonly scope: 'document' | 'field';
+    readonly name: string;
+    readonly source: string;
+    readonly fieldName?: string;
+    readonly trigger?: EngineTypes['JavaScriptTrigger'];
+  };
+  JavaScriptActionInput: {
+    readonly scope: 'document' | 'field';
+    readonly name: string;
+    readonly source: string;
+    readonly trigger?: EngineTypes['JavaScriptTrigger'];
+  };
+  JavaScriptActionIdentity: {
+    readonly scope: 'document' | 'field';
+    readonly name: string;
+    readonly trigger?: EngineTypes['JavaScriptTrigger'];
+  };
+  JavaScriptEvent: {
+    readonly type:
+      'alert' | 'print' | 'launch-url' | 'mail-doc' | 'submit' | 'exec-menu-item' | 'console';
+    readonly detail: string;
+    readonly blocked: boolean;
+  };
+  JavaScriptState: {
+    readonly enabled: boolean;
+    readonly scripts: readonly EngineTypes['JavaScriptAction'][];
+    readonly events: readonly EngineTypes['JavaScriptEvent'][];
+  };
+  JavaScriptExecutionResult: {
+    readonly result: string;
+    readonly events: readonly EngineTypes['JavaScriptEvent'][];
+    readonly document: EngineTypes['DocumentInfo'];
+    readonly journal: EngineTypes['JournalState'];
+  };
+  JournalState: {
+    readonly position: number;
+    readonly steps: readonly string[];
+    readonly canUndo: boolean;
+    readonly canRedo: boolean;
+    readonly revision: number;
+  };
+  MutationResult: {
+    readonly document: EngineTypes['DocumentInfo'];
+    readonly journal: EngineTypes['JournalState'];
+    readonly annotation?: EngineTypes['AnnotationInfo'];
+  };
+  PdfPermission:
+    'print' | 'copy' | 'edit' | 'annotate' | 'form' | 'accessibility' | 'assemble' | 'print-hq';
+  SaveOptions: {
+    readonly mode: 'full' | 'incremental';
+    readonly garbage: 'none' | 'compact' | 'deduplicate' | 'all';
+    readonly compress: boolean;
+    readonly encrypt: 'keep' | 'none' | 'aes-128' | 'aes-256';
+    readonly 'user-password'?: string;
+    readonly 'owner-password'?: string;
+    readonly permissions?: readonly EngineTypes['PdfPermission'][];
+  };
+  OutputState: {
+    readonly unappliedRedactions: number;
+    readonly signatures: number;
+    readonly canPersist: boolean;
+    readonly persistenceReason?: string;
+  };
+  ExportedPdf: {
+    readonly name: string;
+    readonly data: ArrayBuffer;
+  };
+  PageCompositionItem: {
+    readonly source: 'current' | 'incoming';
+    readonly pageIndex: number;
+  };
+  PageBox: 'MediaBox' | 'CropBox' | 'BleedBox' | 'TrimBox' | 'ArtBox';
+  PageLabelStyle:
+    'none' | 'decimal' | 'roman-upper' | 'roman-lower' | 'alpha-upper' | 'alpha-lower';
+  IncomingDocumentInfo: {
+    readonly name: string;
+    readonly pageCount: number;
+    readonly pages: readonly {
+      readonly index: number;
+      readonly label: string;
+    }[];
+  };
+  CompareResult: {
+    readonly incomingName: string;
+    readonly same: number;
+    readonly changed: number;
+    readonly added: number;
+    readonly removed: number;
+    readonly pages: readonly {
+      readonly pageIndex: number;
+      readonly status: 'same' | 'changed' | 'added' | 'removed';
+      readonly currentLabel?: string;
+      readonly incomingLabel?: string;
+      readonly currentCharacters: number;
+      readonly incomingCharacters: number;
+      readonly dimensionsChanged: boolean;
+      readonly rasterReviewRecommended: boolean;
+    }[];
+  };
+  PdfAReport: {
+    readonly profile: string | null;
+    readonly valid: boolean;
+    readonly checks: readonly {
+      readonly id: string;
+      readonly label: string;
+      readonly passed: boolean;
+      readonly detail: string;
+    }[];
+  };
+  SanitizeReport: {
+    readonly data: ArrayBuffer;
+    readonly document: EngineTypes['DocumentInfo'];
+    readonly journal: EngineTypes['JournalState'];
+    readonly removed: {
+      readonly scripts: number;
+      readonly embeddedFiles: number;
+      readonly metadata: number;
+      readonly formValues: number;
+      readonly hiddenAnnotations: number;
+      readonly pages: number;
+    };
+  };
   PdfEngine: {
     readonly info: EngineTypes['DocumentInfo'];
     renderTile(
@@ -84,6 +378,115 @@ export interface EngineTypes {
     ): Promise<EngineTypes['TextSelection']>;
     search(query: string, signal?: AbortSignal): Promise<EngineTypes['SearchResult']>;
     readAttachment(id: string, signal?: AbortSignal): Promise<ArrayBuffer>;
+    listAnnotations(pageIndex?: number): Promise<readonly EngineTypes['AnnotationInfo'][]>;
+    addAnnotation(
+      input: EngineTypes['AnnotationInput'],
+    ): Promise<EngineTypes['MutationResult']>;
+    addAnnotations(
+      inputs: readonly EngineTypes['AnnotationInput'][],
+    ): Promise<EngineTypes['MutationResult']>;
+    updateAnnotation(
+      pageIndex: number,
+      annotationId: number,
+      changes: EngineTypes['AnnotationUpdate'],
+    ): Promise<EngineTypes['MutationResult']>;
+    deleteAnnotation(
+      pageIndex: number,
+      annotationId: number,
+    ): Promise<EngineTypes['MutationResult']>;
+    reorderPages(order: readonly number[]): Promise<EngineTypes['MutationResult']>;
+    rotatePages(
+      pageIndices: readonly number[],
+      degrees: 90 | 180 | 270 | -90 | -180 | -270,
+    ): Promise<EngineTypes['MutationResult']>;
+    insertBlankPage(
+      at: number,
+      size?: EngineTypes['PdfRect'],
+    ): Promise<EngineTypes['MutationResult']>;
+    deletePages(pageIndices: readonly number[]): Promise<EngineTypes['MutationResult']>;
+    setPageBoxes(
+      pageIndices: readonly number[],
+      box: EngineTypes['PageBox'],
+      rect: EngineTypes['PdfRect'],
+    ): Promise<EngineTypes['MutationResult']>;
+    setPageLabels(
+      at: number,
+      style: EngineTypes['PageLabelStyle'],
+      prefix: string,
+      start: number,
+    ): Promise<EngineTypes['MutationResult']>;
+    extractPages(
+      pageIndices: readonly number[],
+      deleteOriginals?: boolean,
+    ): Promise<EngineTypes['ExportedPdf']>;
+    mergeDocument(
+      name: string,
+      data: ArrayBuffer,
+      insertAt: number,
+      sourcePages?: readonly number[],
+    ): Promise<EngineTypes['MutationResult']>;
+    composePages(
+      name: string,
+      order: readonly EngineTypes['PageCompositionItem'][],
+      data?: ArrayBuffer,
+    ): Promise<EngineTypes['MutationResult']>;
+    inspectIncomingDocument(
+      name: string,
+      data: ArrayBuffer,
+    ): Promise<EngineTypes['IncomingDocumentInfo']>;
+    compareDocument(name: string, data: ArrayBuffer): Promise<EngineTypes['CompareResult']>;
+    validatePdfA(): Promise<EngineTypes['PdfAReport']>;
+    splitDocument(
+      ranges: readonly (readonly [number, number])[],
+    ): Promise<readonly EngineTypes['ExportedPdf'][]>;
+    listFields(): Promise<readonly EngineTypes['FormFieldInfo'][]>;
+    setFieldValue(
+      name: string,
+      value: string | boolean,
+    ): Promise<EngineTypes['MutationResult']>;
+    setFieldValues(
+      values: Readonly<Record<string, string | boolean>>,
+    ): Promise<EngineTypes['MutationResult']>;
+    createFormField(
+      input: EngineTypes['FormFieldInput'],
+    ): Promise<EngineTypes['MutationResult']>;
+    updateFormField(
+      name: string,
+      changes: EngineTypes['FormFieldUpdate'],
+    ): Promise<EngineTypes['MutationResult']>;
+    updateFormFields(
+      updates: readonly {
+        readonly name: string;
+        readonly changes: EngineTypes['FormFieldUpdate'];
+      }[],
+    ): Promise<EngineTypes['MutationResult']>;
+    reorderFormFields(names: readonly string[]): Promise<EngineTypes['MutationResult']>;
+    resetForm(): Promise<EngineTypes['MutationResult']>;
+    getJavaScriptState(): Promise<EngineTypes['JavaScriptState']>;
+    setJavaScriptAction(
+      input: EngineTypes['JavaScriptActionInput'],
+    ): Promise<EngineTypes['MutationResult']>;
+    deleteJavaScriptAction(
+      input: EngineTypes['JavaScriptActionIdentity'],
+    ): Promise<EngineTypes['MutationResult']>;
+    executeJavaScript(source: string): Promise<EngineTypes['JavaScriptExecutionResult']>;
+    updateMetadata(
+      values: Readonly<
+        Partial<Record<'title' | 'author' | 'subject' | 'keywords' | 'language', string>>
+      >,
+    ): Promise<EngineTypes['MutationResult']>;
+    save(options: EngineTypes['SaveOptions']): Promise<ArrayBuffer>;
+    exportPdf(options: EngineTypes['SaveOptions']): Promise<ArrayBuffer>;
+    redactPages(
+      pageIndices: readonly number[],
+      confirmSignatureInvalidation: boolean,
+    ): Promise<EngineTypes['SanitizeReport']>;
+    sanitize(confirmSignatureInvalidation: boolean): Promise<EngineTypes['SanitizeReport']>;
+    undo(): Promise<EngineTypes['MutationResult']>;
+    redo(): Promise<EngineTypes['MutationResult']>;
+    getJournal(): Promise<EngineTypes['JournalState']>;
+    getOutputState(): Promise<EngineTypes['OutputState']>;
+    subscribe(listener: (event: EngineTypes['EngineEvent']) => void): () => void;
     close(): Promise<void>;
   };
   PdfEngineFactory: (file: File, signal?: AbortSignal) => Promise<EngineTypes['PdfEngine']>;
@@ -95,7 +498,13 @@ export interface EngineTypes {
           readonly name: string;
           readonly data: ArrayBuffer;
           readonly ios: boolean;
+          readonly persistenceKey?: string;
         };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'getDocumentInfo' | 'snapshotForSearch';
+        readonly payload: Record<string, never>;
       }
     | {
         readonly id: number;
@@ -128,6 +537,232 @@ export interface EngineTypes {
       }
     | {
         readonly id: number;
+        readonly operation: 'listAnnotations';
+        readonly payload: { readonly pageIndex?: number };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'addAnnotation';
+        readonly payload: EngineTypes['AnnotationInput'];
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'addAnnotations';
+        readonly payload: { readonly inputs: readonly EngineTypes['AnnotationInput'][] };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'updateAnnotation';
+        readonly payload: {
+          readonly pageIndex: number;
+          readonly annotationId: number;
+          readonly changes: EngineTypes['AnnotationUpdate'];
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'deleteAnnotation';
+        readonly payload: { readonly pageIndex: number; readonly annotationId: number };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'reorderPages';
+        readonly payload: { readonly order: readonly number[] };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'rotatePages';
+        readonly payload: {
+          readonly pageIndices: readonly number[];
+          readonly degrees: 90 | 180 | 270 | -90 | -180 | -270;
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'insertBlankPage';
+        readonly payload: { readonly at: number; readonly size?: EngineTypes['PdfRect'] };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'deletePages';
+        readonly payload: { readonly pageIndices: readonly number[] };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'setPageBoxes';
+        readonly payload: {
+          readonly pageIndices: readonly number[];
+          readonly box: EngineTypes['PageBox'];
+          readonly rect: EngineTypes['PdfRect'];
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'setPageLabels';
+        readonly payload: {
+          readonly at: number;
+          readonly style: EngineTypes['PageLabelStyle'];
+          readonly prefix: string;
+          readonly start: number;
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'extractPages';
+        readonly payload: {
+          readonly pageIndices: readonly number[];
+          readonly deleteOriginals: boolean;
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'mergeDocument';
+        readonly payload: {
+          readonly name: string;
+          readonly data: ArrayBuffer;
+          readonly insertAt: number;
+          readonly sourcePages?: readonly number[];
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'composePages';
+        readonly payload: {
+          readonly name: string;
+          readonly order: readonly EngineTypes['PageCompositionItem'][];
+          readonly data?: ArrayBuffer;
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'inspectIncomingDocument';
+        readonly payload: {
+          readonly name: string;
+          readonly data: ArrayBuffer;
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'compareDocument';
+        readonly payload: {
+          readonly name: string;
+          readonly data: ArrayBuffer;
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'validatePdfA';
+        readonly payload: Record<string, never>;
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'splitDocument';
+        readonly payload: { readonly ranges: readonly (readonly [number, number])[] };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'listFields';
+        readonly payload: Record<string, never>;
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'setFieldValue';
+        readonly payload: { readonly name: string; readonly value: string | boolean };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'setFieldValues';
+        readonly payload: {
+          readonly values: Readonly<Record<string, string | boolean>>;
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'createFormField';
+        readonly payload: EngineTypes['FormFieldInput'];
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'updateFormField';
+        readonly payload: {
+          readonly name: string;
+          readonly changes: EngineTypes['FormFieldUpdate'];
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'updateFormFields';
+        readonly payload: {
+          readonly updates: readonly {
+            readonly name: string;
+            readonly changes: EngineTypes['FormFieldUpdate'];
+          }[];
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'reorderFormFields';
+        readonly payload: { readonly names: readonly string[] };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'resetForm';
+        readonly payload: Record<string, never>;
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'getJavaScriptState';
+        readonly payload: Record<string, never>;
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'setJavaScriptAction';
+        readonly payload: EngineTypes['JavaScriptActionInput'];
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'deleteJavaScriptAction';
+        readonly payload: EngineTypes['JavaScriptActionIdentity'];
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'executeJavaScript';
+        readonly payload: { readonly source: string };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'updateMetadata';
+        readonly payload: {
+          readonly values: Readonly<
+            Partial<Record<'title' | 'author' | 'subject' | 'keywords' | 'language', string>>
+          >;
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'save' | 'exportPdf';
+        readonly payload: EngineTypes['SaveOptions'];
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'redactPages';
+        readonly payload: {
+          readonly pageIndices: readonly number[];
+          readonly confirmSignatureInvalidation: boolean;
+        };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'sanitize';
+        readonly payload: { readonly confirmSignatureInvalidation: boolean };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'undo' | 'redo' | 'getJournal' | 'getOutputState';
+        readonly payload: Record<string, never>;
+      }
+    | {
+        readonly id: number;
         readonly operation: 'search';
         readonly payload: { readonly query: string };
       }
@@ -150,6 +785,19 @@ export interface EngineTypes {
     | EngineTypes['SearchResult']
     | readonly EngineTypes['OutlineNode'][]
     | readonly EngineTypes['AttachmentInfo'][]
+    | readonly EngineTypes['AnnotationInfo'][]
+    | readonly EngineTypes['FormFieldInfo'][]
+    | EngineTypes['MutationResult']
+    | EngineTypes['JournalState']
+    | EngineTypes['OutputState']
+    | EngineTypes['ExportedPdf']
+    | EngineTypes['IncomingDocumentInfo']
+    | EngineTypes['CompareResult']
+    | EngineTypes['PdfAReport']
+    | EngineTypes['JavaScriptState']
+    | EngineTypes['JavaScriptExecutionResult']
+    | readonly EngineTypes['ExportedPdf'][]
+    | EngineTypes['SanitizeReport']
     | ArrayBuffer;
   EngineResponse:
     | {
@@ -162,6 +810,17 @@ export interface EngineTypes {
         readonly ok: false;
         readonly error: EngineTypes['SerializedEngineError'];
       };
+  EngineEvent:
+    | {
+        readonly event: 'persistence-error';
+        readonly message: string;
+      }
+    | {
+        readonly event: 'persistence-status';
+        readonly available: boolean;
+        readonly reason?: string;
+      };
+  WorkerMessage: EngineTypes['EngineResponse'] | EngineTypes['EngineEvent'];
 }
 
 class WorkerCrashedError extends Error {

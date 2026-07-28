@@ -21,7 +21,10 @@
     "noImplicitOverride": true,
     "verbatimModuleSyntax": true,
 
-    "paths": { "@/*": ["./*"] },
+    "paths": {
+      "@/*": ["./*"],
+      "@radix-ui/react-select": ["./lib/vendor/radix-select.d.ts"]
+    },
     "types": ["vite/client", "vitest/globals", "node"]
   },
   "include": [

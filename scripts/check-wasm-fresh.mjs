@@ -176,9 +176,14 @@ const sourceStatus = spawnSync('git', ['status', '--short', '--untracked-files=a
   shell: false,
 });
 const expectedSourceStatus = [
+  ' M include/mupdf/pdf/javascript.h',
+  ' M include/mupdf/pdf/object.h',
   ' M platform/wasm/lib/mupdf.c',
   ' M platform/wasm/lib/mupdf.ts',
   ' M platform/wasm/tools/build.sh',
+  ' M source/pdf/pdf-form.c',
+  ' M source/pdf/pdf-js.c',
+  ' M source/pdf/pdf-parse.c',
   '?? platform/wasm/lib/mupdf-js-processor.c',
 ].sort();
 if (

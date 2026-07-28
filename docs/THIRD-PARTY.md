@@ -37,7 +37,7 @@ Present in `package.json` today.
 | Component                | Version | Source                              | License           | Purpose                                                        |
 | ------------------------ | ------: | ----------------------------------- | ----------------- | -------------------------------------------------------------- |
 | MuPDF                    |  1.28.0 | npm `mupdf`                         | AGPL-3.0-or-later | PDF engine: parse, repair, render, structured text, edit, save |
-| MuPDF WASM fork          |  1.28.0 | Artifex source, `vendor/mupdf-wasm` | AGPL-3.0-or-later | Buffered processor bridge and sanitize-filter diagnostic       |
+| MuPDF WASM fork          |  1.28.0 | Artifex source, `vendor/mupdf-wasm` | AGPL-3.0-or-later | Processor/filter exports and observable MuJS form scripting    |
 | React                    |  19.2.7 | npm `react`                         | MIT               | Editor UI                                                      |
 | React DOM                |  19.2.7 | npm `react-dom`                     | MIT               | Browser renderer                                               |
 | Zustand                  |  5.0.14 | npm `zustand`                       | MIT               | Application state outside React's render path                  |

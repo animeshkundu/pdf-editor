@@ -39,10 +39,10 @@ const wasmSrcDir = join(srcDir, 'platform', 'wasm');
 const patchDir = join(vendorDir, 'patches');
 const verifyOnly = process.argv.includes('--verify-only');
 
-// Dropping `mujs=no` from upstream's default is what enables AcroForm JavaScript. The
-// exports already exist in the shim; the flag is all that gates them. Measured cost:
-// 240,327 bytes, about 2.3 percent of the binary.
-const FEATURES = 'brotli=no extract=no xps=no svg=no';
+// `mujs=yes` enables AcroForm JavaScript. The fork also exports observable document
+// events and bounded console execution. Measured interpreter cost: 240,327 bytes,
+// about 2.3 percent of the stock binary.
+const FEATURES = 'brotli=no mujs=yes extract=no xps=no svg=no';
 
 // `make` caches object files per build_suffix. Without a distinct suffix a variant
 // build silently reuses the previous configuration's objects and emits a byte-identical

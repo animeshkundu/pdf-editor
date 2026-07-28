@@ -22,7 +22,7 @@ Nothing has been released yet. The repository is at `0.0.0`.
 - Gate scripts: `check-no-egress`, `check-wasm-fresh`, `check-supply-chain`, and
   `check-bundle-size`.
 - Documentation set and ADRs 0001 through 0019 under `docs/adr/`.
-- Product specification draft: the five-label parity classification, a 308-item feature
+- Product specification draft: the five-label parity classification, a 312-item feature
   inventory with stable identifiers, the competitor-win set, and the UI and UX
   specification under `docs/spec/`.
 - MuPDF vendoring via `scripts/vendor-mupdf.mjs`, with the stock from-source WASM build
@@ -37,11 +37,44 @@ Nothing has been released yet. The repository is at `0.0.0`.
   outline, attachments, and a keyboard command palette.
 - In-product `LOCAL`, `EQUIV`, `DEGRADED`, `EXCLUDED`, and `OPEN` disclosures that distinguish
   the shipped viewer from withdrawn content rewriting, redaction, and unproven signing.
+- Serializable worker-side mutation port for annotations, page operations, form filling,
+  metadata, AES password encryption, conservative sanitizing, wholesale page removal,
+  full save/export, and MuPDF journal undo/redo.
+- One command registry for the palette, platform shortcuts, disabled reasons, remapping, and
+  preview-before-run automation pipelines.
+- Worker-owned, feature-detected OPFS crash snapshots with debouncing, atomic generation
+  rename, startup sweep primitives, and explicit degraded status when required APIs are absent.
+- Document-first markup, comments, page organization, form, security, history, and disclosed
+  overlay-entry panels.
+- Independent pdf.js and qpdf acceptance tests for annotations, page mutations, failed-action
+  rollback, one-step undo, and AES-256 encryption.
+- ADRs 0021 through 0025 for the mutating port, command registry, Save semantics, redaction
+  gating, and active text entry.
+- Page composition workflows for drag reorder, exact insertion, extraction, replace, merge,
+  duplicate, alternate/mix, named page boxes, labels, and split variants, all with result
+  previews and journal undo.
+- Interoperable markup families and properties: text markup, line and shape geometry, ink,
+  clouds, built-in/dynamic/image stamps, file comments, measurements, reusable named tool
+  sets, selection actions, and appearance regeneration.
+- Sortable comment review with reply threads, review state, body editing, two-way navigation,
+  and previewed FDF/XFDF import and export.
+- AcroForm authoring for text, check, radio, choice, button, and signature fields; field
+  positioning, resizing, alignment, distribution, tab order, isolated test mode, validation,
+  and FDF/XFDF/XML/CSV value interchange.
+- Worker-isolated MuJS for form keystroke, validation, calculation, and formatting actions;
+  document-level scripts; an authoring console; and observable blocked external side effects.
+- Local compare reports, native-browser OCR with pre-commit degradation disclosure, PDF/A
+  conformance checks, Markdown export, Read Out Loud, accessibility checks and property repair,
+  browser print preparation, and the registry-backed pipeline builder.
 
 ### Changed
 
 - Content-stream editing, true redaction, existing object rewrites, and marked-content
   tagging were withdrawn after the null filter produced diffuse render perturbations.
+- Save writes back only when the user opened through a Chromium File System Access handle;
+  every other surface is named Download before invocation.
+- The density control now uses Radix Select, platform shortcuts show Ctrl or Command correctly,
+  and the empty state uses wide viewports as a two-column document-first introduction.
 
 ### Deprecated
 
@@ -49,9 +82,23 @@ Nothing has been released yet. The repository is at `0.0.0`.
 
 ### Fixed
 
+- Narrow global-toolbar tracks now shrink without overlapping labels.
+- Development CSP transformation permits Vite HMR without changing the production CSP.
+- Full garbage-collecting output is produced from an isolated reopened snapshot so saving
+  cannot invalidate the active document's journal.
+- The pinned qpdf bootstrap now serializes concurrent clean-host installation and replaces an
+  incomplete cache atomically, avoiding missing-library and `ENOTEMPTY` oracle failures.
+- Geometry-derived annotations no longer receive an invalid `/Rect` setter, so line, ink, and
+  vertex markup use their native geometry without wrapper errors.
+- Toolbar actions and recovery/error messages reflow without overlap at 320 px and 200% zoom.
+
 ### Security
 
 - Default-deny Content Security Policy in `web/index.html`.
+- PDF JavaScript has no browser network API; URL, email, submission, print, and menu requests
+  are recorded for review and never performed.
+- Decoded PDF JavaScript actions are capped before MuJS parses them; console evaluation uses a
+  disposable snapshot and cannot mutate the open document.
 - Updated ESLint's transitive `brace-expansion` dependency to the patched 5.0.8 release.
 - Zero-egress proof in two layers: a static scan of the shipped bundle
   (`scripts/check-no-egress.mjs`) and a runtime assertion that the running application
