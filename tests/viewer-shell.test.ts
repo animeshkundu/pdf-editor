@@ -65,6 +65,12 @@ function makeEngine(
     readAttachment: vi.fn(async () => new ArrayBuffer(0)),
     listAnnotations: vi.fn(async () => []),
     addAnnotation: vi.fn(async () => mutation),
+    editExistingText: vi.fn(async () => ({
+      ...mutation,
+      fidelity: 'DEGRADED' as const,
+      analysis: 'inferred' as const,
+      fontName: 'F1',
+    })),
     addAnnotations: vi.fn(async () => mutation),
     updateAnnotation: vi.fn(async () => mutation),
     deleteAnnotation: vi.fn(async () => mutation),

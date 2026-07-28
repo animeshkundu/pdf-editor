@@ -333,6 +333,17 @@ class WorkerPdfEngine implements PdfEngine {
     );
   }
 
+  async editExistingText(
+    input: EngineTypes['ExistingTextEditInput'],
+  ): Promise<EngineTypes['ExistingTextEditReport']> {
+    return this.#acceptMutation(
+      await this.#mutationRequest<EngineTypes['ExistingTextEditReport']>({
+        operation: 'editExistingText',
+        payload: input,
+      }),
+    ) as EngineTypes['ExistingTextEditReport'];
+  }
+
   async addAnnotations(
     inputs: readonly EngineTypes['AnnotationInput'][],
   ): Promise<EngineTypes['MutationResult']> {

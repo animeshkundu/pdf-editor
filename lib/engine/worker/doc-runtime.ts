@@ -872,6 +872,49 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
             annotationMutations.addAnnotation(arena, document, request.payload),
         );
         postSuccess(scope, request.id, result);
+      } else if (request.operation === 'editExistingText') {
+        const document = requirePdfDocument();
+        const preflight = annotationMutations.inspectExistingTextEdit(
+          document,
+          request.payload,
+        );
+        const signatures = redactionMutations.signatureCount(document);
+        if (signatures > 0 && !request.payload.confirmSignatureInvalidation) {
+          throw new Error(
+            'Existing-text edit requires confirmation because redacting the original glyphs invalidates existing signatures.',
+          );
+        }
+        const completed = journalOperation(
+          document,
+          'Edit existing text',
+          () => {
+            assertOutputCost();
+            assertMutationCost(
+              annotationMutations.projectedExistingTextEditBytes(request.payload),
+            );
+          },
+          (arena) => {
+            const annotation = annotationMutations.editExistingText(
+              arena,
+              document,
+              request.payload,
+              preflight,
+            );
+            return { annotation, info: documentInfo(false) };
+          },
+        );
+        refreshSourceByteLength(document);
+        schedulePersistence();
+        const result: EngineTypes['ExistingTextEditReport'] = {
+          document: completed.info,
+          journal: journalState(document, ++journalRevision),
+          annotation: completed.annotation,
+          fidelity: 'DEGRADED',
+          analysis: preflight.partialAnalysis ? 'partial' : 'inferred',
+          ...(preflight.partialAnalysis ? { limitation: 'form-xobject' as const } : {}),
+          fontName: preflight.fontName,
+        };
+        postSuccess(scope, request.id, result);
       } else if (request.operation === 'addAnnotations') {
         if (request.payload.inputs.length === 0) {
           throw new Error('The imported comment file has no supported comments.');

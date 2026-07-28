@@ -1,4 +1,15 @@
-export type TextEntryKind = 'form-field' | 'comment' | 'overlay';
+import type { EngineTypes } from '../engine/port';
+
+export type TextEntryKind = 'form-field' | 'comment' | 'overlay' | 'existing-text';
+
+export function selectionBounds(
+  quads: readonly EngineTypes['PdfQuad'][],
+): EngineTypes['PdfRect'] {
+  if (quads.length === 0) throw new Error('The selection has no writable text geometry.');
+  const xs = quads.flatMap((quad) => [quad[0], quad[2], quad[4], quad[6]]);
+  const ys = quads.flatMap((quad) => [quad[1], quad[3], quad[5], quad[7]]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
 
 export interface ActiveTextEntryState {
   readonly kind: TextEntryKind;
@@ -52,4 +63,4 @@ export function updateTextEntry(
   };
 }
 
-export default { createTextEntry, directionForText, updateTextEntry };
+export default { createTextEntry, directionForText, selectionBounds, updateTextEntry };

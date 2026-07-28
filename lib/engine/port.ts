@@ -61,6 +61,19 @@ export interface EngineTypes {
     readonly quads: readonly EngineTypes['PdfQuad'][];
     readonly truncated: boolean;
   };
+  ExistingTextEditInput: {
+    readonly pageIndex: number;
+    readonly originalText: string;
+    readonly replacementText: string;
+    readonly quads: readonly EngineTypes['PdfQuad'][];
+    readonly confirmSignatureInvalidation: boolean;
+  };
+  ExistingTextEditReport: EngineTypes['MutationResult'] & {
+    readonly fidelity: 'DEGRADED';
+    readonly analysis: 'inferred' | 'partial';
+    readonly limitation?: 'form-xobject';
+    readonly fontName: string;
+  };
   SearchHit: {
     readonly pageIndex: number;
     readonly pageLabel: string;
@@ -390,6 +403,9 @@ export interface EngineTypes {
     addAnnotation(
       input: EngineTypes['AnnotationInput'],
     ): Promise<EngineTypes['MutationResult']>;
+    editExistingText(
+      input: EngineTypes['ExistingTextEditInput'],
+    ): Promise<EngineTypes['ExistingTextEditReport']>;
     addAnnotations(
       inputs: readonly EngineTypes['AnnotationInput'][],
     ): Promise<EngineTypes['MutationResult']>;
@@ -555,6 +571,11 @@ export interface EngineTypes {
         readonly id: number;
         readonly operation: 'addAnnotation';
         readonly payload: EngineTypes['AnnotationInput'];
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'editExistingText';
+        readonly payload: EngineTypes['ExistingTextEditInput'];
       }
     | {
         readonly id: number;
@@ -804,6 +825,7 @@ export interface EngineTypes {
     | readonly EngineTypes['AnnotationInfo'][]
     | readonly EngineTypes['FormFieldInfo'][]
     | EngineTypes['MutationResult']
+    | EngineTypes['ExistingTextEditReport']
     | EngineTypes['JournalState']
     | EngineTypes['OutputState']
     | EngineTypes['ExportedPdf']

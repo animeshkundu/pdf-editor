@@ -43,7 +43,9 @@ export default function ActiveTextEntry({
           ? 'Enter field value'
           : kind === 'comment'
             ? 'Write comment'
-            : 'Type overlay text'),
+            : kind === 'existing-text'
+              ? 'Edit selected text'
+              : 'Type overlay text'),
       state.direction === 'rtl' ? canvas.clientWidth - 12 : 12,
       30,
       canvas.clientWidth - 24,
@@ -111,7 +113,9 @@ export default function ActiveTextEntry({
             ? 'Set field value'
             : kind === 'comment'
               ? 'Save comment'
-              : 'Add overlay'}
+              : kind === 'existing-text'
+                ? 'Replace selected text'
+                : 'Add overlay'}
         </button>
         <button type="button" onClick={onCancel}>
           Cancel
@@ -121,6 +125,13 @@ export default function ActiveTextEntry({
         <p className="scope-note">
           DEGRADED · This adds a PDF annotation above the page. It does not replace, reflow, or
           remove the original text.
+        </p>
+      ) : kind === 'existing-text' ? (
+        <p className="scope-note">
+          DEGRADED · Commit redacts the original glyphs and adds replacement text with the
+          page&apos;s own font object. The content-stream filter can perturb rendering on some
+          documents. Pages using Form XObjects are only partly analysable and unsupported fonts
+          or glyphs are refused.
         </p>
       ) : (
         <p className="scope-note">

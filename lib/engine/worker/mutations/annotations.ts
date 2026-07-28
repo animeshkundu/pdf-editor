@@ -1,5 +1,7 @@
 import * as mupdf from '../../../../vendor/mupdf-wasm/dist/mupdf.js';
 import type { EngineTypes } from '../../port';
+import { encodeWithToUnicodeCMap } from '../../../text/encoding';
+import { selectionBounds } from '../../../text/overlay';
 import { withArenaSync, type Arena } from '../arena';
 
 type AnnotationInfo = EngineTypes['AnnotationInfo'];
@@ -291,6 +293,149 @@ export function listAnnotations(
   });
 }
 
+interface ExistingTextEditPreflight {
+  readonly pageIndex: number;
+  readonly rect: EngineTypes['PdfRect'];
+  readonly fontName: string;
+  readonly encodedReplacement: Uint8Array;
+  readonly partialAnalysis: boolean;
+}
+
+export function inspectExistingTextEdit(
+  document: mupdf.PDFDocument,
+  input: EngineTypes['ExistingTextEditInput'],
+): ExistingTextEditPreflight {
+  if (!input.originalText.trim())
+    throw new Error('Existing-text edit refused because the selection is empty.');
+  if (!input.replacementText.trim())
+    throw new Error('Existing-text edit refused because replacement text is empty.');
+  if (input.quads.length === 0)
+    throw new Error('Existing-text edit refused because the selection has no glyph geometry.');
+  return withArenaSync((arena) => {
+    const page = pageAt(arena, document, input.pageIndex);
+    const trace = arena.keep(page.processContents());
+    const records = trace.getRecords();
+    const partialAnalysis = records.some((record) => record.operator === 'Do_form');
+    const fontNames = [
+      ...new Set(
+        records
+          .filter((record) => record.operator === 'Tf')
+          .map((record) => record.name)
+          .filter((name): name is string => Boolean(name)),
+      ),
+    ];
+    if (fontNames.length !== 1) {
+      throw new Error(
+        `Existing-text edit refused because the selection cannot be tied to one page font (${fontNames.length || 'none'} found). Select text using a single font.`,
+      );
+    }
+    const fontName = fontNames[0];
+    if (!fontName)
+      throw new Error('Existing-text edit refused because no page font was found.');
+    const pageObject = arena.keep(page.getObject());
+    const fontObject = arena.keep(pageObject.getInheritable('Resources').get('Font', fontName));
+    if (fontObject.isNull())
+      throw new Error(`Existing-text edit refused because page font /${fontName} is missing.`);
+    const subtype = arena.keep(fontObject.get('Subtype'));
+    if (subtype.isName() && subtype.asName() === 'Type3') {
+      throw new Error(
+        'Existing-text edit refused because Type3 fonts cannot be reused safely.',
+      );
+    }
+    const toUnicode = arena.keep(fontObject.get('ToUnicode'));
+    if (!toUnicode.isStream()) {
+      throw new Error(
+        'Existing-text edit refused because the page font has no /ToUnicode map.',
+      );
+    }
+    const cmapBuffer = arena.keep(toUnicode.readStream());
+    const cmap = new TextDecoder().decode(cmapBuffer.asUint8Array());
+    return {
+      pageIndex: input.pageIndex,
+      rect: selectionBounds(input.quads),
+      fontName,
+      encodedReplacement: encodeWithToUnicodeCMap(input.replacementText, cmap),
+      partialAnalysis,
+    };
+  });
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase();
+}
+
+export function editExistingText(
+  arena: Arena,
+  document: mupdf.PDFDocument,
+  input: EngineTypes['ExistingTextEditInput'],
+  preflight: ExistingTextEditPreflight,
+): AnnotationInfo {
+  const page = pageAt(arena, document, preflight.pageIndex);
+  const pageObject = arena.keep(page.getObject());
+  const fontObject = arena.keep(
+    pageObject.getInheritable('Resources').get('Font', preflight.fontName),
+  );
+  const redaction = arena.keep(page.createAnnotation('Redact'));
+  redaction.setFlags(mupdf.PDFAnnotation.IS_PRINT);
+  redaction.setRect([...preflight.rect]);
+  redaction.setQuadPoints(input.quads.map((quad) => [...quad]));
+  redaction.setContents(`Replace ${input.originalText}`);
+  redaction.update();
+  page.applyRedactions(
+    false,
+    mupdf.PDFPage.REDACT_IMAGE_NONE,
+    mupdf.PDFPage.REDACT_LINE_ART_NONE,
+    mupdf.PDFPage.REDACT_TEXT_REMOVE,
+  );
+  page.update();
+
+  const annotation = arena.keep(page.createAnnotation('FreeText'));
+  annotation.setFlags(mupdf.PDFAnnotation.IS_PRINT);
+  annotation.setRect([...preflight.rect]);
+  annotation.setContents(input.replacementText);
+  annotation.setDefaultAppearance(
+    'FEdit',
+    Math.max(1, (preflight.rect[3] - preflight.rect[1]) * 0.8),
+    [0, 0, 0],
+  );
+  annotation.update();
+  const object = arena.keep(annotation.getObject());
+  const appearance = arena.keep(object.get('AP', 'N'));
+  if (!appearance.isStream())
+    throw new Error(
+      'Existing-text edit refused because a FreeText appearance could not be created.',
+    );
+  const resourcesValue = arena.keep(appearance.get('Resources'));
+  const resources = resourcesValue.isDictionary()
+    ? resourcesValue
+    : arena.keep(document.newDictionary());
+  if (!resourcesValue.isDictionary()) arena.keep(appearance.put('Resources', resources));
+  const fontsValue = arena.keep(resources.get('Font'));
+  const fonts = fontsValue.isDictionary() ? fontsValue : arena.keep(document.newDictionary());
+  if (!fontsValue.isDictionary()) arena.keep(resources.put('Font', fonts));
+  arena.keep(fonts.put('FEdit', fontObject));
+  const width = preflight.rect[2] - preflight.rect[0];
+  const height = preflight.rect[3] - preflight.rect[1];
+  const fontSize = Math.max(1, height * 0.8);
+  appearance.writeStream(
+    `q BT /FEdit ${fontSize} Tf 0 g 0 ${Math.max(0, height - fontSize)} Td <${bytesToHex(preflight.encodedReplacement)}> Tj ET Q`,
+  );
+  appearance._putValue('BBox', [0, 0, width, height]);
+  return annotationInfo(arena, annotation, input.pageIndex, 0);
+}
+
+export function projectedExistingTextEditBytes(
+  input: EngineTypes['ExistingTextEditInput'],
+): number {
+  return (
+    32_768 +
+    new TextEncoder().encode(`${input.originalText}${input.replacementText}`).byteLength * 8 +
+    input.quads.length * 64
+  );
+}
+
 export function addAnnotation(
   arena: Arena,
   document: mupdf.PDFDocument,
@@ -361,7 +506,10 @@ export function deleteAnnotation(
 export default {
   addAnnotation,
   deleteAnnotation,
+  editExistingText,
+  inspectExistingTextEdit,
   listAnnotations,
   projectedAnnotationBytes,
+  projectedExistingTextEditBytes,
   updateAnnotation,
 };

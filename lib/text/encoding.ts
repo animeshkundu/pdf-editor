@@ -72,4 +72,76 @@ export function decodePdfTextString(bytes: Uint8Array): string {
   ).join('');
 }
 
-export default { decodePdfTextString };
+function hexBytes(value: string): Uint8Array {
+  if (value.length === 0 || value.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(value)) {
+    throw new Error('The font /ToUnicode map contains an invalid hexadecimal code.');
+  }
+  return Uint8Array.from({ length: value.length / 2 }, (_, index) =>
+    Number.parseInt(value.slice(index * 2, index * 2 + 2), 16),
+  );
+}
+
+function unicodeFromHex(value: string): string {
+  const bytes = hexBytes(value);
+  if (bytes.length % 2 !== 0) throw new Error('The font /ToUnicode map is not UTF-16BE.');
+  return decodeUtf16(Uint8Array.of(0xfe, 0xff, ...bytes), false);
+}
+
+/** Build the conservative inverse needed to reuse a PDF font's existing encoded subset. */
+export function invertToUnicodeCMap(source: string): ReadonlyMap<string, Uint8Array> {
+  const inverse = new Map<string, Uint8Array>();
+  const blocks = source.matchAll(/beginbfchar([\s\S]*?)endbfchar/gi);
+  for (const block of blocks) {
+    for (const match of block[1]?.matchAll(/<([0-9a-f]+)>\s*<([0-9a-f]+)>/gi) ?? []) {
+      const encoded = match[1];
+      const unicode = match[2];
+      if (!encoded || !unicode) continue;
+      const character = unicodeFromHex(unicode);
+      if ([...character].length === 1 && !inverse.has(character)) {
+        inverse.set(character, hexBytes(encoded));
+      }
+    }
+  }
+  for (const block of source.matchAll(/beginbfrange([\s\S]*?)endbfrange/gi)) {
+    for (const match of block[1]?.matchAll(/<([0-9a-f]+)>\s*<([0-9a-f]+)>\s*<([0-9a-f]+)>/gi) ??
+      []) {
+      const startHex = match[1];
+      const endHex = match[2];
+      const unicodeHex = match[3];
+      if (!startHex || !endHex || !unicodeHex || startHex.length !== endHex.length) continue;
+      const start = Number.parseInt(startHex, 16);
+      const end = Number.parseInt(endHex, 16);
+      const unicodeStart = Number.parseInt(unicodeHex, 16);
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end - start > 65_536)
+        continue;
+      for (let code = start; code <= end; code += 1) {
+        const encoded = code.toString(16).padStart(startHex.length, '0');
+        const unicode = (unicodeStart + code - start)
+          .toString(16)
+          .padStart(unicodeHex.length, '0');
+        const character = unicodeFromHex(unicode);
+        if ([...character].length === 1 && !inverse.has(character)) {
+          inverse.set(character, hexBytes(encoded));
+        }
+      }
+    }
+  }
+  return inverse;
+}
+
+export function encodeWithToUnicodeCMap(text: string, source: string): Uint8Array {
+  const inverse = invertToUnicodeCMap(source);
+  const chunks: number[] = [];
+  for (const character of text) {
+    const encoded = inverse.get(character);
+    if (!encoded) {
+      throw new Error(
+        `Existing-text edit refused because glyph ${JSON.stringify(character)} is absent from the embedded font subset. Choose text already supported by this font.`,
+      );
+    }
+    chunks.push(...encoded);
+  }
+  return Uint8Array.from(chunks);
+}
+
+export default { decodePdfTextString, encodeWithToUnicodeCMap, invertToUnicodeCMap };
