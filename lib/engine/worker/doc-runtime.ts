@@ -566,7 +566,7 @@ function assertNoUnappliedRedactions(document: mupdf.PDFDocument): void {
   const marks = redactionMutations.countUnappliedRedactions(document);
   if (marks > 0) {
     throw new Error(
-      `${marks} unapplied redaction ${marks === 1 ? 'mark blocks' : 'marks block'} Save, Export, and Print. Remove the marks or use a supported content-removal command.`,
+      `${marks} unapplied redaction ${marks === 1 ? 'mark blocks' : 'marks block'} Save, Export, and Print. Remove the marks or choose Apply redaction marks in Markup or Protect.`,
     );
   }
 }

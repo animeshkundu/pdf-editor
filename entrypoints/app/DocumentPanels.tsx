@@ -413,16 +413,17 @@ function CapabilitiesPanel() {
         <div>
           <dt>Existing-text editing</dt>
           <dd>
-            <StatusBadge>DEGRADED</StatusBadge> Available only as a disclosed FreeText
-            annotation overlay. Original text remains; replacement, producer reflow, and removal
-            are not claimed.
+            <StatusBadge>DEGRADED</StatusBadge> Correct replacement is offered only when the
+            selected glyphs can be encoded with the page&apos;s own non-Type3 font. Unsupported
+            selections are visibly refused.
           </dd>
         </div>
         <div>
           <dt>True redaction (selective apply)</dt>
           <dd>
-            <StatusBadge>EXCLUDED</StatusBadge> Withdrawn after the content rewrite failed its
-            fidelity gate. A black box is never presented as redaction.
+            <StatusBadge>DEGRADED</StatusBadge> Removes marked content, but the content-stream
+            filter can perturb rendering on some documents. Unsafe document structures are
+            refused.
           </dd>
         </div>
         <div>

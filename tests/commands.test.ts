@@ -32,6 +32,7 @@ function context(overrides: Partial<Omit<CommandContext, 'actions'>> = {}): {
     organize: run('organize'),
     forms: run('forms'),
     security: run('security'),
+    redaction: run('redaction'),
     compare: run('compare'),
     convert: run('convert'),
     accessibility: run('accessibility'),

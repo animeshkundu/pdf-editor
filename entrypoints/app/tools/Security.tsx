@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { EngineTypes } from '@/lib/engine/port';
+import { useDocumentStore } from '@/lib/store/document';
 import FeatureBadge from '../FeatureBadge';
 import type { ToolPanelProps } from './types';
 
@@ -9,11 +10,14 @@ export default function Security({
   onOutput,
   onError,
 }: Pick<ToolPanelProps, 'engine' | 'onMutation' | 'onOutput' | 'onError'>) {
+  const setRedactionNotice = useDocumentStore((store) => store.setRedactionNotice);
   const [state, setState] = useState<EngineTypes['OutputState'] | null>(null);
   const [encryption, setEncryption] = useState<'aes-256' | 'aes-128'>('aes-256');
   const [userPassword, setUserPassword] = useState('');
   const [ownerPassword, setOwnerPassword] = useState('');
   const [confirmRewrite, setConfirmRewrite] = useState(false);
+  const [redactionOutcome, setRedactionOutcome] = useState<string | null>(null);
+  const [applyingRedactions, setApplyingRedactions] = useState(false);
 
   useEffect(() => {
     void engine
@@ -36,13 +40,64 @@ export default function Security({
       </div>
       {state?.unappliedRedactions ? (
         <div className="warning-card" role="alert">
-          <strong>Output blocked</strong>
+          <strong>
+            Output blocked · Apply redaction marks <FeatureBadge status="DEGRADED" />
+          </strong>
           <p>
             {state.unappliedRedactions} unapplied redaction{' '}
             {state.unappliedRedactions === 1 ? 'mark is' : 'marks are'} present. A mark is not
-            removed content.
+            removed content. Applying removes marked content and unblocks output.
           </p>
+          <p>
+            DEGRADED: redaction writes through a content-stream filter that perturbs rendering
+            on some documents.
+          </p>
+          {state.signatures > 0 ? (
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={confirmRewrite}
+                onChange={(event) => setConfirmRewrite(event.target.checked)}
+              />
+              <span>
+                I understand that applying redactions invalidates {state.signatures} existing{' '}
+                {state.signatures === 1 ? 'signature' : 'signatures'}.
+              </span>
+            </label>
+          ) : null}
+          <button
+            type="button"
+            disabled={applyingRedactions || (state.signatures > 0 && !confirmRewrite)}
+            onClick={() => {
+              setApplyingRedactions(true);
+              setRedactionOutcome(null);
+              void engine
+                .applyRedactions(confirmRewrite)
+                .then((report) => {
+                  onMutation(report);
+                  setState((current) =>
+                    current ? { ...current, unappliedRedactions: 0 } : current,
+                  );
+                  const notice = `Applied ${report.applied} redaction ${report.applied === 1 ? 'mark' : 'marks'} on ${report.pages} ${report.pages === 1 ? 'page' : 'pages'}. Output is unblocked.`;
+                  setRedactionOutcome(notice);
+                  setRedactionNotice(notice);
+                })
+                .catch((error: unknown) => {
+                  const detail =
+                    error instanceof Error ? error.message : 'Unknown redaction error.';
+                  setRedactionOutcome(detail);
+                })
+                .finally(() => setApplyingRedactions(false));
+            }}
+          >
+            Apply redaction marks
+          </button>
+          {redactionOutcome ? <p role="alert">{redactionOutcome}</p> : null}
         </div>
+      ) : redactionOutcome ? (
+        <p className="result-summary" role="status">
+          {redactionOutcome}
+        </p>
       ) : null}
       <form
         className="security-form"
@@ -141,8 +196,9 @@ export default function Security({
         <div>
           <dt>Selective apply-redaction</dt>
           <dd>
-            <FeatureBadge status="EXCLUDED" /> Withdrawn after the content-stream fidelity gate
-            failed. A visual cover is never called safe.
+            <FeatureBadge status="DEGRADED" /> Removes marked content through a content-stream
+            filter. Refused when object metadata, marked-content property dictionaries, or Form
+            XObject content prevents proving removal.
           </dd>
         </div>
         <div>

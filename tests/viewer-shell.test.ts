@@ -354,9 +354,86 @@ describe('Phase 3 viewer acceptance', () => {
     expect(container.textContent).toContain('Existing-text editing');
     expect(container.textContent).toContain('DEGRADED');
     expect(container.textContent).toContain('True redaction');
-    expect(container.textContent).toContain('EXCLUDED');
+    expect(container.textContent).toContain('content-stream filter can perturb rendering');
     expect(container.textContent).toContain('Digital signing');
     expect(container.textContent).toContain('OPEN');
+  });
+
+  it('SIGN-031 makes applying redactions reachable beside marks and unblocks output', async () => {
+    let applied = false;
+    engine.getOutputState = vi.fn(async () => ({
+      unappliedRedactions: applied ? 0 : 1,
+      signatures: 0,
+      canPersist: true,
+    }));
+    engine.applyRedactions = vi.fn(async () => {
+      applied = true;
+      return {
+        data: new ArrayBuffer(0),
+        document: engine.info,
+        journal: await engine.getJournal(),
+        fidelity: 'DEGRADED' as const,
+        applied: 1,
+        pages: 1,
+      };
+    });
+    await act(async () => root.render(createElement(App, { engineFactory })));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(['%PDF-1.7'], 'marked.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => buttonNamed(container, 'Markup').click());
+    expect(container.textContent).toContain('Apply 1 redaction mark');
+    expect(container.textContent).toContain(
+      'redaction writes through a content-stream filter that perturbs rendering on some documents',
+    );
+    await act(async () => {
+      buttonNamed(container, 'Apply redaction marks').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(engine.applyRedactions).toHaveBeenCalledWith(false);
+    expect(container.textContent).toContain('Output is unblocked.');
+  });
+
+  it('SIGN-031 renders a refusal category and remedy at the apply action', async () => {
+    engine.getOutputState = vi.fn(async () => ({
+      unappliedRedactions: 1,
+      signatures: 0,
+      canPersist: true,
+    }));
+    engine.applyRedactions = vi.fn(async () => {
+      throw new Error(
+        'Apply redactions refused because Form XObject content on page 1. Remove the marks, run Sanitize, then place the marks again. The document was not changed.',
+      );
+    });
+    await act(async () => root.render(createElement(App, { engineFactory })));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(['%PDF-1.7'], 'unsupported.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => buttonNamed(container, 'Markup').click());
+    await act(async () => {
+      buttonNamed(container, 'Apply redaction marks').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Form XObject content on page 1');
+    expect(container.textContent).toContain(
+      'Remove the marks, run Sanitize, then place the marks again',
+    );
+    expect(container.textContent).not.toContain('Adding redaction failed');
   });
 
   it('FIND-001 discloses when the bounded result list omits additional matches', async () => {

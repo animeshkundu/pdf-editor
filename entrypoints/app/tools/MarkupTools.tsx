@@ -24,6 +24,7 @@ import {
   Waves,
 } from 'lucide-react';
 import type { EngineTypes } from '@/lib/engine/port';
+import { useDocumentStore } from '@/lib/store/document';
 import { viewportStore } from '@/lib/store/viewport';
 import ActiveTextEntry from '../ActiveTextEntry';
 import FeatureBadge from '../FeatureBadge';
@@ -338,7 +339,11 @@ export default function MarkupTools({
   onError,
 }: Pick<ToolPanelProps, 'engine' | 'onMutation' | 'onError'>) {
   const [annotations, setAnnotations] = useState<readonly AnnotationInfo[]>([]);
+  const setRedactionNotice = useDocumentStore((state) => state.setRedactionNotice);
   const [busy, setBusy] = useState(false);
+  const [outputState, setOutputState] = useState<EngineTypes['OutputState'] | null>(null);
+  const [confirmSignatureInvalidation, setConfirmSignatureInvalidation] = useState(false);
+  const [redactionOutcome, setRedactionOutcome] = useState<string | null>(null);
   const [activeTextTool, setActiveTextTool] = useState<ToolDefinition | null>(null);
   const [selectedAnnotation, setSelectedAnnotation] = useState<AnnotationInfo | null>(null);
   const [properties, setProperties] = useState<ToolProperties>(DEFAULT_PROPERTIES);
@@ -350,10 +355,10 @@ export default function MarkupTools({
   const attachmentInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
-    void engine
-      .listAnnotations()
-      .then((items) => {
+    void Promise.all([engine.listAnnotations(), engine.getOutputState()])
+      .then(([items, nextOutputState]) => {
         setAnnotations(items);
+        setOutputState(nextOutputState);
         setSelectedAnnotation((selected) =>
           selected ? (items.find((item) => item.id === selected.id) ?? null) : null,
         );
@@ -759,6 +764,64 @@ export default function MarkupTools({
           ))}
         </div>
       </details>
+
+      {outputState?.unappliedRedactions ? (
+        <div className="warning-card" role="alert">
+          <strong>
+            Apply {outputState.unappliedRedactions} redaction{' '}
+            {outputState.unappliedRedactions === 1 ? 'mark' : 'marks'}{' '}
+            <FeatureBadge status="DEGRADED" />
+          </strong>
+          <p>
+            Applying removes the marked content and unblocks Save, Export, Print, extract,
+            split, and sanitize. DEGRADED: redaction writes through a content-stream filter that
+            perturbs rendering on some documents.
+          </p>
+          {outputState.signatures > 0 ? (
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={confirmSignatureInvalidation}
+                onChange={(event) => setConfirmSignatureInvalidation(event.target.checked)}
+              />
+              <span>
+                I understand that applying redactions invalidates {outputState.signatures}{' '}
+                existing {outputState.signatures === 1 ? 'signature' : 'signatures'}.
+              </span>
+            </label>
+          ) : null}
+          <button
+            type="button"
+            disabled={busy || (outputState.signatures > 0 && !confirmSignatureInvalidation)}
+            onClick={() => {
+              setBusy(true);
+              setRedactionOutcome(null);
+              void engine
+                .applyRedactions(confirmSignatureInvalidation)
+                .then((report) => {
+                  onMutation(report);
+                  const notice = `Applied ${report.applied} redaction ${report.applied === 1 ? 'mark' : 'marks'} on ${report.pages} ${report.pages === 1 ? 'page' : 'pages'}. Output is unblocked.`;
+                  setRedactionOutcome(notice);
+                  setRedactionNotice(notice);
+                  load();
+                })
+                .catch((error: unknown) => {
+                  const detail =
+                    error instanceof Error ? error.message : 'Unknown redaction error.';
+                  setRedactionOutcome(detail);
+                })
+                .finally(() => setBusy(false));
+            }}
+          >
+            Apply redaction marks
+          </button>
+          {redactionOutcome ? <p role="alert">{redactionOutcome}</p> : null}
+        </div>
+      ) : redactionOutcome ? (
+        <p className="result-summary" role="status">
+          {redactionOutcome}
+        </p>
+      ) : null}
 
       {groupedTools.map(({ group, tools }) => (
         <fieldset className="tool-family" key={group}>

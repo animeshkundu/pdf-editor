@@ -167,6 +167,7 @@ export default function EditorShell({
   const commandShortcut = useMemo(() => formatShortcut('Mod+K'), []);
   const journal = useDocumentStore((state) => state.journal);
   const outputState = useDocumentStore((state) => state.output);
+  const redactionNotice = useDocumentStore((state) => state.redactionNotice);
   const dirty = useDocumentStore((state) => state.dirty);
   const applyStoredMutation = useDocumentStore((state) => state.applyMutation);
   const setStoredEngine = useDocumentStore((state) => state.setEngine);
@@ -475,6 +476,7 @@ export default function EditorShell({
       organize: () => showPanel('organize'),
       forms: () => showPanel('forms'),
       security: () => showPanel('security'),
+      redaction: () => showPanel('markup'),
       compare: () => showPanel('compare'),
       convert: () => showPanel('convert'),
       accessibility: () => showPanel('accessibility'),
@@ -928,6 +930,11 @@ export default function EditorShell({
           >
             Discard
           </button>
+        </div>
+      ) : null}
+      {redactionNotice ? (
+        <div className="loading-toast" role="status">
+          {redactionNotice}
         </div>
       ) : null}
       {error ? (

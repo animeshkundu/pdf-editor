@@ -24,6 +24,7 @@ export type CommandAction =
   | 'organize'
   | 'forms'
   | 'security'
+  | 'redaction'
   | 'compare'
   | 'convert'
   | 'accessibility'
@@ -231,21 +232,20 @@ export const COMMANDS: readonly CommandDefinition[] = [
     pipelineSafe: false,
   },
   {
-    // This entry opens a panel covering two capabilities with different honesty
-    // statuses: document passwords (SIGN-020, LOCAL) and redaction (SIGN-031,
-    // DEGRADED, because redaction writes through pdf_filter_page_contents and
-    // inherits the perturbation ADR 0020 measured). One `status` field cannot be
-    // honest about both, so it carries the weaker of the two: a user shown LOCAL on a
-    // panel containing a degraded capability has been told something false, whereas
-    // DEGRADED understates a password feature that is merely better than advertised.
-    //
-    // The real fix is to split this into two commands so each carries its own label.
-    // That is a UI change and belongs with the redaction panel work, not here.
     id: 'security',
+    parityId: 'SIGN-020',
+    status: 'LOCAL',
+    label: 'Document passwords',
+    action: 'security',
+    requiresDocument: true,
+    pipelineSafe: false,
+  },
+  {
+    id: 'redaction',
     parityId: 'SIGN-031',
     status: 'DEGRADED',
-    label: 'Security and redaction',
-    action: 'security',
+    label: 'Apply redaction marks',
+    action: 'redaction',
     requiresDocument: true,
     pipelineSafe: false,
   },

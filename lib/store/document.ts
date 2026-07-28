@@ -6,11 +6,13 @@ interface DocumentState {
   readonly journal: EngineTypes['JournalState'];
   readonly output: EngineTypes['OutputState'] | null;
   readonly persistenceError: string | null;
+  readonly redactionNotice: string | null;
   readonly dirty: boolean;
   readonly savedJournalRevision: number;
   setEngine(engine: EngineTypes['PdfEngine'] | null): void;
   applyMutation(result: EngineTypes['MutationResult']): void;
   setOutput(output: EngineTypes['OutputState']): void;
+  setRedactionNotice(notice: string | null): void;
   handleEngineEvent(event: EngineTypes['EngineEvent']): void;
   markSaved(): void;
   markRecovered(): void;
@@ -30,6 +32,7 @@ export const useDocumentStore = create<DocumentState>((set) => ({
   journal: EMPTY_JOURNAL,
   output: null,
   persistenceError: null,
+  redactionNotice: null,
   dirty: false,
   savedJournalRevision: 0,
   setEngine: (engine) =>
@@ -47,6 +50,7 @@ export const useDocumentStore = create<DocumentState>((set) => ({
       dirty: result.journal.revision !== state.savedJournalRevision,
     })),
   setOutput: (output) => set({ output }),
+  setRedactionNotice: (redactionNotice) => set({ redactionNotice }),
   handleEngineEvent: (event) => {
     if (event.event === 'persistence-error') set({ persistenceError: event.message });
     else if (!event.available)
