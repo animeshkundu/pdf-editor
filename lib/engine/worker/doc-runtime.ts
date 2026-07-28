@@ -17,8 +17,13 @@ import formMutations from './mutations/forms';
 import metadataMutations from './mutations/metadata';
 import pageMutations from './mutations/pages';
 import redactionMutations from './mutations/redaction';
-import { journalOperation, journalState } from './mutations/transaction';
-import { saveDocument, snapshotDocument } from './save';
+import { journalHistory, journalOperation, journalState } from './mutations/transaction';
+import {
+  DocumentSizeAccounting,
+  JAVASCRIPT_CONTEXT_MEMORY_LIMIT,
+  javaScriptContextProjection,
+} from './resource-accounting';
+import { persistenceSnapshot, saveDocument, snapshotDocument } from './save';
 
 type AnnotationInfo = EngineTypes['AnnotationInfo'];
 type AttachmentInfo = EngineTypes['AttachmentInfo'];
@@ -40,14 +45,13 @@ const DOCUMENT_KEY = 'document:active';
 const MAX_SELECTION_QUADS = 4_096;
 const MAX_JAVASCRIPT_EVENTS = 200;
 const MAX_JAVASCRIPT_EVENT_DETAIL = 4_096;
-const JAVASCRIPT_MUTATION_RESERVE = 128 * 1024 * 1024;
 const cancelled = new Set<number>();
 const javaScriptEvents: EngineTypes['JavaScriptEvent'][] = [];
 let activeJavaScriptEvents: EngineTypes['JavaScriptEvent'][] | null = null;
 
 let documentName = '';
 let iosBudget = false;
-let sourceByteLength = 0;
+const documentSize = new DocumentSizeAccounting();
 let journalRevision = 0;
 let persistence: DebouncedPersistence | null = null;
 let persistenceAvailability: EngineTypes['EngineEvent'] = {
@@ -76,27 +80,22 @@ function activeBudget(): Budget {
 }
 
 function assertMutationCost(projectedBytes: number): void {
-  assertHeadroom(sourceByteLength * 2, projectedBytes, activeBudget());
+  assertHeadroom(documentSize.bytes * 2, projectedBytes, activeBudget());
 }
 
 function assertOutputCost(): void {
-  assertHeadroom(sourceByteLength, Math.ceil(sourceByteLength * 1.25), activeBudget());
+  assertHeadroom(documentSize.bytes, Math.ceil(documentSize.bytes * 1.25), activeBudget());
 }
 
 function assertSecondDocumentCost(byteLength: number): void {
-  assertHeadroom(sourceByteLength * 2, byteLength * 2, activeBudget());
+  assertHeadroom(documentSize.bytes * 2, byteLength * 2, activeBudget());
 }
 
 function projectedJavaScriptMutationBytes(
   document: mupdf.PDFDocument,
   scope: 'document' | 'field',
-  multiplier = 1,
 ): number {
-  const scriptCount = formMutations.countJavaScriptActions(document, scope);
-  return Math.min(
-    Number.MAX_SAFE_INTEGER,
-    scriptCount * Math.max(1, multiplier) * JAVASCRIPT_MUTATION_RESERVE,
-  );
+  return javaScriptContextProjection(formMutations.countJavaScriptActions(document, scope) > 0);
 }
 
 function recordJavaScriptEvent(event: mupdf.PDFJSEvent): void {
@@ -159,11 +158,16 @@ function recordJavaScriptEvent(event: mupdf.PDFJSEvent): void {
   }
 }
 
-function pageInfo(index: number, page: mupdf.Page, ios: boolean): PageInfo {
+function pageInfo(
+  index: number,
+  page: mupdf.Page,
+  ios: boolean,
+  assertLimits = true,
+): PageInfo {
   const bounds = page.getBounds();
   const width = Math.max(0, bounds[2] - bounds[0]);
   const height = Math.max(0, bounds[3] - bounds[1]);
-  assertPageSize(width, height, ios ? IOS_BUDGET : DESKTOP_BUDGET);
+  if (assertLimits) assertPageSize(width, height, ios ? IOS_BUDGET : DESKTOP_BUDGET);
   return {
     index,
     label: page.getLabel() || String(index + 1),
@@ -222,12 +226,14 @@ function attachments(): AttachmentInfo[] {
   );
 }
 
-function documentInfo(): DocumentInfo {
+function documentInfo(assertLimits = true): DocumentInfo {
   const document = activeDocument();
   const count = document.countPages();
-  assertPageCount(count, activeBudget());
+  if (assertLimits) assertPageCount(count, activeBudget());
   const pages = Array.from({ length: count }, (_, index) =>
-    withArenaSync((arena) => pageInfo(index, arena.keep(document.loadPage(index)), iosBudget)),
+    withArenaSync((arena) =>
+      pageInfo(index, arena.keep(document.loadPage(index)), iosBudget, assertLimits),
+    ),
   );
   return {
     name: documentName,
@@ -262,7 +268,11 @@ async function configurePersistence(key: string): Promise<void> {
 }
 
 function schedulePersistence(): void {
-  persistence?.schedule(async () => snapshotDocument(requirePdfDocument()));
+  persistence?.schedule(async () => persistenceSnapshot(requirePdfDocument()));
+}
+
+function refreshSourceByteLength(document: mupdf.PDFDocument): void {
+  documentSize.refresh(document);
 }
 
 async function openDocument(
@@ -279,7 +289,7 @@ async function openDocument(
     assertPageCount(count, budget);
     documentName = payload.name;
     iosBudget = payload.ios;
-    sourceByteLength = payload.data.byteLength;
+    documentSize.reset(payload.data.byteLength);
     journalRevision = 0;
     javaScriptEvents.length = 0;
     let openedWithJavaScriptMutation = false;
@@ -313,11 +323,8 @@ async function openDocument(
     await configurePersistence(
       payload.persistenceKey ?? `document-${payload.name}-${payload.data.byteLength}`,
     );
-    if (openedJavaScriptBytes > 0) {
-      sourceByteLength = Math.min(
-        Number.MAX_SAFE_INTEGER,
-        sourceByteLength + openedJavaScriptBytes,
-      );
+    if (openedJavaScriptBytes > 0 && document instanceof mupdf.PDFDocument) {
+      refreshSourceByteLength(document);
     }
     if (openedWithJavaScriptMutation) {
       schedulePersistence();
@@ -446,14 +453,11 @@ function mutationResult<T extends AnnotationInfo | undefined>(
     () => assertMutationCost(projectedBytes),
     (arena) => {
       const annotation = mutate(arena, document);
-      const info = documentInfo();
+      const info = documentInfo(false);
       return annotation ? { info, annotation } : { info };
     },
   );
-  sourceByteLength = Math.min(
-    Number.MAX_SAFE_INTEGER,
-    sourceByteLength + Math.max(0, projectedBytes),
-  );
+  refreshSourceByteLength(document);
   schedulePersistence();
   journalRevision += 1;
   return completed.annotation
@@ -500,9 +504,12 @@ function executeJavaScript(source: string): EngineTypes['JavaScriptExecutionResu
   const documentScriptBytes = projectedJavaScriptMutationBytes(document, 'document');
   const projectedBytes = Math.min(
     Number.MAX_SAFE_INTEGER,
-    sourceByteLength * 2 + sourceBytes * 4 + documentScriptBytes + JAVASCRIPT_MUTATION_RESERVE,
+    documentSize.bytes * 2 +
+      sourceBytes * 4 +
+      documentScriptBytes +
+      JAVASCRIPT_CONTEXT_MEMORY_LIMIT,
   );
-  assertHeadroom(sourceByteLength * 2, projectedBytes, activeBudget());
+  assertHeadroom(documentSize.bytes * 2, projectedBytes, activeBudget());
   const snapshot = snapshotDocument(document);
   const executionEvents: EngineTypes['JavaScriptEvent'][] = [];
   activeJavaScriptEvents = executionEvents;
@@ -536,22 +543,20 @@ function mutateHistory(direction: 'undo' | 'redo'): MutationResult {
   if (direction === 'undo' ? !document.canUndo() : !document.canRedo()) {
     throw new Error(`There is nothing to ${direction}.`);
   }
-  if (direction === 'undo') document.undo();
-  else document.redo();
-  try {
-    const info = documentInfo();
-    journalRevision += 1;
-    schedulePersistence();
-    return { document: info, journal: journalState(document, journalRevision) };
-  } catch (error) {
-    if (direction === 'undo') document.redo();
-    else document.undo();
-    throw error;
-  }
+  // Undo and redo only enter states previously admitted by the pre-mutation gates. Re-running
+  // throwing ceiling assertions here can trap the user by compensating every attempted undo.
+  const info = journalHistory(document, direction, () => documentInfo(false));
+  refreshSourceByteLength(document);
+  journalRevision += 1;
+  schedulePersistence();
+  return { document: info, journal: journalState(document, journalRevision) };
 }
 
 function saveForOutput(options: EngineTypes['SaveOptions']): ArrayBuffer {
   const document = requirePdfDocument();
+  // Shipped callers use garbage collection so removed content cannot survive as unreachable
+  // objects. SaveOptions still permits `none`; keep that boundary explicit if callers expand.
+
   assertNoUnappliedRedactions(document);
   assertOutputCost();
   return saveDocument(document, options);
@@ -566,7 +571,7 @@ function assertNoUnappliedRedactions(document: mupdf.PDFDocument): void {
   }
 }
 
-function inspectIncomingPages(data: ArrayBuffer): number {
+function inspectIncomingPages(data: ArrayBuffer, sourcePages?: readonly number[]): number {
   assertSecondDocumentCost(data.byteLength);
   return withArenaSync((arena) => {
     const source = arena.keep(
@@ -575,7 +580,17 @@ function inspectIncomingPages(data: ArrayBuffer): number {
     if (!(source instanceof mupdf.PDFDocument)) {
       throw new Error('The selected merge source is not a PDF document.');
     }
-    return source.countPages();
+    const count = source.countPages();
+    const pages = sourcePages ?? Array.from({ length: count }, (_, index) => index);
+    for (const pageIndex of pages) {
+      if (!Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex >= count) {
+        throw new Error('One or more selected pages are outside the incoming document.');
+      }
+      const page = arena.keep(source.loadPage(pageIndex));
+      const bounds = page.getBounds();
+      assertPageSize(bounds[2] - bounds[0], bounds[3] - bounds[1], activeBudget());
+    }
+    return count;
   });
 }
 
@@ -988,7 +1003,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
           const completed = journalOperation(
             document,
             'Extract and delete pages',
-            () => assertMutationCost(sourceByteLength),
+            () => assertMutationCost(documentSize.bytes),
             (arena) => {
               const data = pageMutations.extractPages(
                 arena,
@@ -996,9 +1011,10 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
                 request.payload.pageIndices,
               );
               pageMutations.deletePages(document, request.payload.pageIndices);
-              return { data, info: documentInfo() };
+              return { data, info: documentInfo(false) };
             },
           );
+          refreshSourceByteLength(document);
           journalRevision += 1;
           schedulePersistence();
           const exported: ExportedPdf = {
@@ -1018,7 +1034,10 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         }
       } else if (request.operation === 'mergeDocument') {
         assertFileSize(request.payload.data.byteLength, activeBudget());
-        const incomingCount = inspectIncomingPages(request.payload.data);
+        const incomingCount = inspectIncomingPages(
+          request.payload.data,
+          request.payload.sourcePages,
+        );
         const selectedCount = request.payload.sourcePages?.length ?? incomingCount;
         assertPageCount(requirePdfDocument().countPages() + selectedCount, activeBudget());
         const result = mutationResult(
@@ -1053,9 +1072,15 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
       } else if (request.operation === 'composePages') {
         if (request.payload.data) {
           assertFileSize(request.payload.data.byteLength, activeBudget());
+          inspectIncomingPages(
+            request.payload.data,
+            request.payload.order
+              .filter((item) => item.source === 'incoming')
+              .map((item) => item.pageIndex),
+          );
         }
         assertPageCount(request.payload.order.length, activeBudget());
-        const projectedBytes = request.payload.data?.byteLength ?? sourceByteLength;
+        const projectedBytes = request.payload.data?.byteLength ?? documentSize.bytes;
         const result = mutationResult(
           request.payload.name,
           projectedBytes * 2,
@@ -1113,11 +1138,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
           (total, [name, value]) => total + formMutations.projectedFieldValueBytes(name, value),
           0,
         );
-        const scriptBytes = projectedJavaScriptMutationBytes(
-          requirePdfDocument(),
-          'field',
-          entries.length,
-        );
+        const scriptBytes = projectedJavaScriptMutationBytes(requirePdfDocument(), 'field');
         const result = mutationResult(
           'Import form data',
           Math.min(Number.MAX_SAFE_INTEGER, projectedBytes + scriptBytes),
@@ -1224,9 +1245,10 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
               signatures,
               request.payload.confirmSignatureInvalidation,
             );
-            return { report, info: documentInfo() };
+            return { report, info: documentInfo(false) };
           },
         );
+        refreshSourceByteLength(document);
         const result: EngineTypes['SanitizeReport'] = {
           ...completed.report,
           document: completed.info,
@@ -1249,9 +1271,10 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
               preflight,
               request.payload.confirmSignatureInvalidation,
             );
-            return { report, info: documentInfo() };
+            return { report, info: documentInfo(false) };
           },
         );
+        refreshSourceByteLength(document);
         const result: EngineTypes['SanitizeReport'] = {
           ...completed.report,
           document: completed.info,

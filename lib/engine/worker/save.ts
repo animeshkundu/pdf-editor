@@ -103,6 +103,18 @@ export function snapshotDocument(document: mupdf.PDFDocument): Uint8Array {
   return new Uint8Array(data);
 }
 
+export function persistenceSnapshot(document: mupdf.PDFDocument): Uint8Array {
+  const data = saveDocument(document, {
+    mode: 'full',
+    // Recovery files are durable. Collect unreachable objects so applied redactions cannot
+    // leave their replaced content streams recoverable in OPFS.
+    garbage: 'deduplicate',
+    compress: true,
+    encrypt: 'keep',
+  });
+  return new Uint8Array(data);
+}
+
 export const SAFE_FULL_SAVE: EngineTypes['SaveOptions'] = {
   mode: 'full',
   garbage: 'deduplicate',
@@ -110,4 +122,4 @@ export const SAFE_FULL_SAVE: EngineTypes['SaveOptions'] = {
   encrypt: 'keep',
 };
 
-export default { SAFE_FULL_SAVE, saveDocument, snapshotDocument };
+export default { persistenceSnapshot, SAFE_FULL_SAVE, saveDocument, snapshotDocument };

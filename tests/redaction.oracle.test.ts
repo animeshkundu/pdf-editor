@@ -6,7 +6,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import * as mupdf from '../vendor/mupdf-wasm/dist/mupdf.js';
 import redactionMutations from '../lib/engine/worker/mutations/redaction';
 import { journalOperation } from '../lib/engine/worker/mutations/transaction';
-import { saveDocument, SAFE_FULL_SAVE } from '../lib/engine/worker/save';
+import { persistenceSnapshot, saveDocument, SAFE_FULL_SAVE } from '../lib/engine/worker/save';
 
 const workDir = mkdtempSync(join(tmpdir(), 'pdf-editor-sanitize-'));
 let qpdf = '';
@@ -36,10 +36,10 @@ function createSensitiveDocument(): mupdf.PDFDocument {
   return document;
 }
 
-function inflate(data: ArrayBuffer, name: string): Uint8Array {
+function inflate(data: ArrayBuffer | Uint8Array, name: string): Uint8Array {
   const input = join(workDir, `${name}-input.pdf`);
   const output = join(workDir, `${name}-inflated.pdf`);
-  writeFileSync(input, new Uint8Array(data));
+  writeFileSync(input, data instanceof Uint8Array ? data : new Uint8Array(data));
   const result = spawnSync(
     qpdf,
     ['--qdf', '--object-streams=disable', '--stream-data=uncompress', input, output],
@@ -61,6 +61,53 @@ beforeAll(() => {
 afterAll(() => rmSync(workDir, { recursive: true, force: true }));
 
 describe('SIGN-033 sanitize whole-file oracle', () => {
+  it('garbage-collects removed page content from durable recovery snapshots', () => {
+    const document = new mupdf.PDFDocument();
+    const secretPage = document.addPage(
+      [0, 0, 200, 200],
+      0,
+      null,
+      'BT /F1 12 Tf 20 100 Td (SECRET_REDACTED_TEXT) Tj ET',
+    );
+    const retainedPage = document.addPage([0, 0, 200, 200], 0, null, new Uint8Array(0));
+    try {
+      document.insertPage(-1, secretPage);
+      document.insertPage(-1, retainedPage);
+      document.enableJournal();
+
+      const before = saveDocument(document, {
+        mode: 'full',
+        garbage: 'none',
+        compress: true,
+        encrypt: 'keep',
+      });
+      expect(
+        Buffer.from(inflate(before, 'redaction-snapshot-before')).includes(
+          Buffer.from('SECRET_REDACTED_TEXT'),
+        ),
+      ).toBe(true);
+
+      journalOperation(
+        document,
+        'Remove pages wholesale',
+        () => undefined,
+        () => {
+          redactionMutations.redactPages(document, [0], 0, false);
+        },
+      );
+      const snapshot = persistenceSnapshot(document);
+      expect(
+        Buffer.from(inflate(snapshot, 'redaction-snapshot-after')).includes(
+          Buffer.from('SECRET_REDACTED_TEXT'),
+        ),
+      ).toBe(false);
+    } finally {
+      retainedPage.destroy();
+      secretPage.destroy();
+      document.destroy();
+    }
+  });
+
   it('proves known sensitive content present before and absent after a full rewrite', async () => {
     const document = createSensitiveDocument();
     try {

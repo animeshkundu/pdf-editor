@@ -1,5 +1,5 @@
 import type * as mupdf from '../../../../vendor/mupdf-wasm/dist/mupdf.js';
-import { withArenaSync, type Arena } from '../arena';
+import { Arena } from '../arena';
 import type { EngineTypes } from '../../port';
 
 export function journalState(
@@ -16,6 +16,18 @@ export function journalState(
   };
 }
 
+export function journalHistory<T>(
+  document: mupdf.PDFDocument,
+  direction: 'undo' | 'redo',
+  readState: () => T,
+): T {
+  if (direction === 'undo') document.undo();
+  else document.redo();
+  // Never compensate a failed read by silently reversing history. In particular, doing so
+  // after undo makes the same unreadable state an inescapable trap on every retry.
+  return readState();
+}
+
 export function journalOperation<T>(
   document: mupdf.PDFDocument,
   name: string,
@@ -24,26 +36,70 @@ export function journalOperation<T>(
 ): T {
   preflight();
   document.beginOperation(name);
-  let operationOpen = true;
+  const arena = new Arena();
+  let result: T;
   try {
-    const result = withArenaSync(mutate);
-    document.endOperation();
-    operationOpen = false;
-    return result;
-  } catch (error) {
-    if (operationOpen) {
+    result = mutate(arena);
+  } catch (mutationError) {
+    try {
+      arena.release();
+    } catch (releaseError) {
       try {
         document.abandonOperation();
       } catch (rollbackError) {
         throw new AggregateError(
-          [error, rollbackError],
-          `The failed "${name}" operation could not be rolled back.`,
+          [mutationError, releaseError, rollbackError],
+          `The failed "${name}" operation could not release its handles or be rolled back.`,
           { cause: rollbackError },
         );
       }
+      throw new AggregateError(
+        [mutationError, releaseError],
+        `The failed "${name}" operation also could not release its handles.`,
+        { cause: releaseError },
+      );
     }
-    throw error;
+    try {
+      document.abandonOperation();
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [mutationError, rollbackError],
+        `The failed "${name}" operation could not be rolled back.`,
+        { cause: rollbackError },
+      );
+    }
+    throw mutationError;
   }
+
+  // Once mutation succeeds, commit it before releasing temporary handles. A destructor
+  // failure is cleanup damage, not a reason to discard otherwise successful document work.
+  try {
+    document.endOperation();
+  } catch (commitError) {
+    const errors: unknown[] = [commitError];
+    try {
+      arena.release();
+    } catch (releaseError) {
+      errors.push(releaseError);
+    }
+    try {
+      document.abandonOperation();
+    } catch (rollbackError) {
+      errors.push(rollbackError);
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(
+        errors,
+        `The "${name}" operation could not be committed cleanly.`,
+        {
+          cause: commitError,
+        },
+      );
+    }
+    throw commitError;
+  }
+  arena.release();
+  return result;
 }
 
-export default { journalOperation, journalState };
+export default { journalHistory, journalOperation, journalState };
