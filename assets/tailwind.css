@@ -1453,6 +1453,7 @@ button:disabled {
 
 .active-entry {
   display: grid;
+  min-width: min(16rem, calc(100vw - var(--space-400)));
   gap: var(--space-100);
   margin-block: var(--space-200);
 }

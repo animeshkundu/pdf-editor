@@ -522,6 +522,42 @@ describe('Phase 3 viewer acceptance', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it('operates the command palette with arrow keys, Enter, and Escape', async () => {
+    await act(async () => root.render(createElement(App, { engineFactory })));
+
+    const commandsButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Commands"]',
+    );
+    if (!commandsButton) throw new Error('Missing Commands button.');
+    await act(async () => commandsButton.click());
+    const filter = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Filter commands"]',
+    );
+    if (!filter) throw new Error('Missing command filter.');
+    await act(async () => setInputValue(filter, 'Use dark theme'));
+    await act(async () => {
+      filter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    });
+    const option = document.querySelector<HTMLButtonElement>('[role="option"]');
+    expect(option?.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(option);
+    await act(async () => {
+      option?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(document.querySelector('.command-palette')).toBeNull();
+    expect(document.documentElement.dataset.theme).toBe('dark');
+
+    await act(async () => commandsButton.click());
+    const reopened = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Filter commands"]',
+    );
+    await act(async () => {
+      reopened?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(document.querySelector('.command-palette')).toBeNull();
+  });
+
   it('EDIT-001 captures active overlay input before the React event target clears', async () => {
     await act(async () => root.render(createElement(App, { engineFactory })));
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
