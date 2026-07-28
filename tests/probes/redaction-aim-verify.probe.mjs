@@ -26,12 +26,12 @@ const cases = [
   [
     'latex-pdftex',
     asPath('../fixtures/pdf-corpus/latex-pdftex.pdf'),
-    'Q:/Software/_drive/out-latex-pdftex.pdf',
+    'Q:/Software/_drive/red/out-latex.pdf',
   ],
   [
     'ghostscript',
     asPath('../fixtures/pdf-corpus/ghostscript.pdf'),
-    'Q:/Software/_drive/out-ghostscript.pdf',
+    'Q:/Software/_drive/red/out-gs.pdf',
   ],
 ];
 
