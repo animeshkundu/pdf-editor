@@ -1,6 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, type RefObject } from 'react';
 import engineErrors, { type EngineTypes } from '@/lib/engine/port';
 import renderLayout from '@/lib/render/layout';
+import type { PageRotation } from '@/lib/render/layout';
+import { useToolStore } from '@/lib/store/tools';
+import { viewportStore } from '@/lib/store/viewport';
+import type { SelectionAction } from './SelectionActionBar';
 
 type PageInfo = EngineTypes['PageInfo'];
 type PdfEngine = EngineTypes['PdfEngine'];
@@ -17,6 +21,7 @@ interface DocumentViewportHandle {
   zoomBy(factor: number): void;
   resetZoom(): void;
   fitWidth(): void;
+  rotateView(degrees: 90 | -90): void;
   toggleSelectionMode(): void;
   focus(): void;
   showSearchHit(hit: SearchHit | null): void;
@@ -29,11 +34,14 @@ interface DocumentViewportProps {
   readonly analysisStatusRef: RefObject<HTMLOutputElement | null>;
   readonly selectionModeRef: RefObject<HTMLButtonElement | null>;
   readonly onFind: () => void;
+  readonly onSelectionAction: (action: SelectionAction | null) => void;
+  readonly onMutation: (result: EngineTypes['MutationResult']) => void;
   readonly onError: (message: string) => void;
 }
 
 interface PageNode {
   readonly element: HTMLDivElement;
+  readonly surface: HTMLDivElement;
   readonly controller: AbortController;
   readonly tiles: Map<
     string,
@@ -44,6 +52,60 @@ interface PageNode {
       readonly controller: AbortController;
     }
   >;
+}
+
+function surfaceTransform(rotation: PageRotation): string {
+  if (rotation === 90) return 'rotate(90deg) translateY(-100%)';
+  if (rotation === 180) return 'rotate(180deg) translate(-100%, -100%)';
+  if (rotation === 270) return 'rotate(270deg) translateX(-100%)';
+  return 'none';
+}
+
+function unrotatePoint(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotation: PageRotation,
+): readonly [number, number] {
+  if (rotation === 90) return [y, height - x];
+  if (rotation === 180) return [width - x, height - y];
+  if (rotation === 270) return [width - y, x];
+  return [x, y];
+}
+
+function unrotatedViewport(
+  left: number,
+  top: number,
+  width: number,
+  height: number,
+  pageWidth: number,
+  pageHeight: number,
+  rotation: PageRotation,
+): {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+} {
+  const corners = [
+    unrotatePoint(left, top, pageWidth, pageHeight, rotation),
+    unrotatePoint(left + width, top, pageWidth, pageHeight, rotation),
+    unrotatePoint(left, top + height, pageWidth, pageHeight, rotation),
+    unrotatePoint(left + width, top + height, pageWidth, pageHeight, rotation),
+  ];
+  const xs = corners.map((point) => point[0]);
+  const ys = corners.map((point) => point[1]);
+  const minX = Math.max(0, Math.min(...xs));
+  const minY = Math.max(0, Math.min(...ys));
+  const maxX = Math.min(pageWidth, Math.max(...xs));
+  const maxY = Math.min(pageHeight, Math.max(...ys));
+  return {
+    left: minX,
+    top: minY,
+    width: Math.max(0, maxX - minX),
+    height: Math.max(0, maxY - minY),
+  };
 }
 
 interface HighlightState {
@@ -80,7 +142,17 @@ function drawHighlight(
 
 const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProps>(
   function DocumentViewport(
-    { engine, currentPageRef, zoomRef, analysisStatusRef, selectionModeRef, onFind, onError },
+    {
+      engine,
+      currentPageRef,
+      zoomRef,
+      analysisStatusRef,
+      selectionModeRef,
+      onFind,
+      onSelectionAction,
+      onMutation,
+      onError,
+    },
     ref,
   ) {
     const scrollerRef = useRef<HTMLElement>(null);
@@ -88,6 +160,8 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
     const readingRef = useRef<HTMLDivElement>(null);
     const analysisRef = useRef<HTMLParagraphElement>(null);
     const apiRef = useRef<DocumentViewportHandle | null>(null);
+    const activeTool = useToolStore((state) => state.activeTool);
+    const resetTool = useToolStore((state) => state.resetTool);
 
     useImperativeHandle(ref, () => ({
       goToPage(pageIndex) {
@@ -101,6 +175,9 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
       },
       fitWidth() {
         apiRef.current?.fitWidth();
+      },
+      rotateView(degrees) {
+        apiRef.current?.rotateView(degrees);
       },
       toggleSelectionMode() {
         apiRef.current?.toggleSelectionMode();
@@ -134,7 +211,8 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           ),
         );
       let zoom = fitWidthZoom();
-      let layout = new PageLayout(engine.info.pages, zoom);
+      let rotation: PageRotation = 0;
+      let layout = new PageLayout(engine.info.pages, zoom, PAGE_GAP, rotation);
       let generation = 0;
       let frame = 0;
       let currentPage = -1;
@@ -143,6 +221,8 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
       let dragStart: { readonly pageIndex: number; readonly point: PdfPoint } | null = null;
       let readingController: AbortController | null = null;
       let selectionMode = false;
+      viewportStore.getState().reset();
+      viewportStore.getState().setZoom(zoom);
 
       const logicalScrollTop = () =>
         layout.logicalOffsetForScroll(scroller.scrollTop, scroller.clientHeight);
@@ -213,10 +293,14 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         if (!node || !page) return [0, 0];
         const rect = node.element.getBoundingClientRect();
         const scale = PDF_POINT_SCALE * zoom;
-        return [
-          page.bounds[0] + (event.clientX - rect.left) / scale,
-          page.bounds[1] + (event.clientY - rect.top) / scale,
-        ];
+        const [x, y] = unrotatePoint(
+          event.clientX - rect.left,
+          event.clientY - rect.top,
+          page.width * scale,
+          page.height * scale,
+          rotation,
+        );
+        return [page.bounds[0] + x / scale, page.bounds[1] + y / scale];
       };
 
       const loadReadingOrder = (pageIndex: number) => {
@@ -268,8 +352,14 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         element.style.top = `${scroller.scrollTop + placement.top - logicalScrollTop()}px`;
         element.style.width = `${placement.width}px`;
         element.style.height = `${placement.height}px`;
+        const surface = document.createElement('div');
+        surface.className = 'pdf-page-surface';
+        surface.style.width = `${page.width * PDF_POINT_SCALE * zoom}px`;
+        surface.style.height = `${page.height * PDF_POINT_SCALE * zoom}px`;
+        surface.style.transform = surfaceTransform(rotation);
+        element.append(surface);
         content.append(element);
-        const node: PageNode = { element, controller, tiles: new Map() };
+        const node: PageNode = { element, surface, controller, tiles: new Map() };
 
         element.addEventListener('pointerdown', (event) => {
           if (event.pointerType === 'touch' && !selectionMode) return;
@@ -281,6 +371,34 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           const start = dragStart.point;
           const end = pointFromEvent(event, pageIndex);
           dragStart = null;
+          if (activeTool === 'redaction-mark') {
+            const rect: EngineTypes['PdfRect'] = [
+              Math.min(start[0], end[0]),
+              Math.min(start[1], end[1]),
+              Math.max(start[0], end[0]),
+              Math.max(start[1], end[1]),
+            ];
+            if (rect[2] - rect[0] < 1 || rect[3] - rect[1] < 1) {
+              onError('Drag over the exact region to redact. No mark was created.');
+              return;
+            }
+            void engine
+              .addAnnotation({
+                pageIndex,
+                type: 'Redact',
+                rect,
+                contents: 'Unapplied region redaction mark',
+                color: [0, 0, 0],
+                opacity: 1,
+                flags: 4,
+              })
+              .then((result) => {
+                onMutation(result);
+                resetTool();
+              })
+              .catch((error: unknown) => reportError('Adding region redaction mark', error));
+            return;
+          }
           void engine
             .selectText(pageIndex, start, end, controller.signal)
             .then((result) => {
@@ -291,6 +409,26 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
                 analysisStatusRef.current.dataset.analysis = 'partial';
               }
               paintOverlays();
+              if (result.quads.length > 0) {
+                const bounds = result.quads.map(quadBounds);
+                const rect = element.getBoundingClientRect();
+                const scale = PDF_POINT_SCALE * zoom;
+                onSelectionAction({
+                  selection: result,
+                  viewportBounds: [
+                    rect.left +
+                      (Math.min(...bounds.map((value) => value[0])) - page.bounds[0]) * scale,
+                    rect.top +
+                      (Math.min(...bounds.map((value) => value[1])) - page.bounds[1]) * scale,
+                    rect.left +
+                      (Math.max(...bounds.map((value) => value[2])) - page.bounds[0]) * scale,
+                    rect.top +
+                      (Math.max(...bounds.map((value) => value[3])) - page.bounds[1]) * scale,
+                  ],
+                });
+              } else {
+                onSelectionAction(null);
+              }
             })
             .catch((error: unknown) => reportError('Selecting text', error));
         });
@@ -306,18 +444,29 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         const placement = layout.placements[pageIndex];
         if (!page || !placement) return;
         const ratio = window.devicePixelRatio;
-        const deviceWidth = Math.ceil(placement.width * ratio);
-        const deviceHeight = Math.ceil(placement.height * ratio);
+        const surfaceWidth = page.width * PDF_POINT_SCALE * zoom;
+        const surfaceHeight = page.height * PDF_POINT_SCALE * zoom;
+        const deviceWidth = Math.ceil(surfaceWidth * ratio);
+        const deviceHeight = Math.ceil(surfaceHeight * ratio);
         const pageLeft = (content.clientWidth - placement.width) / 2;
         const needed = new Set<string>();
         const deviceScale = PDF_POINT_SCALE * zoom * ratio;
         const nodeGeneration = generation;
+        const viewport = unrotatedViewport(
+          scroller.scrollLeft - pageLeft,
+          logicalTop - placement.top,
+          scroller.clientWidth,
+          scroller.clientHeight,
+          surfaceWidth,
+          surfaceHeight,
+          rotation,
+        );
 
         for (const tile of viewportTileRects(deviceWidth, deviceHeight, {
-          left: (scroller.scrollLeft - pageLeft) * ratio,
-          top: (logicalTop - placement.top) * ratio,
-          width: scroller.clientWidth * ratio,
-          height: scroller.clientHeight * ratio,
+          left: viewport.left * ratio,
+          top: viewport.top * ratio,
+          width: viewport.width * ratio,
+          height: viewport.height * ratio,
         })) {
           const key = `${tile.x}:${tile.y}`;
           needed.add(key);
@@ -332,7 +481,7 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           canvas.style.top = `${tile.y / ratio}px`;
           canvas.style.width = `${tile.width / ratio}px`;
           canvas.style.height = `${tile.height / ratio}px`;
-          node.element.append(canvas);
+          node.surface.append(canvas);
 
           const overlay = document.createElement('canvas');
           overlay.className = 'pdf-tile pdf-highlight-tile';
@@ -342,7 +491,7 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           overlay.style.top = canvas.style.top;
           overlay.style.width = canvas.style.width;
           overlay.style.height = canvas.style.height;
-          node.element.append(overlay);
+          node.surface.append(overlay);
           node.tiles.set(key, { canvas, overlay, tile, controller: tileController });
 
           void engine
@@ -358,14 +507,12 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
                   Math.abs(
                     tile.x +
                       tile.width / 2 -
-                      ((scroller.scrollLeft - pageLeft) * ratio +
-                        (scroller.clientWidth * ratio) / 2),
+                      (viewport.left * ratio + (viewport.width * ratio) / 2),
                   ) +
                   Math.abs(
                     tile.y +
                       tile.height / 2 -
-                      ((logicalTop - placement.top) * ratio +
-                        (scroller.clientHeight * ratio) / 2),
+                      (viewport.top * ratio + (viewport.height * ratio) / 2),
                   ),
               },
               tileController.signal,
@@ -423,6 +570,7 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         const nextPage = layout.pageAt(logicalTop + scroller.clientHeight * 0.35);
         if (nextPage !== currentPage && nextPage >= 0) {
           currentPage = nextPage;
+          viewportStore.getState().setCurrentPage(nextPage);
           if (currentPageRef.current) {
             currentPageRef.current.textContent = `${nextPage + 1} / ${engine.info.pages.length}`;
           }
@@ -443,7 +591,7 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           node.element.remove();
         }
         pageNodes.clear();
-        layout = new PageLayout(engine.info.pages, zoom);
+        layout = new PageLayout(engine.info.pages, zoom, PAGE_GAP, rotation);
         content.style.height = `${layout.scrollHeight()}px`;
         const widestPage = layout.placements.reduce(
           (widest, placement) => Math.max(widest, placement.width),
@@ -463,6 +611,7 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         const oldHeight = layout.totalHeight;
         const ratio = oldHeight > 0 ? anchor / oldHeight : 0;
         zoom = clamped;
+        viewportStore.getState().setZoom(zoom);
         rebuild(ratio, pointerY);
       };
 
@@ -494,7 +643,12 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         }
       };
 
-      scroller.addEventListener('scroll', scheduleVisiblePages, { passive: true });
+      const onScroll = () => {
+        onSelectionAction(null);
+        viewportStore.getState().setScroll(scroller.scrollLeft, scroller.scrollTop);
+        scheduleVisiblePages();
+      };
+      scroller.addEventListener('scroll', onScroll, { passive: true });
       scroller.addEventListener('wheel', onWheel, { passive: false });
       scroller.addEventListener('keydown', onKeyDown);
       content.style.height = `${layout.scrollHeight()}px`;
@@ -518,6 +672,12 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         },
         fitWidth() {
           setZoom(fitWidthZoom());
+        },
+        rotateView(degrees) {
+          const anchor = logicalScrollTop() + scroller.clientHeight / 2;
+          const ratio = layout.totalHeight > 0 ? anchor / layout.totalHeight : 0;
+          rotation = ((((rotation + degrees) % 360) + 360) % 360) as PageRotation;
+          rebuild(ratio, scroller.clientHeight / 2);
         },
         toggleSelectionMode() {
           selectionMode = !selectionMode;
@@ -562,11 +722,23 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           for (const tile of node.tiles.values()) tile.controller.abort();
           node.element.remove();
         }
-        scroller.removeEventListener('scroll', scheduleVisiblePages);
+        scroller.removeEventListener('scroll', onScroll);
         scroller.removeEventListener('wheel', onWheel);
         scroller.removeEventListener('keydown', onKeyDown);
       };
-    }, [analysisStatusRef, currentPageRef, engine, onError, onFind, selectionModeRef, zoomRef]);
+    }, [
+      activeTool,
+      analysisStatusRef,
+      currentPageRef,
+      engine,
+      onError,
+      onFind,
+      onMutation,
+      onSelectionAction,
+      resetTool,
+      selectionModeRef,
+      zoomRef,
+    ]);
 
     return (
       <section

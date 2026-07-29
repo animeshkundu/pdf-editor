@@ -186,30 +186,43 @@ planning had not. What is left genuinely depends on results.
 
 ## Phase 4: editor
 
-- [ ] Page operations: reorder, rotate, insert, delete, extract, merge, split.
-- [ ] Annotations: highlight, note, ink, shapes, stamps.
-- [ ] Form filling, including AcroForm JavaScript through `mujs=yes`.
-- [ ] Text editing through the disclosed annotation/overlay fallback only.
+- [x] Page operations: reorder, rotate, insert, delete, extract, merge, split, page boxes,
+      labels, duplicate, replace, and alternate/mix.
+- [x] Annotations: text markup, note, ink, shapes, stamps, measurements, properties, review
+      threads, and FDF/XFDF interchange.
+- [x] AcroForm field authoring, filling, layout, tab order, validation, isolated test mode,
+      and local data interchange.
+- [x] Observable AcroForm JavaScript events, field K/V/C/F actions, document-level scripts,
+      and the local authoring console. External launch, mail, submit, print, and menu requests
+      are surfaced but never performed.
+- [x] Text editing through the disclosed annotation/overlay fallback only.
       ([ADR 0020](adr/0020-content-stream-rewriting-failed-stage-one.md))
 - [x] True redaction withdrawn after Spike A red; an overlay is not redaction.
 - [ ] Signing. ([ADR 0018](adr/0018-signing-via-custom-signer-vtable.md))
 
 ## Phase 5: beyond
 
-- [ ] OCR in the lazy worker (`CONV-017`, `DEGRADED`).
+- [x] OCR in the lazy worker through an installed browser `TextDetector`, with explicit
+      unavailable disclosure and no downloaded model (`CONV-017`, `DEGRADED`).
 - [ ] Accessibility repair: tag an untagged document. Blocked on Spike A, and it is the
       repair for `A11Y-003`, the rule that fires on every untagged document.
-- [ ] PDF/A conversion and validation (`CONV-023`, `CONV-024`).
-- [ ] Comparison view (`CMPR-001` to `CMPR-009`).
+- [ ] PDF/A conversion (`CONV-023`). It is not approximated without a conforming output
+      intent and profile resources.
+- [x] First-class PDF/A validation report (`CONV-024`).
+- [x] Local page-level comparison report with a navigable difference list (`CMPR-001`,
+      `CMPR-005`, and `CMPR-006`).
+- [ ] Side-by-side synchronised view, word-level text diff, raster graphic diff, report-PDF
+      export, and OCR-backed scanned comparison (`CMPR-002` to `CMPR-004`,
+      `CMPR-007` to `CMPR-009`).
 
 ## A note on the inventory and this file
 
-[`spec/parity-inventory.md`](spec/parity-inventory.md) lists 311 features. This roadmap
+[`spec/parity-inventory.md`](spec/parity-inventory.md) lists 312 features. This roadmap
 lists a handful of phases. They are different documents doing different jobs, and the
 difference is deliberate: the inventory says what "done" means for each feature when its
 turn comes, and this file says what order the turns are in.
 
-Neither is a schedule. The inventory is explicit that 311 items is a multi-year contract
+Neither is a schedule. The inventory is explicit that 312 items is a multi-year contract
 rather than a release plan, and that a viewer doing its first three sections properly is
 worth shipping.
 

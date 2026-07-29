@@ -7,8 +7,9 @@ described below rather than asserted in copy.
 > **Read this as the target architecture.** It is written in the present tense because it
 > is the contract every change is reviewed against, not a report of what is built. Today
 > the repository contains the build, resource ceilings, design tokens, the Phase 3 viewer,
-> its document and search workers, and the tiled render pipeline. The dedicated `lib/text/`
-> and `lib/store/` layers and the editor phases remain planned rather than shipped.
+> its document and search workers, the tiled render pipeline, the mutating engine port,
+> journal undo, local save/export, annotation and page-operation verticals, and the initial
+> `lib/text/` and `lib/store/` layers. The full parity inventory remains a multi-year contract.
 > [`ROADMAP.md`](ROADMAP.md) is the source of truth for what exists.
 
 ## Runtime
@@ -48,7 +49,8 @@ maintain an additive fork ([ADR 0004](adr/0004-fork-the-mupdf-wasm-build.md)) th
   marked-content dictionary from `op_BDC`, and a decoded image from `op_BI`;
 - `pdf_filter_page_contents` with `pdf_new_sanitize_filter`, for safe content-stream
   rewriting and true redaction;
-- `mujs=yes` in the build FEATURES, enabling AcroForm JavaScript;
+- `mujs=yes` in the build FEATURES, plus worker-local event and console bridges for observable
+  AcroForm and document JavaScript without honoring external side effects;
 - a custom `pdf_pkcs7_signer` whose `create_digest` calls into JavaScript
   ([ADR 0018](adr/0018-signing-via-custom-signer-vtable.md)).
 

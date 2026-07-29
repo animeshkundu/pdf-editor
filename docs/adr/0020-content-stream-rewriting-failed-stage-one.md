@@ -34,6 +34,8 @@ Content-stream rewriting is withdrawn as a product editing path.
 - Existing text is not rewritten in place. Any future text-editing surface uses a clearly
   disclosed PDF annotation/overlay mechanism and does not claim the original content was
   replaced.
+- The overlay is an independent annotation mechanism, not the superseded ADR 0012 Path B.
+  `PDFObject.writeStream()` remains diagnostic-only and is not a product editing path.
 - Existing image/object move, replace, delete, crop, arrange, recompression, and font
   subsetting are withdrawn.
 - Redaction that removes existing content is withdrawn. A black overlay is never presented

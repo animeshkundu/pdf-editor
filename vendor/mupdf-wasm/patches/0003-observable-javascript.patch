@@ -1,0 +1,533 @@
+--- a/platform/wasm/lib/mupdf.c
++++ b/platform/wasm/lib/mupdf.c
+@@ -1591,10 +1591,108 @@
+ 	NUMBER(pdf_js_supported, doc)
+ }
+ 
++static void wasm_pdf_drop_js_event_data(fz_context *drop_ctx, void *data)
++{
++	(void)drop_ctx;
++	EM_ASM({ globalThis.$libmupdf_js_event.drop($0); }, data);
++}
++
++static void wasm_pdf_js_event_callback(fz_context *event_ctx, pdf_document *doc, pdf_doc_event *event, void *data)
++{
++	(void)doc;
++	switch (event->type)
++	{
++	case PDF_DOCUMENT_EVENT_ALERT:
++		{
++			pdf_alert_event *alert = pdf_access_alert_event(event_ctx, event);
++			EM_ASM({
++				globalThis.$libmupdf_js_event.alert(
++					$0, $1, $2, $3, $4, $5, $6, $7, $8
++				);
++			}, data, alert->title, alert->message, alert->icon_type,
++				alert->button_group_type, alert->has_check_box,
++				alert->check_box_message, alert->initially_checked,
++				alert->button_pressed);
++		}
++		break;
++	case PDF_DOCUMENT_EVENT_PRINT:
++		EM_ASM({ globalThis.$libmupdf_js_event.print($0); }, data);
++		break;
++	case PDF_DOCUMENT_EVENT_LAUNCH_URL:
++		{
++			pdf_launch_url_event *launch = pdf_access_launch_url_event(event_ctx, event);
++			EM_ASM({
++				globalThis.$libmupdf_js_event.launch_url($0, $1, $2);
++			}, data, launch->url, launch->new_frame);
++		}
++		break;
++	case PDF_DOCUMENT_EVENT_MAIL_DOC:
++		{
++			pdf_mail_doc_event *mail = pdf_access_mail_doc_event(event_ctx, event);
++			EM_ASM({
++				globalThis.$libmupdf_js_event.mail_doc(
++					$0, $1, $2, $3, $4, $5, $6, $7
++				);
++			}, data, mail->ask_user, mail->to, mail->cc, mail->bcc,
++				mail->subject, mail->message);
++		}
++		break;
++	case PDF_DOCUMENT_EVENT_SUBMIT:
++		EM_ASM({ globalThis.$libmupdf_js_event.submit($0); }, data);
++		break;
++	case PDF_DOCUMENT_EVENT_EXEC_MENU_ITEM:
++		EM_ASM({
++			globalThis.$libmupdf_js_event.exec_menu_item(
++				$0, $1
++			);
++		}, data, pdf_access_exec_menu_item_event(event_ctx, event));
++		break;
++	}
++}
++
++static void wasm_pdf_js_console_drop(pdf_js_console *console, void *user)
++{
++	(void)console;
++	(void)user;
++}
++
++static void wasm_pdf_js_console_show(void *user)
++{
++	EM_ASM({ globalThis.$libmupdf_js_event.console($0, 0, 0); }, user);
++}
++
++static void wasm_pdf_js_console_hide(void *user)
++{
++	EM_ASM({ globalThis.$libmupdf_js_event.console($0, 1, 0); }, user);
++}
++
++static void wasm_pdf_js_console_clear(void *user)
++{
++	EM_ASM({ globalThis.$libmupdf_js_event.console($0, 2, 0); }, user);
++}
++
++static void wasm_pdf_js_console_write(void *user, const char *message)
++{
++	EM_ASM({ globalThis.$libmupdf_js_event.console($0, 3, $1); }, user, message);
++}
++
++static pdf_js_console wasm_pdf_js_console = {
++	wasm_pdf_js_console_drop,
++	wasm_pdf_js_console_show,
++	wasm_pdf_js_console_hide,
++	wasm_pdf_js_console_clear,
++	wasm_pdf_js_console_write
++};
++
+ EXPORT
+ void wasm_pdf_enable_js(pdf_document *doc)
+ {
+-	VOID(pdf_enable_js, doc)
++	TRY({
++		if (pdf_get_doc_event_callback_data(ctx, doc))
++			pdf_enable_js_with_console(ctx, doc, &wasm_pdf_js_console, doc);
++		else
++			pdf_enable_js(ctx, doc);
++	})
+ }
+ 
+ EXPORT
+@@ -1604,6 +1702,49 @@
+ }
+ 
+ EXPORT
++void wasm_pdf_set_js_event_listener(pdf_document *doc, boolean enabled)
++{
++	TRY({
++		if (enabled)
++		{
++			pdf_set_doc_event_callback(ctx, doc, wasm_pdf_js_event_callback,
++				wasm_pdf_drop_js_event_data, doc);
++			if (pdf_js_supported(ctx, doc))
++				pdf_js_set_console(ctx, doc, &wasm_pdf_js_console, doc);
++		}
++		else
++		{
++			pdf_set_doc_event_callback(ctx, doc, NULL, NULL, NULL);
++			if (pdf_js_supported(ctx, doc))
++				pdf_js_set_console(ctx, doc, NULL, NULL);
++		}
++	})
++}
++
++EXPORT
++fz_buffer *wasm_pdf_execute_js(pdf_document *doc, char *name, char *source)
++{
++	fz_buffer *buffer = NULL;
++	char *result = NULL;
++	fz_var(buffer);
++	fz_var(result);
++	fz_try(ctx)
++	{
++		if (!doc->js)
++			fz_throw(ctx, FZ_ERROR_UNSUPPORTED, "PDF JavaScript is not enabled");
++		pdf_js_execute(doc->js, name, source, &result);
++		buffer = fz_new_buffer_from_copied_data(ctx,
++			(const unsigned char *)(result ? result : ""),
++			result ? strlen(result) : 0);
++	}
++	fz_always(ctx)
++		fz_free(ctx, result);
++	fz_catch(ctx)
++		wasm_rethrow(ctx);
++	return buffer;
++}
++
++EXPORT
+ void wasm_pdf_rearrange_pages(pdf_document *doc, int n, int *pages)
+ {
+ 	VOID(pdf_rearrange_pages, doc, n, pages, PDF_CLEAN_STRUCTURE_DROP)
+--- a/platform/wasm/lib/mupdf.ts
++++ b/platform/wasm/lib/mupdf.ts
+@@ -278,6 +278,129 @@
+ 	libmupdf._wasm_enable_log_callback(log !== null)
+ }
+ 
++export type PDFJSEvent =
++	| {
++		type: "alert"
++		title: string
++		message: string
++		iconType: number
++		buttonGroupType: number
++		hasCheckBox: boolean
++		checkBoxMessage: string
++		initiallyChecked: boolean
++		buttonPressed: number
++	}
++	| { type: "print" }
++	| { type: "launch-url", url: string, newFrame: boolean }
++	| {
++		type: "mail-doc"
++		askUser: boolean
++		to: string
++		cc: string
++		bcc: string
++		subject: string
++		message: string
++	}
++	| { type: "submit" }
++	| { type: "exec-menu-item", item: string }
++	| { type: "console", action: "show" | "hide" | "clear" | "write", message: string }
++
++export type PDFJSEventListener = (event: PDFJSEvent) => void
++
++const $libmupdf_js_event_table = new Map<number, PDFJSEventListener>()
++
++function jsEventString(pointer: Pointer<"char">): string {
++	return pointer ? fromString(pointer) : ""
++}
++
++function emitJSEvent(id: number, event: PDFJSEvent): void {
++	try {
++		$libmupdf_js_event_table.get(id)?.(event)
++	} catch (error) {
++		console.warn("PDF JavaScript event listener failed", error)
++	}
++}
++
++declare global {
++	var $libmupdf_js_event: {
++		drop(id: number): void
++		alert(
++			id: number,
++			title: Pointer<"char">,
++			message: Pointer<"char">,
++			iconType: number,
++			buttonGroupType: number,
++			hasCheckBox: number,
++			checkBoxMessage: Pointer<"char">,
++			initiallyChecked: number,
++			buttonPressed: number,
++		): void
++		print(id: number): void
++		launch_url(id: number, url: Pointer<"char">, newFrame: number): void
++		mail_doc(
++			id: number,
++			askUser: number,
++			to: Pointer<"char">,
++			cc: Pointer<"char">,
++			bcc: Pointer<"char">,
++			subject: Pointer<"char">,
++			message: Pointer<"char">,
++		): void
++		submit(id: number): void
++		exec_menu_item(id: number, item: Pointer<"char">): void
++		console(id: number, action: number, message: Pointer<"char">): void
++	}
++}
++
++globalThis.$libmupdf_js_event = {
++	drop(id) {
++		$libmupdf_js_event_table.delete(id)
++	},
++	alert(id, title, message, iconType, buttonGroupType, hasCheckBox, checkBoxMessage, initiallyChecked, buttonPressed) {
++		emitJSEvent(id, {
++			type: "alert",
++			title: jsEventString(title),
++			message: jsEventString(message),
++			iconType,
++			buttonGroupType,
++			hasCheckBox: !!hasCheckBox,
++			checkBoxMessage: jsEventString(checkBoxMessage),
++			initiallyChecked: !!initiallyChecked,
++			buttonPressed,
++		})
++	},
++	print(id) {
++		emitJSEvent(id, { type: "print" })
++	},
++	launch_url(id, url, newFrame) {
++		emitJSEvent(id, { type: "launch-url", url: jsEventString(url), newFrame: !!newFrame })
++	},
++	mail_doc(id, askUser, to, cc, bcc, subject, message) {
++		emitJSEvent(id, {
++			type: "mail-doc",
++			askUser: !!askUser,
++			to: jsEventString(to),
++			cc: jsEventString(cc),
++			bcc: jsEventString(bcc),
++			subject: jsEventString(subject),
++			message: jsEventString(message),
++		})
++	},
++	submit(id) {
++		emitJSEvent(id, { type: "submit" })
++	},
++	exec_menu_item(id, item) {
++		emitJSEvent(id, { type: "exec-menu-item", item: jsEventString(item) })
++	},
++	console(id, action, message) {
++		emitJSEvent(id, {
++			type: "console",
++			action: [ "show", "hide", "clear", "write" ][action] as "show" | "hide" | "clear" | "write",
++			message: jsEventString(message),
++		})
++	},
++}
++
+ /* -------------------------------------------------------------------------- */
+ 
+ // To pass Rect and Matrix as pointer arguments
+@@ -3006,8 +3129,25 @@
+ 		libmupdf._wasm_pdf_disable_js(this.pointer)
+ 	}
+ 
+-	setJSEventListener(_listener: any) {
+-		throw "TODO"
++	setJSEventListener(listener: PDFJSEventListener | null) {
++		if (listener !== null && typeof listener !== "function")
++			throw new TypeError("PDF JavaScript event listener must be a function or null")
++		libmupdf._wasm_pdf_set_js_event_listener(this.pointer, listener !== null)
++		if (listener)
++			$libmupdf_js_event_table.set(this.pointer, listener)
++		else
++			$libmupdf_js_event_table.delete(this.pointer)
++	}
++
++	executeJS(source: string, name = "console") {
++		checkType(source, "string")
++		checkType(name, "string")
++		let buffer = new Buffer(libmupdf._wasm_pdf_execute_js(this.pointer, STRING(name), STRING2(source)))
++		try {
++			return buffer.asString()
++		} finally {
++			buffer.destroy()
++		}
+ 	}
+ 
+ 	rearrangePages(pages: number[]) {
+--- a/include/mupdf/pdf/javascript.h
++++ b/include/mupdf/pdf/javascript.h
+@@ -27,6 +27,7 @@
+ #include "mupdf/pdf/form.h"
+ 
+ void pdf_enable_js(fz_context *ctx, pdf_document *doc);
++void pdf_enable_js_with_console(fz_context *ctx, pdf_document *doc, pdf_js_console *console, void *user);
+ void pdf_disable_js(fz_context *ctx, pdf_document *doc);
+ int pdf_js_supported(fz_context *ctx, pdf_document *doc);
+ void pdf_drop_js(fz_context *ctx, pdf_js *js);
+--- a/source/pdf/pdf-js.c
++++ b/source/pdf/pdf-js.c
+@@ -1307,15 +1307,22 @@
+ 	}
+ }
+ 
+-void pdf_enable_js(fz_context *ctx, pdf_document *doc)
++void pdf_enable_js_with_console(fz_context *ctx, pdf_document *doc, pdf_js_console *console, void *user)
+ {
+ 	if (!doc->js)
+ 	{
+ 		doc->js = pdf_new_js(ctx, doc);
++		if (console)
++			pdf_js_set_console(ctx, doc, console, user);
+ 		pdf_js_load_document_level(doc->js);
+ 	}
+ }
+ 
++void pdf_enable_js(fz_context *ctx, pdf_document *doc)
++{
++	pdf_enable_js_with_console(ctx, doc, NULL, NULL);
++}
++
+ void pdf_disable_js(fz_context *ctx, pdf_document *doc)
+ {
+ 	pdf_drop_js(ctx, doc->js);
+@@ -1331,6 +1338,7 @@
+ 
+ void pdf_drop_js(fz_context *ctx, pdf_js *js) { }
+ void pdf_enable_js(fz_context *ctx, pdf_document *doc) { }
++void pdf_enable_js_with_console(fz_context *ctx, pdf_document *doc, pdf_js_console *console, void *user) { }
+ void pdf_disable_js(fz_context *ctx, pdf_document *doc) { }
+ int pdf_js_supported(fz_context *ctx, pdf_document *doc) { return 0; }
+ void pdf_js_event_init(pdf_js *js, pdf_obj *target, const char *value, int willCommit) { }
+--- a/platform/wasm/lib/mupdf.c
++++ b/platform/wasm/lib/mupdf.c
+@@ -2417,7 +2417,39 @@
+ {
+ 	POINTER(pdf_load_stream, obj)
+ }
+ 
++EXPORT
++fz_buffer * wasm_pdf_load_stream_max(pdf_obj *obj, size_t max_bytes)
++{
++	fz_stream *stream = NULL;
++	fz_buffer *buffer = NULL;
++	unsigned char chunk[8192];
++	size_t length = 0;
++	size_t count;
++	fz_var(stream);
++	fz_var(buffer);
++	fz_try(ctx)
++	{
++		stream = pdf_open_stream(ctx, obj);
++		buffer = fz_new_buffer(ctx, sizeof chunk);
++		while ((count = fz_read(ctx, stream, chunk, sizeof chunk)) > 0)
++		{
++			if (count > max_bytes - length)
++				fz_throw(ctx, FZ_ERROR_LIMIT, "decoded PDF stream exceeds local review limit");
++			fz_append_data(ctx, buffer, chunk, count);
++			length += count;
++		}
++	}
++	fz_always(ctx)
++		fz_drop_stream(ctx, stream);
++	fz_catch(ctx)
++	{
++		fz_drop_buffer(ctx, buffer);
++		wasm_rethrow(ctx);
++	}
++	return buffer;
++}
++
+ EXPORT
+ fz_buffer * wasm_pdf_load_raw_stream(pdf_obj *obj)
+ {
+--- a/platform/wasm/lib/mupdf.ts
++++ b/platform/wasm/lib/mupdf.ts
+@@ -3474,2 +3474,6 @@
+ 	readStream() { return new Buffer(libmupdf._wasm_pdf_load_stream(this.pointer)) }
++	readStreamMax(maxBytes: number) {
++		checkType(maxBytes, "number")
++		return new Buffer(libmupdf._wasm_pdf_load_stream_max(this.pointer, maxBytes))
++	}
+ 	readRawStream() { return new Buffer(libmupdf._wasm_pdf_load_raw_stream(this.pointer)) }
+--- a/include/mupdf/pdf/object.h
++++ b/include/mupdf/pdf/object.h
+@@ -319,6 +319,7 @@
+ 	The returned string must be freed by the caller.
+ */
+ char *pdf_load_stream_or_string_as_utf8(fz_context *ctx, pdf_obj *src);
++char *pdf_load_stream_or_string_as_utf8_limit(fz_context *ctx, pdf_obj *src, size_t max_bytes);
+ 
+ fz_quad pdf_to_quad(fz_context *ctx, pdf_obj *array, int offset);
+ fz_point pdf_to_point(fz_context *ctx, pdf_obj *array, int offset);
+--- a/source/pdf/pdf-parse.c
++++ b/source/pdf/pdf-parse.c
+@@ -491,6 +491,55 @@
+ 	return pdf_new_utf8_from_pdf_string_obj(ctx, src);
+ }
+ 
++char *
++pdf_load_stream_or_string_as_utf8_limit(fz_context *ctx, pdf_obj *src, size_t max_bytes)
++{
++	if (pdf_is_stream(ctx, src))
++	{
++		fz_stream *stream = NULL;
++		fz_buffer *buffer = NULL;
++		unsigned char chunk[8192];
++		unsigned char *data;
++		size_t length = 0;
++		size_t count;
++		char *result = NULL;
++		fz_var(stream);
++		fz_var(buffer);
++		fz_var(result);
++		fz_try(ctx)
++		{
++			stream = pdf_open_stream(ctx, src);
++			buffer = fz_new_buffer(ctx, sizeof chunk);
++			while ((count = fz_read(ctx, stream, chunk, sizeof chunk)) > 0)
++			{
++				if (count > max_bytes - length)
++					fz_throw(ctx, FZ_ERROR_LIMIT, "decoded PDF string exceeds local limit");
++				fz_append_data(ctx, buffer, chunk, count);
++				length += count;
++			}
++			length = fz_buffer_storage(ctx, buffer, &data);
++			result = pdf_new_utf8_from_pdf_string(ctx, (const char *)data, length);
++		}
++		fz_always(ctx)
++		{
++			fz_drop_stream(ctx, stream);
++			fz_drop_buffer(ctx, buffer);
++		}
++		fz_catch(ctx)
++			fz_rethrow(ctx);
++		return result;
++	}
++	else
++	{
++		const char *data;
++		size_t length;
++		data = pdf_to_string(ctx, src, &length);
++		if (length > max_bytes)
++			fz_throw(ctx, FZ_ERROR_LIMIT, "PDF string exceeds local limit");
++		return pdf_new_utf8_from_pdf_string(ctx, data, length);
++	}
++}
++
+ static pdf_obj *
+ pdf_new_text_string_utf16be(fz_context *ctx, const char *s)
+ {
+--- a/source/pdf/pdf-form.c
++++ b/source/pdf/pdf-form.c
+@@ -25,6 +25,8 @@
+ 
+ #include <string.h>
+ 
++#define PDF_JS_LIMIT_SOURCE (4 << 20)
++
+ /* Must be kept in sync with definitions in pdf_util.js */
+ enum
+ {
+@@ -1112,7 +1114,7 @@
+ 	pdf_obj *js = pdf_dict_getl(ctx, annot->obj, PDF_NAME(AA), PDF_NAME(F), PDF_NAME(JS), NULL);
+ 	if (js)
+ 	{
+-		char *code = pdf_load_stream_or_string_as_utf8(ctx, js);
++		char *code = pdf_load_stream_or_string_as_utf8_limit(ctx, js, PDF_JS_LIMIT_SOURCE);
+ 		if (strstr(code, "AFNumber_Format"))
+ 			type = PDF_WIDGET_TX_FORMAT_NUMBER;
+ 		else if (strstr(code, "AFSpecial_Format"))
+@@ -2038,7 +2040,7 @@
+ {
+ 	if (js)
+ 	{
+-		char *code = pdf_load_stream_or_string_as_utf8(ctx, js);
++		char *code = pdf_load_stream_or_string_as_utf8_limit(ctx, js, PDF_JS_LIMIT_SOURCE);
+ 		int in_op = 0;
+ 
+ 		fz_var(in_op);
+--- a/source/pdf/pdf-js.c
++++ b/source/pdf/pdf-js.c
+@@ -28,6 +28,7 @@
+ // set limits to how much memory and cpu malicious/broken scripts can use up
+ #define PDF_JS_LIMIT_RUNTIME (10 << 20) // ten million instructions
+ #define PDF_JS_LIMIT_MEMORY (100 << 20) // one hundred megabytes
++#define PDF_JS_LIMIT_SOURCE (4 << 20) // four megabytes decoded source per action
+ 
+ #include "mujs.h"
+ 
+@@ -1108,7 +1109,7 @@
+ 		{
+ 			pdf_obj *fragment = pdf_dict_get_val(ctx, javascript, i);
+ 			pdf_obj *code = pdf_dict_get(ctx, fragment, PDF_NAME(JS));
+-			char *codebuf = pdf_load_stream_or_string_as_utf8(ctx, code);
++			char *codebuf = pdf_load_stream_or_string_as_utf8_limit(ctx, code, PDF_JS_LIMIT_SOURCE);
+ 			char buf[100];
+ 			if (pdf_is_indirect(ctx, code))
+ 				fz_snprintf(buf, sizeof buf, "%d", pdf_to_num(ctx, code));

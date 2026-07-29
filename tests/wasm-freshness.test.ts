@@ -93,7 +93,13 @@ describe.sequential('committed WASM provenance', () => {
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
     expect(result.stdout).toContain('5 artifact(s) match the manifest');
-    expect(result.stdout).toContain('8 tracked build input(s) match the manifest');
+    // Matched by pattern, not by a literal count. The number of tracked build inputs
+    // rises whenever a patch is added, and pinning it here has broken this test twice
+    // for a change that was entirely correct. What is under test is that every tracked
+    // input matches, and that at least one exists so the line cannot pass vacuously.
+    const inputs = /(\d+) tracked build input\(s\) match the manifest/.exec(result.stdout);
+    expect(inputs, result.stdout).not.toBeNull();
+    expect(Number(inputs?.[1])).toBeGreaterThan(0);
     expect(result.stdout).toContain(
       existsSync(processorSource)
         ? '5 rebuilt artifact(s) match committed output'

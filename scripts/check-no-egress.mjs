@@ -45,6 +45,9 @@ const INERT_HOST = new RegExp(
     'spdx\\.org',
     'gnu\\.org',
     'purl\\.org',
+    // Adobe's XFDF namespace URI is serialized into local interchange files as an XML
+    // identifier. It is never dereferenced or used as a request target.
+    'ns\\.adobe\\.com/xfdf',
     // React interpolates this into minified error messages ("Visit
     // https://react.dev/errors/418 for the full message"). String only, never fetched.
     'react\\.dev/errors',

@@ -88,9 +88,9 @@ three locations.
 
 - The floor is derived from a hard technical requirement, so it is defensible and
   stable.
-- Everything above the floor gets modern platform features (OPFS with
-  `createSyncAccessHandle`, `ImageBitmap` in workers, `structuredClone`) without
-  polyfills.
+- Everything above the floor gets the engine features required to open and render. Optional
+  platform capabilities remain feature-detected: Chromium 95 through 101, in particular,
+  do not provide OPFS `createSyncAccessHandle()` and therefore do not get crash persistence.
 
 ### Negative
 

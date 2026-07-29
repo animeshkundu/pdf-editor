@@ -47,6 +47,53 @@ declare global {
     function $libmupdf_log_warning(message: Pointer<"char">): void;
 }
 export declare function setLog(log: Log | ((message: string) => void) | null): void;
+export type PDFJSEvent = {
+    type: "alert";
+    title: string;
+    message: string;
+    iconType: number;
+    buttonGroupType: number;
+    hasCheckBox: boolean;
+    checkBoxMessage: string;
+    initiallyChecked: boolean;
+    buttonPressed: number;
+} | {
+    type: "print";
+} | {
+    type: "launch-url";
+    url: string;
+    newFrame: boolean;
+} | {
+    type: "mail-doc";
+    askUser: boolean;
+    to: string;
+    cc: string;
+    bcc: string;
+    subject: string;
+    message: string;
+} | {
+    type: "submit";
+} | {
+    type: "exec-menu-item";
+    item: string;
+} | {
+    type: "console";
+    action: "show" | "hide" | "clear" | "write";
+    message: string;
+};
+export type PDFJSEventListener = (event: PDFJSEvent) => void;
+declare global {
+    var $libmupdf_js_event: {
+        drop(id: number): void;
+        alert(id: number, title: Pointer<"char">, message: Pointer<"char">, iconType: number, buttonGroupType: number, hasCheckBox: number, checkBoxMessage: Pointer<"char">, initiallyChecked: number, buttonPressed: number): void;
+        print(id: number): void;
+        launch_url(id: number, url: Pointer<"char">, newFrame: number): void;
+        mail_doc(id: number, askUser: number, to: Pointer<"char">, cc: Pointer<"char">, bcc: Pointer<"char">, subject: Pointer<"char">, message: Pointer<"char">): void;
+        submit(id: number): void;
+        exec_menu_item(id: number, item: Pointer<"char">): void;
+        console(id: number, action: number, message: Pointer<"char">): void;
+    };
+}
 /** The types that can be automatically converted into a Buffer object */
 type AnyBuffer = Buffer | ArrayBuffer | Uint8Array | string;
 declare abstract class Userdata<B> {
@@ -553,7 +600,11 @@ export declare class PDFDocument extends Document {
     isJSSupported(): boolean;
     enableJS(): void;
     disableJS(): void;
-    setJSEventListener(_listener: any): void;
+    setJSExecutionEnabled(enabled: boolean): void;
+    isJSExecutionEnabled(): boolean;
+    isJSBudgetExhausted(): boolean;
+    setJSEventListener(listener: PDFJSEventListener | null): void;
+    executeJS(source: string, name?: string): string;
     rearrangePages(pages: number[]): void;
     subsetFonts(): void;
     bake(bakeAnnots?: boolean, bakeWidgets?: boolean): void;
@@ -649,6 +700,7 @@ export declare class PDFObject extends Userdata<"pdf_obj"> {
     asString(): string;
     asByteString(): Uint8Array<ArrayBuffer>;
     readStream(): Buffer;
+    readStreamMax(maxBytes: number): Buffer;
     readRawStream(): Buffer;
     writeObject(obj: any): void;
     writeStream(buf: AnyBuffer): void;

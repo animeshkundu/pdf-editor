@@ -37,8 +37,8 @@ vendored source at MuPDF 1.28.0, not inferred:
   touch. Also not exposed.
 - AcroForm JavaScript is gated behind the `mujs=yes` build feature. `tools/build.sh:18`
   reads `FEATURES=${FEATURES:-brotli=no mujs=no extract=no xps=no svg=no}` and passes it
-  straight through to `make`, so the feature is one token from being on. The relevant
-  exports already exist in the shim.
+  straight through to `make`. Enable/disable exports exist upstream; observable document
+  events and console execution require additive shim exports.
 - `pdf_pkcs7_signer` is a struct of function pointers, not an OpenSSL type. It can be
   implemented by anyone who can supply a digest. This matters enormously and is covered
   in [ADR 0018](0018-signing-via-custom-signer-vtable.md).
@@ -85,13 +85,13 @@ rewrites through MuPDF's own interpreter, so operators we do not understand pass
 unchanged. This is also the correct primitive for true redaction, where content must be
 removed from the stream rather than covered by a black rectangle.
 
-### 3. `mujs=yes` in the build FEATURES
+### 3. `mujs=yes`, observable events, and console execution
 
-A one-token change that enables the MuJS interpreter and, with it, AcroForm JavaScript:
-field format, validate, calculate, and keystroke actions. Real-world government and
-enterprise forms depend on these, and a form that silently does not calculate is worse
-than a form that refuses to open. The exports are already present in the shim; only the
-build flag is missing.
+A build-feature change enables the MuJS interpreter and, with it, AcroForm JavaScript:
+field format, validate, calculate, and keystroke actions. The fork also bridges
+`pdf_doc_event_cb` and `pdf_js_console` to the worker, exports bounded
+`pdf_js_execute`, and caps decoded action source before MuJS parses it. External launch,
+mail, submission, print, and menu requests are serialized for review and never performed.
 
 **Measured, not estimated.** The build succeeds and the cost is known:
 
@@ -110,10 +110,12 @@ FEATURES="brotli=no extract=no xps=no svg=no" SUFFIX="mujs" bash tools/build.sh
 This is the cheapest capability in the whole plan: no C is written, no export is added,
 and the only cost is the rebuild and 235 KB.
 
-**Honest boundary.** This proves the build succeeds, links, and grows by the expected
-amount. It does **not** prove `doc.isJSSupported()` returns true at runtime, because the
-binary has not been loaded in a browser. State it as "builds and links, runtime
-confirmation pending", never as "AcroForm JavaScript works".
+Runtime evidence now covers `doc.enableJS()` followed by `doc.isJSSupported()`, console
+evaluation, console writes, alerts, and blocked URL-launch events. Field K/V/C/F actions
+and document-level scripts are saved as interoperable PDF objects and independently read
+with pdf.js and qpdf. The authoring console evaluates a disposable current-document
+snapshot after removing its startup name tree, so evaluation cannot mutate the open PDF or
+replay its startup scripts.
 
 The `SUFFIX` in that command is load-bearing. See
 [the object-cache trap](#implementation-note-the-suffix-object-cache-trap).
@@ -136,6 +138,8 @@ The low-level WASM surface adds:
 - `wasm_pdf_keep_font`, `wasm_pdf_drop_font`, `wasm_pdf_font_name`,
   `wasm_pdf_font_is_embedded`, and `wasm_pdf_font_wmode`;
 - `wasm_pdf_filter_page_contents`.
+- `wasm_pdf_set_js_event_listener`, `wasm_pdf_execute_js`, and bounded stream loading for
+  inspection and execution.
 
 The high-level wrapper adds `PDFProcessorTrace`, `PDFFontDescriptor`,
 `PDFPage.processContents()`, and `PDFPage.filterContents()`. The build emits and manifests
@@ -192,7 +196,6 @@ Not verified or not successful:
 - Null-filter visual fidelity is **red**, not green. pdf.js found out-of-C8 differences in
   Ghostscript, pdfTeX, and LibreOffice documents. ADR 0020 supersedes the use of this filter
   as an editing path.
-- `doc.isJSSupported()` still lacks a browser runtime test.
 - The signer and a two-phase signing state machine are not implemented.
 
 ## Consequences

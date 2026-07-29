@@ -22,6 +22,7 @@ const ARCHIVE_URL =
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const cacheRoot = join(root, 'node_modules', '.cache');
 const installDir = join(cacheRoot, `qpdf-${VERSION}`);
+const installLock = join(cacheRoot, `qpdf-${VERSION}.lock`);
 const qpdf = join(installDir, 'bin', 'qpdf');
 
 function runVersion(binary) {
@@ -29,6 +30,16 @@ function runVersion(binary) {
     encoding: 'utf8',
     shell: false,
   });
+}
+
+function isReady() {
+  if (!existsSync(qpdf)) return false;
+  const version = runVersion(qpdf);
+  return version.status === 0 && version.stdout.includes(`qpdf version ${VERSION}`);
+}
+
+function wait(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
 async function install() {
@@ -80,10 +91,35 @@ async function install() {
   }
 }
 
-if (!existsSync(qpdf)) {
-  await install();
+async function ensureInstalled() {
+  if (isReady()) return;
+  mkdirSync(cacheRoot, { recursive: true });
+  const deadline = Date.now() + 120_000;
+  while (true) {
+    try {
+      mkdirSync(installLock);
+      break;
+    } catch (error) {
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'EEXIST') {
+        throw error;
+      }
+      if (isReady()) return;
+      if (Date.now() >= deadline) {
+        throw new Error(`timed out waiting for another qpdf ${VERSION} installation`, {
+          cause: error,
+        });
+      }
+      wait(100);
+    }
+  }
+  try {
+    if (!isReady()) await install();
+  } finally {
+    rmSync(installLock, { recursive: true, force: true });
+  }
 }
 
+await ensureInstalled();
 const version = runVersion(qpdf);
 if (version.status !== 0 || !version.stdout.includes(`qpdf version ${VERSION}`)) {
   throw new Error(`qpdf ${VERSION} verification failed: ${version.stderr || version.stdout}`);
