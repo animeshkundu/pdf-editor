@@ -27,6 +27,29 @@ function engineChunk(id: string): string | undefined {
     : undefined;
 }
 
+// Where the app is mounted. Defaults to the domain root, which is what a standalone
+// Vercel deployment serves and what every gate and the Playwright suite assume.
+//
+// It is configurable because the sibling deployment at tools.kundus.in mounts each app
+// under a path and serves its assets from a distinct prefix, so two apps on one domain
+// cannot collide over /assets/. Hardcoding a prefix would break the standalone URL, and
+// hardcoding root makes a path-mounted deployment impossible; an env var is the only
+// option that serves both without a second build config.
+//
+// Must have a leading and trailing slash: Vite joins it to asset paths verbatim, and a
+// missing trailing slash silently yields /pdfassets/... rather than /pdf/assets/...
+function resolveBase(): string {
+  const configured = process.env.PDF_EDITOR_BASE?.trim();
+  if (!configured) return '/';
+  if (!configured.startsWith('/') || !configured.endsWith('/')) {
+    throw new Error(
+      `PDF_EDITOR_BASE must start and end with "/", got ${JSON.stringify(configured)}. ` +
+        'Example: /pdf-editor/',
+    );
+  }
+  return configured;
+}
+
 // The editor is a single client-side surface. There is no server, no SSR, and no
 // route table: navigation is application state. Vite is used over a meta-framework
 // because per-document Web Workers loading a ~10 MB WASM binary are first-class here
@@ -34,6 +57,7 @@ function engineChunk(id: string): string | undefined {
 // meta-framework's bundler assumptions would fight that for features we never use.
 export default defineConfig({
   root: 'web',
+  base: resolveBase(),
   plugins: [developmentCsp(), react(), tailwindcss()],
   resolve: {
     alias: { '@': fileURLToPath(new URL('.', import.meta.url)) },
