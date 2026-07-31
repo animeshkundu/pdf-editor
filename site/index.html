@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-src 'none'"
+    />
+    <title>Papertrail - Private PDF editing</title>
+    <meta
+      name="description"
+      content="View and edit PDFs locally in your browser. Your documents never leave your device."
+    />
+    <link rel="icon" href="./favicon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="wordmark" href="./" aria-label="Papertrail home">
+        <span aria-hidden="true">P</span>
+        Papertrail
+      </a>
+      <nav aria-label="Primary">
+        <a href="#privacy">Privacy</a>
+        <a href="#workflow">How it works</a>
+        <a href="./docs/">About</a>
+      </nav>
+      <a class="header-action" href="./app/">Open editor</a>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">PRIVATE PDF WORKSPACE</p>
+          <h1 id="hero-title">Serious PDF work.<br />Nothing leaves your device.</h1>
+          <p class="hero-detail">
+            Read, annotate, organize, fill, compare, and protect documents in a focused browser
+            workspace. No upload. No account. No telemetry.
+          </p>
+          <div class="hero-actions">
+            <a class="primary-action" href="./app/">Open a PDF</a>
+            <a class="secondary-action" href="#privacy">See the privacy model</a>
+          </div>
+          <p class="local-note">Runs locally after the application loads.</p>
+        </div>
+        <div class="workspace-preview" aria-hidden="true">
+          <div class="preview-bar">
+            <span class="preview-mark">P</span>
+            <span class="preview-title">Quarterly review.pdf</span>
+            <span class="preview-chip">LOCAL</span>
+          </div>
+          <div class="preview-body">
+            <div class="preview-rail" aria-hidden="true">
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <div class="preview-canvas">
+              <article class="preview-page">
+                <p class="preview-kicker"></p>
+                <h2></h2>
+                <p></p>
+                <p></p>
+                <p></p>
+                <div class="preview-highlight"></div>
+                <p></p>
+                <p></p>
+              </article>
+            </div>
+            <aside class="preview-panel">
+              <strong>Comments</strong>
+              <div></div>
+              <div></div>
+              <div></div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section id="privacy" class="principles" aria-labelledby="privacy-title">
+        <p class="eyebrow">A DIFFERENT DEFAULT</p>
+        <h2 id="privacy-title">The document is yours. The architecture proves it.</h2>
+        <div class="principle-grid">
+          <article>
+            <span>01</span>
+            <h3>Zero document egress</h3>
+            <p>No document byte, filename, page image, or derived artifact enters a request.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>Real PDF output</h3>
+            <p>
+              Edits are written into interoperable PDF structures, not trapped in an account.
+            </p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>Honest boundaries</h3>
+            <p>Unavailable or weaker capabilities are named where you would use them.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="workflow" class="workflow" aria-labelledby="workflow-title">
+        <div>
+          <p class="eyebrow">FROM OPEN TO OUTPUT</p>
+          <h2 id="workflow-title">Built around the work, not the toolbar.</h2>
+        </div>
+        <ol>
+          <li>
+            <span>1</span><strong>Open locally</strong><small>Choose or drop a PDF.</small>
+          </li>
+          <li>
+            <span>2</span><strong>Work with confidence</strong
+            ><small>Every change is undoable.</small>
+          </li>
+          <li>
+            <span>3</span><strong>Save explicitly</strong
+            ><small>You choose the output location.</small>
+          </li>
+        </ol>
+      </section>
+
+      <section class="closing">
+        <p class="eyebrow">NO SIGN-UP. NO UPLOAD.</p>
+        <h2>Your next document can stay private.</h2>
+        <a class="primary-action" href="./app/">Open Papertrail</a>
+      </section>
+    </main>
+
+    <footer>
+      <span>Papertrail</span>
+      <span>AGPL-3.0-only</span>
+      <a href="./docs/">Source and product scope</a>
+    </footer>
+  </body>
+</html>

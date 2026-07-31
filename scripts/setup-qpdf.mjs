@@ -24,6 +24,23 @@ const cacheRoot = join(root, 'node_modules', '.cache');
 const installDir = join(cacheRoot, `qpdf-${VERSION}`);
 const installLock = join(cacheRoot, `qpdf-${VERSION}.lock`);
 const qpdf = join(installDir, 'bin', 'qpdf');
+const PYTHON_EXTRACTOR = String.raw`
+import os
+import stat
+import sys
+import zipfile
+
+archive, destination = sys.argv[1:3]
+with zipfile.ZipFile(archive) as source:
+    for entry in source.infolist():
+        target = os.path.join(destination, entry.filename)
+        mode = entry.external_attr >> 16
+        if stat.S_ISLNK(mode):
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            os.symlink(source.read(entry).decode("utf-8"), target)
+        else:
+            source.extract(entry, destination)
+`;
 
 function runVersion(binary) {
   return spawnSync(binary, ['--version'], {
@@ -70,7 +87,7 @@ async function install() {
   try {
     mkdirSync(extractDir);
     writeFileSync(archivePath, archive);
-    const unzip = spawnSync('unzip', ['-q', archivePath, '-d', extractDir], {
+    const unzip = spawnSync('python3', ['-c', PYTHON_EXTRACTOR, archivePath, extractDir], {
       encoding: 'utf8',
       shell: false,
     });

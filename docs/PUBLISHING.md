@@ -6,20 +6,14 @@ infrastructure beyond a plain `vite build`.
 
 ## Vercel, driven from CI
 
-Deployment runs from `.github/workflows/deploy.yml` rather than Vercel's native Git
-integration, and is gated on CI passing
-([ADR 0021](adr/0021-deploy-through-ci-rather-than-git-integration.md)). Vercel builds
-from `vercel.json`, which knows nothing about `npm run check`, `check:egress` or
-`check:size`; under the Git integration a commit that failed every gate would still reach
-a URL. The workflow triggers on the CI run completing, refuses to proceed unless it
-succeeded, and checks out the exact commit CI verified. `main` goes to production and
-every other branch gets a preview.
+Deployment runs from `.github/workflows/vercel.yml`, is gated on CI passing, and uploads
+the exact artifact CI accepted
+([ADR 0027](adr/0027-prebuilt-mounted-vercel-deployment.md)). Vercel does not rebuild.
+The landing page is public at `/pdf/`; the application is public at `/pdf/app/`; both map
+to an unmodified tree mounted internally at `/pdf-editor/`.
 
-**The Git integration must stay disconnected once this is in effect.** Two mechanisms
-deploying the same project would race for the production alias, and the ungated one
-winning would make the gate pointless. As of 2026-07-27 the Git integration IS connected
-and is what deploys; `deploy.yml` holds no credentials and skips, so nothing conflicts
-yet. Disconnect it before setting the three secrets below.
+**The Git integration stays disabled.** `vercel.json` enforces that setting, so an
+ungated platform build cannot race the accepted artifact for the production alias.
 
 Deployment needs three repository secrets: `VERCEL_TOKEN`, `VERCEL_ORG_ID` and
 `VERCEL_PROJECT_ID`. Without them the workflow says so in its summary and exits green,
@@ -28,11 +22,10 @@ the same way `scripts/cargo.mjs` skips for a contributor with no Rust toolchain.
 ### Mounting the app under a path
 
 `vite.web.config.ts` reads `PDF_EDITOR_BASE` and defaults to `/`, which is what a
-standalone deployment serves and what every gate and the Playwright suite assume. Set it
-at build time to mount the app under a path:
+standalone deployment serves and what every gate and the Playwright suite assume. The production site build sets it to the internal application mount:
 
 ```sh
-PDF_EDITOR_BASE=/pdf-editor/ npm run build:web
+PDF_EDITOR_BASE=/pdf-editor/app/ npm run build:web
 ```
 
 The value must have a leading and trailing slash. Vite joins it to asset paths verbatim,
@@ -62,19 +55,17 @@ because the check is reading the SSO redirect rather than the app.
 sends `x-vercel-protection-bypass`; `deploy-check.yml` and `deploy.yml` both pass it. Set
 it whenever protection is on, or the smoke test reports ten failures that mean nothing.
 
-The project configuration lives in `vercel.json` at the repository root, which pins the
-framework preset to `null`, the build command to `npm run build:vercel`, the output
-directory to `dist`, and the install command to `npm ci --include=dev`. It also sets the
-response headers: HSTS, `X-Content-Type-Options`, `Referrer-Policy: no-referrer`,
-`X-Frame-Options: DENY`, a restrictive `Permissions-Policy`, a transport-level CSP
-carrying `frame-ancestors`, `base-uri`, and `object-src`, the correct
-`application/wasm` content type, and immutable caching for content-hashed assets.
+`vercel.json` contains only the disabled Git integration. Response headers and routes are
+assembled in `.vercel/output/config.json` from `scripts/build-vercel-output.mjs`. The app
+policy is extracted from the built `web/index.html` policy and extended with the
+header-only `frame-ancestors 'none'` directive.
 
-Vercel still builds rather than receiving CI's `dist/` as prebuilt output. Uploading
-prebuilt output would mean restating every one of those headers in Build Output API form,
-and two copies of a security header set is how one of them goes stale. `deploy.yml`
-asserts the headers that actually arrived by running `scripts/check-deployment.mjs`
-against the deployed URL.
+Vercel receives prebuilt output. CI creates `dist/` with the mounted base, drives it through
+the Build Output route table in Chromium and Firefox, and uploads it. The deployment
+workflow downloads it into `site/app/`, assembles the final static tree, reruns egress and
+size gates, deploys with `--prebuilt`, and checks the live headers. `build:site` also scans
+the complete `site/` tree for egress and budgets the landing files separately while excluding
+`site/app/`, so the application is not counted twice.
 
 The transport CSP complements, and does not replace, the default-deny policy in
 `web/index.html`. That document policy remains the contract

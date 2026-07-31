@@ -160,6 +160,7 @@ export function applyRedactions(
   arena: Arena,
   document: mupdf.PDFDocument,
   preflight: ApplyRedactionsPreflight,
+  password?: string,
 ): ApplyRedactionsOutput {
   for (const pageIndex of preflight.pageIndices) {
     const page = arena.keep(document.loadPage(pageIndex));
@@ -178,7 +179,7 @@ export function applyRedactions(
     );
   }
   return {
-    data: saveDocument(document, SAFE_FULL_SAVE),
+    data: saveDocument(document, SAFE_FULL_SAVE, password),
     fidelity: 'DEGRADED',
     applied: preflight.marks,
     pages: preflight.pageIndices.length,
@@ -224,6 +225,7 @@ export function sanitize(
   document: mupdf.PDFDocument,
   preflight: SanitizePreflight,
   confirmSignatureInvalidation: boolean,
+  password?: string,
 ): ContentRemovalOutput {
   if (preflight.unsupported.length > 0) {
     throw new Error(
@@ -298,7 +300,7 @@ export function sanitize(
     }
   });
 
-  return { data: saveDocument(document, SAFE_FULL_SAVE), removed };
+  return { data: saveDocument(document, SAFE_FULL_SAVE, password), removed };
 }
 
 export function redactPages(
@@ -306,6 +308,7 @@ export function redactPages(
   pageIndices: readonly number[],
   signatures: number,
   confirmSignatureInvalidation: boolean,
+  password?: string,
 ): ContentRemovalOutput {
   const pages = [...new Set(pageIndices)].sort((left, right) => right - left);
   if (
@@ -327,7 +330,7 @@ export function redactPages(
   }
   for (const pageIndex of pages) document.deletePage(pageIndex);
   return {
-    data: saveDocument(document, SAFE_FULL_SAVE),
+    data: saveDocument(document, SAFE_FULL_SAVE, password),
     removed: {
       scripts: 0,
       embeddedFiles: 0,

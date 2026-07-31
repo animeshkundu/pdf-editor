@@ -242,24 +242,23 @@ fallbacks and the capabilities withdrawn with that path.
 
 ### Text
 
-- [ ] `EDIT-001` **Edit existing text in place** `OPEN`, blocked on the **commit-verification
-      spike**: proving with an independent reader, before the journal operation commits, that
-      the replacement was actually written.
-      It was briefly `DEGRADED` and wired, and browser QA found it silently destroying a
-      document: selecting `사회복지법인` in `cjk-itext.pdf` and replacing it with the
-      subset-supported `사회` closed the editor with no error, and the saved file contained
-      zero text items where the original had one. Both the original and the replacement were
-      gone. Verified independently with pdf.js, and reproduced by `pdftotext`.
-      The shape of the bug is why the label moved rather than the guard being tightened.
-      Path B removes the original glyphs and then writes an overlay, so any failure after the
-      removal destroys content, and no pre-flight check can be complete enough to prevent
-      that class of failure. The mutation now refuses before touching the document.
-      **Ships only when it can verify its own output**, not when the guards look thorough.
-      Adding a new text block (`EDIT-004`) is unaffected: it invents no encoding and removes
-      nothing.
-- [ ] `EDIT-002` **Reflow within a text block after an edit** `OPEN`, blocked on the same
-      **commit-verification spike** as `EDIT-001`. There is nothing to reflow until an edit
-      can be committed at all.
+- [ ] `EDIT-001` **Edit existing text in place** `DEGRADED`. One deliberately narrow path
+      ships: a unique, axis-aligned, single-font line can be replaced with printable ASCII
+      when no Form XObject, marked-content dictionary, metadata copy, redaction mark, or
+      overlapping annotation makes the operation ambiguous. MuPDF's redaction filter removes
+      the selected glyphs and a standard Helvetica `FreeText` appearance carries the
+      replacement. Before the journal commits, the worker verifies that only the selected
+      structured-text characters disappeared, every pre-existing annotation is unchanged,
+      and the replacement annotation has the exact contents, rectangle, and a non-empty
+      appearance stream. Any mismatch rolls the whole operation back. pdf.js and qpdf grade
+      the saved output; MuPDF's in-transaction checks are safety interlocks, not acceptance
+      oracles. CJK, right-to-left, rotated, skewed, multiline, repeated, and non-fitting edits
+      refuse before mutation. This replaces the earlier universal refusal without reviving
+      the unsound `/ToUnicode` inversion that destroyed `cjk-itext.pdf`.
+- [ ] `EDIT-002` **Reflow within a text block after an edit** `EXCLUDED` from the guarded
+      replacement path. Reflow needs shaped text and a general content-stream writer; the
+      current path preserves one line's original bounds and refuses a replacement that cannot
+      fit at a readable size.
 - [ ] `EDIT-003` **Change font, size, colour, spacing, and alignment of existing text**
       `DEGRADED`, on the disclosed overlay only.
 - [ ] `EDIT-004` **Add a new text block** `LOCAL`. Adding text does not require inverting an existing
@@ -886,13 +885,13 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 
 312 items in total.
 
-| Label      | Count | Where it concentrates                                                                                                                                                                                            |
-| ---------- | ----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LOCAL`    |   256 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                  |
-| `DEGRADED` |    21 | Text editing through disclosed overlays, Office export, OCR, signature revocation status, field auto-detection, HTML conversion, barcode fields, RC4, scan comparison                                            |
-| `EXCLUDED` |    25 | Existing content/object rewrites, true redaction, marked-content tagging, cloud workflows, XFA, scanner input, web capture, timestamping, revocation checking, LTV, prepress, sound, Action Wizard compatibility |
-| `OPEN`     |     5 | Signing (Spike C), signature validation (Spike D), and certificate encryption (Spike E)                                                                                                                          |
-| `EQUIV`    |     5 | Find, clipboard, save and save as, print, Read Out Loud                                                                                                                                                          |
+| Label      | Count | Where it concentrates                                                                                                                                                                                                |
+| ---------- | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LOCAL`    |   251 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                      |
+| `DEGRADED` |    24 | Guarded text replacement, Office export, OCR, signature revocation status, field auto-detection, HTML conversion, barcode fields, RC4, scan comparison                                                               |
+| `EXCLUDED` |    25 | Existing content/object rewrites, text reflow, marked-content tagging, cloud workflows, XFA, scanner input, web capture, timestamping, online revocation checking, LTV, prepress, sound, Action Wizard compatibility |
+| `OPEN`     |     7 | Interactive form surfaces and local form history (Spikes F and G), signing (Spike C), signature validation (Spike D), and certificate encryption (Spike E)                                                           |
+| `EQUIV`    |     5 | Find, clipboard, save and save as, print, Read Out Loud                                                                                                                                                              |
 
 By section:
 
@@ -918,14 +917,15 @@ items above, the items are correct.
 The concentration is the point. `EXCLUDED` is almost entirely workflows that need a server,
 which is the trade the product exists to make.
 
-`OPEN` grew from 10 to 18 under adversarial review and then fell to 5 when Spike A supplied
-an answer rather than a promotion. The red result moved three text features to `DEGRADED`
-overlays and withdrew ten rewrite-dependent features to `EXCLUDED`
-([ADR 0020](../adr/0020-content-stream-rewriting-failed-stage-one.md)). The remaining open
-items have no demonstrated engine path: signing depends on bridging a synchronous C
-callback to asynchronous WebCrypto (Spike C), signature validation needs a verifier the
-shim does not export (Spike D), and certificate-based encryption needs PDF's public-key
-security handler (Spike E).
+`OPEN` grew under adversarial review and fell when Spike A supplied an answer rather than a
+promotion. The red result withdrew general rewrite-dependent features
+([ADR 0020](../adr/0020-content-stream-rewriting-failed-stage-one.md)); ADR 0028 later
+restored only a guarded ASCII replacement path with transactional self-consistency checks
+and independent saved-output acceptance. The remaining open items have no demonstrated
+engine path or complete browser interaction surface: forms depend on Spikes F and G, signing
+depends on bridging a synchronous C callback to asynchronous WebCrypto (Spike C), signature
+validation needs a verifier the shim does not export (Spike D), and certificate-based
+encryption needs PDF's public-key security handler (Spike E).
 
 `DEGRADED` is worth reading as a group. It is not one kind of weakness. Some reconstruct a
 model the PDF does not contain, three edit text through an overlay rather than replacing

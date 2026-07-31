@@ -18,6 +18,31 @@ to do next time.
 - Development happens on Windows; CI runs on Linux. `.gitattributes` normalises line
   endings to LF because the WASM freshness gate compares bytes.
 
+## 2026-07-30: verify the dangerous half of a compound mutation before commit
+
+- **Context.** Existing-text replacement removes source glyphs before adding its replacement.
+- **What happened.** A broad CJK path reported success after removal even though the
+  replacement never reached an independent reader. Preflight font checks could not protect
+  the failure between those two steps.
+- **What to do next time.** Keep the path narrow enough to prove: unique axis-aligned text,
+  no ambiguous document structures or overlapping annotations, and a replacement that fits a
+  standard-font appearance. Inside the same journal operation, assert that only the selected
+  structured characters disappeared, the prior annotation set is identical, and the exact
+  replacement appearance exists. Throw before `endOperation()` on any mismatch so the
+  journal abandons both halves. Grade the saved output separately with pdf.js and qpdf.
+
+## 2026-07-30: public rewrites must follow internal-mount redirects
+
+- **Context.** Publishing a landing page at `/pdf/` and an app with assets baked for
+  `/pdf-editor/app/`.
+- **What happened.** A public rewrite makes the request eligible for later route matches. If
+  the internal mount redirect comes later, `/pdf/` rewrites to `/pdf-editor/` and redirects
+  back to `/pdf/` forever.
+- **What to do next time.** Put security headers first, internal mount redirects before
+  public rewrites, and the filesystem handler last. Extract the app CSP from the built HTML,
+  then append the header-only `frame-ancestors` directive instead of maintaining a second
+  policy string.
+
 ## 2026-07-28: MuJS support and observable events are separate WASM surfaces
 
 - **Context.** Enabling Acrobat-compatible form scripts in the browser build.

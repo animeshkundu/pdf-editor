@@ -800,18 +800,14 @@ export default function MarkupTools({
             onClick={() => {
               setBusy(true);
               setRedactionOutcome(null);
-              const markedPages = [
-                ...new Set(
-                  annotations
-                    .filter((annotation) => annotation.type === 'Redact')
-                    .map((annotation) => annotation.pageIndex),
-                ),
-              ];
-              void snapshotRedactionText(engine, markedPages)
+              const redactions = annotations.filter(
+                (annotation) => annotation.type === 'Redact',
+              );
+              void snapshotRedactionText(engine, redactions)
                 .then(async (before) => {
                   const report = await engine.applyRedactions(confirmSignatureInvalidation);
                   onMutation(report);
-                  const after = await snapshotRedactionText(engine, markedPages);
+                  const after = await snapshotRedactionText(engine, redactions);
                   const notice = describeRedactionOutcome(report, before, after);
                   setRedactionOutcome(notice);
                   setRedactionNotice(notice);

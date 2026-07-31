@@ -11,9 +11,10 @@ Commands: `npm run test`, `npm run test:e2e`.
 - Unit tests run in `node` by default. A file needing a DOM uses
   `// @vitest-environment jsdom` at the top. `lib/` kernels are framework-free and
   DOM-free by construction.
-- End-to-end tests drive the **production build** via `npm run preview`, never the dev
-  server. WASM loading, worker instantiation, and chunk splitting all behave differently
-  under Vite's dev transform, and those are the paths most likely to break.
+- End-to-end tests drive the **assembled production artifact** via
+  `scripts/serve-vercel-output.mjs`, never the dev server. WASM loading, mounted routes,
+  worker instantiation, and chunk splitting all behave differently under Vite's dev
+  transform, and those are the paths most likely to break.
 - Keep tests deterministic, isolated, and independent. Prefer focused assertions over
   broad snapshots.
 - Add or strengthen tests for every behaviour change and bug fix. A test for a fix must

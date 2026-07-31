@@ -11,14 +11,10 @@ name: Deployment smoke test
 # cross-origin request is needed. A broken deployment then fails loudly rather than
 # sitting in production unnoticed.
 #
-# `deployment_status` no longer fires: deployment moved to deploy.yml, and a CLI
-# deployment creates no GitHub Deployment ([ADR 0021](../../docs/adr/0021-deploy-through-ci-rather-than-git-integration.md)).
-# deploy.yml runs these same assertions inline against the URL it just published, so the
-# gate is not lost. This workflow survives for checking an arbitrary URL by hand, and
-# because the trigger costs nothing if the Git integration is ever reconnected.
+# CLI deployment is checked inline by vercel.yml. This workflow remains only as a manual
+# diagnostic for an arbitrary deployment URL.
 
 on:
-  deployment_status:
   workflow_dispatch:
     inputs:
       url:
@@ -32,11 +28,6 @@ permissions:
 jobs:
   smoke:
     name: Assert the deployed headers and MIME types
-    # `deployment_status` fires for every state transition, most of which have no URL to
-    # check. Only a successful deployment is worth a request.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -58,7 +49,7 @@ jobs:
           # is correct for a production custom domain, and reports the 401 plainly if it
           # is not.
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
-          TARGET_URL: ${{ github.event.inputs.url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+          TARGET_URL: ${{ github.event.inputs.url }}
         run: |
           set -euo pipefail
           if [ -z "$TARGET_URL" ]; then

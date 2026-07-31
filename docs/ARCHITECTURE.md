@@ -14,11 +14,14 @@ described below rather than asserted in copy.
 
 ## Runtime
 
-`web/index.html` mounts the React application from `entrypoints/app/`. It carries the
-default-deny Content Security Policy and the default `data-density` attribute.
-`vite.web.config.ts` builds the whole surface to `dist/` as static files. There is no
-server, no server rendering, and no route table: navigation is application state
-([ADR 0007](adr/0007-vite-over-a-meta-framework.md)).
+`site/index.html` is the static landing page and `web/index.html` mounts the React
+application from `entrypoints/app/`. The application document carries the default-deny
+Content Security Policy and the default `data-density` attribute. `vite.web.config.ts`
+builds the application to `dist/`; Build Output API routes publish the landing page at
+`/pdf/` and the application at `/pdf/app/`. There is no server or server rendering, and
+navigation inside the editor remains application state
+([ADR 0007](adr/0007-vite-over-a-meta-framework.md),
+[ADR 0027](adr/0027-prebuilt-mounted-vercel-deployment.md)).
 
 The main thread owns the UI and never owns a MuPDF handle. All engine work happens in
 workers ([ADR 0008](adr/0008-worker-topology-and-crash-isolation.md)):
@@ -70,13 +73,14 @@ It is a pure function library over bytes. **It never touches the PDF document.**
 boundary is what makes MuPDF's own journal a complete undo history
 ([ADR 0011](adr/0011-undo-on-the-mupdf-journal.md)).
 
-### 3. TypeScript: the application and the encoding inversion
+### 3. TypeScript: the application and guarded text replacement
 
-Everything else, plus one piece of genuinely novel logic: inverting a PDF font's encoding
-to go from a Unicode codepoint back to the character code the embedded font uses,
-reconciling `/Encoding` and `/Differences`, `/ToUnicode`, `/W`, and `/CIDToGIDMap`. No
-library in any language does this, and it is the single largest remaining technical risk
-in the product ([ADR 0012](adr/0012-content-stream-text-editing.md)).
+Everything else. The repository retains encoding-inversion analysis, but it is not a product
+write path: `/ToUnicode` cannot safely generate character codes, and the earlier broad path
+destroyed a CJK selection while reporting success. The shipped existing-text path is instead
+the narrow transactional mechanism in
+[ADR 0028](adr/0028-guarded-content-removal-and-existing-text-replacement.md): native glyph
+removal, a standard-font appearance, strict refusal classes, and pre-commit postconditions.
 
 ## Module map
 
@@ -88,8 +92,8 @@ in the product ([ADR 0012](adr/0012-content-stream-text-editing.md)).
   the journal, the render queue.
 - `lib/render/`: tile geometry, the prefix-sum layout, the priority queue, and the
   bitmap cache ([ADR 0010](adr/0010-tiled-render-pipeline.md)).
-- `lib/text/`: structured text, selection quads, hit testing, and the encoding
-  inversion.
+- `lib/text/`: structured text, selection quads, hit testing, and read-side encoding
+  analysis.
 - `lib/store/`: Zustand state. Scroll and zoom are kept out of React entirely.
 - `entrypoints/app/`: the editor shell, panels, dialogs, command bus, and tool registry,
   each in its own module.

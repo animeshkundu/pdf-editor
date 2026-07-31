@@ -758,6 +758,26 @@ button:disabled {
   gap: var(--space-100);
 }
 
+.search-traversal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-100);
+}
+
+.search-traversal button {
+  min-height: var(--control-height);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-raised);
+}
+
+.search-traversal output {
+  min-width: 7rem;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
 .search-form input,
 .command-palette input {
   min-width: 0;
@@ -949,6 +969,11 @@ button:disabled {
 }
 
 .highlight-fields tbody tr {
+  background: var(--accent-surface);
+}
+
+.search-results button.active {
+  border-color: var(--accent);
   background: var(--accent-surface);
 }
 
@@ -1528,6 +1553,71 @@ button:disabled {
   background: var(--surface-overlay);
 }
 
+.dialog-overlay {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  background: var(--surface-overlay);
+}
+
+.password-dialog {
+  position: fixed;
+  z-index: 91;
+  inset-block-start: min(22vh, 10rem);
+  inset-inline-start: 50%;
+  width: min(28rem, calc(100% - var(--space-400)));
+  padding: var(--space-300);
+  transform: translateX(-50%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--panel-radius);
+  background: var(--surface-chrome);
+  box-shadow: var(--page-shadow);
+}
+
+.password-dialog h2,
+.password-dialog p {
+  margin-block-start: 0;
+}
+
+.password-dialog form,
+.password-dialog label {
+  display: grid;
+  gap: var(--space-100);
+}
+
+.password-dialog form {
+  margin-block-start: var(--space-200);
+}
+
+.password-dialog input {
+  width: 100%;
+}
+
+.dialog-error {
+  color: var(--status-excluded);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-100);
+  margin-block-start: var(--space-100);
+}
+
+.dialog-actions button {
+  min-height: var(--control-height);
+  padding-inline: var(--space-200);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-raised);
+}
+
+.dialog-actions button[type='submit'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--page-paper);
+}
+
 .command-palette {
   position: fixed;
   z-index: 81;
@@ -1775,9 +1865,9 @@ button:disabled {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
+    animation-duration: 0s !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: 0s !important;
     scroll-behavior: auto !important;
   }
 }

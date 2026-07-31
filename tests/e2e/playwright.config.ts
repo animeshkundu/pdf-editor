@@ -17,8 +17,8 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm run preview -- --port 4180 --strictPort --host 127.0.0.1',
-    url: 'http://127.0.0.1:4180/',
+    command: 'npm run preview:site -- --port 4180',
+    url: 'http://127.0.0.1:4180/pdf/app/',
     reuseExistingServer: false,
     timeout: 60_000,
   },

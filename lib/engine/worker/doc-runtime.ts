@@ -24,6 +24,13 @@ import {
   javaScriptContextProjection,
 } from './resource-accounting';
 import { persistenceSnapshot, saveDocument, snapshotDocument } from './save';
+import {
+  assertDocumentPermission,
+  assertEncryptionChangeAllowed,
+  authenticateDocument,
+  DocumentAuthenticationError,
+  type AuthenticationRole,
+} from './authentication';
 
 type BoundedPDFDocument = mupdf.PDFDocument & {
   setJSExecutionEnabled(enabled: boolean): void;
@@ -57,6 +64,8 @@ let javaScriptExhaustionSurfaced = false;
 
 let documentName = '';
 let iosBudget = false;
+let documentPassword: string | undefined;
+let authenticationRole: AuthenticationRole | null = null;
 const documentSize = new DocumentSizeAccounting();
 let journalRevision = 0;
 let persistence: DebouncedPersistence | null = null;
@@ -279,7 +288,18 @@ function documentInfo(assertLimits = true): DocumentInfo {
       copy: document.hasPermission(mupdf.Document.PERMISSION_COPY),
       print: document.hasPermission(mupdf.Document.PERMISSION_PRINT),
       annotate: document.hasPermission(mupdf.Document.PERMISSION_ANNOTATE),
+      edit: document.hasPermission('edit'),
+      form: document.hasPermission(mupdf.Document.PERMISSION_FORM),
+      assemble: document.hasPermission(mupdf.Document.PERMISSION_ASSEMBLE),
     },
+    ...(authenticationRole === null
+      ? {}
+      : {
+          encryption: {
+            protected: true,
+            authenticatedAs: authenticationRole,
+          },
+        }),
   };
 }
 
@@ -302,7 +322,29 @@ async function configurePersistence(key: string): Promise<void> {
 }
 
 function schedulePersistence(): void {
-  persistence?.schedule(async () => persistenceSnapshot(requirePdfDocument()));
+  persistence?.schedule(async () =>
+    persistenceSnapshot(requirePdfDocument(), documentPassword),
+  );
+}
+
+function authenticateOwner(password: string): DocumentInfo {
+  const role = authenticateDocument(requirePdfDocument(), password);
+  if (role !== 'owner') {
+    throw new DocumentAuthenticationError(
+      'owner_password_required',
+      'That password does not grant owner permissions for this PDF.',
+    );
+  }
+  authenticationRole = 'owner';
+  documentPassword = password;
+  return documentInfo(false);
+}
+
+function assertPermission(
+  permission: Parameters<mupdf.Document['hasPermission']>[0],
+  action: string,
+): void {
+  assertDocumentPermission(requirePdfDocument(), authenticationRole, permission, action);
 }
 
 function refreshSourceByteLength(document: mupdf.PDFDocument): void {
@@ -319,6 +361,8 @@ async function openDocument(
   const document = retain(DOCUMENT_KEY, mupdf.Document.openDocument(input, 'application/pdf'));
 
   try {
+    authenticationRole = authenticateDocument(document, payload.password);
+    documentPassword = authenticationRole === null ? undefined : payload.password;
     const count = document.countPages();
     assertPageCount(count, budget);
     documentName = payload.name;
@@ -366,6 +410,8 @@ async function openDocument(
     }
     return info;
   } catch (error) {
+    documentPassword = undefined;
+    authenticationRole = null;
     releaseRetained();
     throw error;
   }
@@ -441,9 +487,17 @@ function pageText(pageIndex: number) {
       const marked = arena.keep(trailer.get('Root', 'MarkInfo', 'Marked'));
       if (marked.isBoolean() && marked.asBoolean()) limitations.push('structure-tree');
     }
+    let characters = 0;
+    text.walk({
+      onChar: (_character, _origin, font) => {
+        arena.keep(font);
+        characters += 1;
+      },
+    });
     return {
       pageIndex,
       text: text.asText(),
+      characters,
       analysis: limitations.length > 0 ? ('partial' as const) : ('inferred' as const),
       limitations,
     };
@@ -553,7 +607,7 @@ function executeJavaScript(source: string): EngineTypes['JavaScriptExecutionResu
       JAVASCRIPT_CONTEXT_MEMORY_LIMIT,
   );
   assertHeadroom(documentSize.bytes * 2, projectedBytes, activeBudget());
-  const snapshot = snapshotDocument(document);
+  const snapshot = snapshotDocument(document, documentPassword);
   const executionEvents: EngineTypes['JavaScriptEvent'][] = [];
   activeJavaScriptEvents = executionEvents;
   let result: string;
@@ -562,6 +616,7 @@ function executeJavaScript(source: string): EngineTypes['JavaScriptExecutionResu
       const evaluationDocument = arena.keep(
         mupdf.Document.openDocument(snapshot, 'application/pdf'),
       );
+      authenticateDocument(evaluationDocument, documentPassword);
       if (!(evaluationDocument instanceof mupdf.PDFDocument)) {
         throw new Error('The JavaScript evaluation snapshot is not a PDF document.');
       }
@@ -603,8 +658,9 @@ function saveForOutput(options: EngineTypes['SaveOptions']): ArrayBuffer {
   // objects. SaveOptions still permits `none`; keep that boundary explicit if callers expand.
 
   assertNoUnappliedRedactions(document);
+  assertEncryptionChangeAllowed(authenticationRole, options.encrypt);
   assertOutputCost();
-  return saveDocument(document, options);
+  return saveDocument(document, options, documentPassword);
 }
 
 function assertNoUnappliedRedactions(document: mupdf.PDFDocument): void {
@@ -876,16 +932,22 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
     try {
       if (request.operation === 'open') {
         postSuccess(scope, request.id, await openDocument(request.payload));
+      } else if (request.operation === 'authenticateOwner') {
+        postSuccess(scope, request.id, authenticateOwner(request.payload.password));
       } else if (request.operation === 'getDocumentInfo') {
         postSuccess(scope, request.id, documentInfo());
       } else if (request.operation === 'snapshotForSearch') {
         assertOutputCost();
-        const data = saveDocument(requirePdfDocument(), {
-          mode: 'full',
-          garbage: 'none',
-          compress: true,
-          encrypt: 'keep',
-        });
+        const data = saveDocument(
+          requirePdfDocument(),
+          {
+            mode: 'full',
+            garbage: 'none',
+            compress: true,
+            encrypt: 'none',
+          },
+          documentPassword,
+        );
         postSuccess(scope, request.id, data, [data]);
       } else if (request.operation === 'renderTile') {
         const result = await renderTile(request.payload);
@@ -910,6 +972,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
           annotationMutations.listAnnotations(requirePdfDocument(), request.payload.pageIndex),
         );
       } else if (request.operation === 'addAnnotation') {
+        assertPermission(mupdf.Document.PERMISSION_ANNOTATE, 'Adding annotations');
         const result = mutationResult(
           `Add ${request.payload.type} annotation`,
           annotationMutations.projectedAnnotationBytes(request.payload),
@@ -918,6 +981,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         );
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'editExistingText') {
+        assertPermission('edit', 'Editing page content');
         const document = requirePdfDocument();
         const preflight = annotationMutations.inspectExistingTextEdit(
           document,
@@ -955,12 +1019,12 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
           journal: journalState(document, ++journalRevision),
           annotation: completed.annotation,
           fidelity: 'DEGRADED',
-          analysis: preflight.partialAnalysis ? 'partial' : 'inferred',
-          ...(preflight.partialAnalysis ? { limitation: 'form-xobject' as const } : {}),
+          analysis: 'inferred',
           fontName: preflight.fontName,
         };
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'addAnnotations') {
+        assertPermission(mupdf.Document.PERMISSION_ANNOTATE, 'Importing comments');
         if (request.payload.inputs.length === 0) {
           throw new Error('The imported comment file has no supported comments.');
         }
@@ -1001,6 +1065,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         );
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'updateAnnotation') {
+        assertPermission(mupdf.Document.PERMISSION_ANNOTATE, 'Updating annotations');
         const result = mutationResult(
           'Update annotation',
           annotationMutations.projectedAnnotationBytes(request.payload.changes),
@@ -1015,6 +1080,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         );
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'deleteAnnotation') {
+        assertPermission(mupdf.Document.PERMISSION_ANNOTATE, 'Deleting annotations');
         const result = mutationResult('Delete annotation', 4_096, (arena, document) => {
           annotationMutations.deleteAnnotation(
             arena,
@@ -1026,12 +1092,14 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         });
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'reorderPages') {
+        assertPermission(mupdf.Document.PERMISSION_ASSEMBLE, 'Reordering pages');
         const result = mutationResult('Reorder pages', 8_192, (_arena, document) => {
           pageMutations.reorderPages(document, request.payload.order);
           return undefined;
         });
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'rotatePages') {
+        assertPermission(mupdf.Document.PERMISSION_ASSEMBLE, 'Rotating pages');
         const result = mutationResult('Rotate pages', 4_096, (arena, document) => {
           pageMutations.rotatePages(
             arena,
@@ -1043,6 +1111,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         });
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'insertBlankPage') {
+        assertPermission(mupdf.Document.PERMISSION_ASSEMBLE, 'Inserting pages');
         assertPageCount(requirePdfDocument().countPages() + 1, activeBudget());
         const size = request.payload.size ?? ([0, 0, 612, 792] as const);
         assertPageSize(size[2] - size[0], size[3] - size[1], activeBudget());
@@ -1052,12 +1121,14 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         });
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'deletePages') {
+        assertPermission(mupdf.Document.PERMISSION_ASSEMBLE, 'Deleting pages');
         const result = mutationResult('Delete pages', 8_192, (_arena, document) => {
           pageMutations.deletePages(document, request.payload.pageIndices);
           return undefined;
         });
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'setPageBoxes') {
+        assertPermission('edit', 'Changing page boxes');
         const rect = request.payload.rect;
         assertPageSize(rect[2] - rect[0], rect[3] - rect[1], activeBudget());
         const result = mutationResult('Set page boxes', 8_192, (arena, document) => {
@@ -1072,6 +1143,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         });
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'setPageLabels') {
+        assertPermission(mupdf.Document.PERMISSION_ASSEMBLE, 'Changing page labels');
         const result = mutationResult('Set page labels', 8_192, (_arena, document) => {
           pageMutations.setPageLabels(
             document,
@@ -1084,6 +1156,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         });
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'extractPages') {
+        assertPermission(mupdf.Document.PERMISSION_ASSEMBLE, 'Extracting pages');
         assertNoUnappliedRedactions(requirePdfDocument());
         assertOutputCost();
         const document = requirePdfDocument();
@@ -1121,6 +1194,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
           postSuccess(scope, request.id, exported, [data]);
         }
       } else if (request.operation === 'mergeDocument') {
+        assertPermission(mupdf.Document.PERMISSION_ASSEMBLE, 'Merging documents');
         assertFileSize(request.payload.data.byteLength, activeBudget());
         const incomingCount = inspectIncomingPages(
           request.payload.data,
@@ -1158,6 +1232,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
       } else if (request.operation === 'validatePdfA') {
         postSuccess(scope, request.id, validatePdfA());
       } else if (request.operation === 'composePages') {
+        assertPermission(mupdf.Document.PERMISSION_ASSEMBLE, 'Composing pages');
         if (request.payload.data) {
           assertFileSize(request.payload.data.byteLength, activeBudget());
           inspectIncomingPages(
@@ -1184,6 +1259,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         );
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'splitDocument') {
+        assertPermission(mupdf.Document.PERMISSION_ASSEMBLE, 'Splitting the document');
         assertNoUnappliedRedactions(requirePdfDocument());
         assertOutputCost();
         const outputs = pageMutations.splitDocument(
@@ -1199,6 +1275,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
       } else if (request.operation === 'listFields') {
         postSuccess(scope, request.id, formMutations.listFields(requirePdfDocument()));
       } else if (request.operation === 'setFieldValue') {
+        assertPermission(mupdf.Document.PERMISSION_FORM, 'Filling form fields');
         const document = requirePdfDocument();
         const result = mutationResult(
           `Fill ${request.payload.name}`,
@@ -1221,6 +1298,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         );
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'setFieldValues') {
+        assertPermission(mupdf.Document.PERMISSION_FORM, 'Importing form data');
         const entries = Object.entries(request.payload.values);
         const projectedBytes = entries.reduce(
           (total, [name, value]) => total + formMutations.projectedFieldValueBytes(name, value),
@@ -1237,6 +1315,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         );
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'createFormField') {
+        assertPermission('edit', 'Creating form fields');
         const result = mutationResult(
           `Create ${request.payload.type} field`,
           formMutations.projectedFormFieldBytes(request.payload),
@@ -1247,6 +1326,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         );
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'updateFormField') {
+        assertPermission('edit', 'Updating form fields');
         const result = mutationResult(
           `Update ${request.payload.name}`,
           8_192,
@@ -1262,18 +1342,21 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         );
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'updateFormFields') {
+        assertPermission('edit', 'Arranging form fields');
         const result = mutationResult('Arrange form fields', 16_384, (arena, document) => {
           formMutations.updateFormFields(arena, document, request.payload.updates);
           return undefined;
         });
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'reorderFormFields') {
+        assertPermission('edit', 'Changing form tab order');
         const result = mutationResult('Set form tab order', 16_384, (arena, document) => {
           formMutations.reorderFormFields(arena, document, request.payload.names);
           return undefined;
         });
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'resetForm') {
+        assertPermission(mupdf.Document.PERMISSION_FORM, 'Resetting form fields');
         const result = mutationResult(
           'Reset form',
           Math.min(
@@ -1289,6 +1372,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
       } else if (request.operation === 'getJavaScriptState') {
         postSuccess(scope, request.id, javaScriptState());
       } else if (request.operation === 'setJavaScriptAction') {
+        assertPermission('edit', 'Authoring document scripts');
         const result = mutationResult(
           `Set ${request.payload.scope} JavaScript`,
           formMutations.projectedJavaScriptBytes(request.payload),
@@ -1299,6 +1383,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         );
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'deleteJavaScriptAction') {
+        assertPermission('edit', 'Removing document scripts');
         const result = mutationResult('Remove JavaScript action', 8_192, (arena, document) => {
           formMutations.deleteJavaScriptAction(arena, document, request.payload);
           return undefined;
@@ -1307,6 +1392,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
       } else if (request.operation === 'executeJavaScript') {
         postSuccess(scope, request.id, executeJavaScript(request.payload.source));
       } else if (request.operation === 'updateMetadata') {
+        assertPermission('edit', 'Updating document properties');
         const result = mutationResult(
           'Update document properties',
           metadataMutations.projectedMetadataBytes(request.payload.values),
@@ -1320,6 +1406,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         const data = saveForOutput(request.payload);
         postSuccess(scope, request.id, data, [data]);
       } else if (request.operation === 'applyRedactions') {
+        assertPermission('edit', 'Applying redactions');
         const document = requirePdfDocument();
         const preflight = redactionMutations.inspectApplyRedactions(document);
         const completed = journalOperation(
@@ -1333,7 +1420,12 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
             );
           },
           (arena) => {
-            const report = redactionMutations.applyRedactions(arena, document, preflight);
+            const report = redactionMutations.applyRedactions(
+              arena,
+              document,
+              preflight,
+              documentPassword,
+            );
             return { report, info: documentInfo(false) };
           },
         );
@@ -1346,6 +1438,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         schedulePersistence();
         postSuccess(scope, request.id, result, [result.data]);
       } else if (request.operation === 'redactPages') {
+        assertPermission(mupdf.Document.PERMISSION_ASSEMBLE, 'Removing pages');
         const document = requirePdfDocument();
         const signatures = redactionMutations.signatureCount(document);
         const completed = journalOperation(
@@ -1358,6 +1451,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
               request.payload.pageIndices,
               signatures,
               request.payload.confirmSignatureInvalidation,
+              documentPassword,
             );
             return { report, info: documentInfo(false) };
           },
@@ -1371,6 +1465,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         schedulePersistence();
         postSuccess(scope, request.id, result, [result.data]);
       } else if (request.operation === 'sanitize') {
+        assertPermission('edit', 'Sanitizing the document');
         const document = requirePdfDocument();
         assertNoUnappliedRedactions(document);
         const preflight = redactionMutations.inspectSanitize(document);
@@ -1384,6 +1479,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
               document,
               preflight,
               request.payload.confirmSignatureInvalidation,
+              documentPassword,
             );
             return { report, info: documentInfo(false) };
           },
@@ -1407,6 +1503,8 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
           await persistence?.discard();
         } finally {
           persistence = null;
+          documentPassword = undefined;
+          authenticationRole = null;
           releaseRetained();
         }
         postSuccess(scope, request.id, undefined);

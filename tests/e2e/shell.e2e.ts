@@ -1,4 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const taggedFixture = fileURLToPath(
@@ -10,6 +14,54 @@ const scanFixture = fileURLToPath(
 const outlineFixture = fileURLToPath(
   new URL('../fixtures/pdf-corpus/ocg-acrobat.pdf', import.meta.url),
 );
+const encryptedWorkDir = mkdtempSync(join(tmpdir(), 'pdf-editor-e2e-encrypted-'));
+const encryptedFixture = join(encryptedWorkDir, 'protected.pdf');
+const ownerOnlyFixture = join(encryptedWorkDir, 'owner-only.pdf');
+
+test.beforeAll(() => {
+  const setup = spawnSync(process.execPath, ['scripts/setup-qpdf.mjs', '--print-path'], {
+    encoding: 'utf8',
+    shell: false,
+  });
+  if (setup.status !== 0) throw new Error(setup.stderr || setup.stdout);
+  const qpdf = setup.stdout.trim();
+  const encrypted = spawnSync(
+    qpdf,
+    [
+      '--encrypt',
+      'reader-secret',
+      'owner-secret',
+      '256',
+      '--',
+      taggedFixture,
+      encryptedFixture,
+    ],
+    { encoding: 'utf8', shell: false },
+  );
+  if (encrypted.status !== 0) throw new Error(encrypted.stderr || encrypted.stdout);
+  const ownerOnly = spawnSync(
+    qpdf,
+    ['--encrypt', '', 'owner-secret', '256', '--', taggedFixture, ownerOnlyFixture],
+    { encoding: 'utf8', shell: false },
+  );
+  if (ownerOnly.status !== 0) throw new Error(ownerOnly.stderr || ownerOnly.stdout);
+});
+
+test.afterAll(() => rmSync(encryptedWorkDir, { recursive: true, force: true }));
+
+test('landing page publishes the mounted editor journey', async ({ page }) => {
+  await page.goto('/pdf/');
+  await expect(page.getByRole('heading', { name: /Serious PDF work/ })).toBeVisible();
+  await expect(page.getByText('No upload. No account. No telemetry.')).toBeVisible();
+  expect(
+    await page
+      .getByText('Quarterly review.pdf')
+      .evaluate((element) => element.closest('[aria-hidden="true"]') !== null),
+  ).toBe(true);
+  await page.getByRole('link', { name: 'Open a PDF' }).click();
+  await expect(page).toHaveURL(/\/pdf\/app\/$/);
+  await expect(page.getByRole('heading', { name: 'PDF editor', level: 1 })).toBeAttached();
+});
 
 // A deliberately thin smoke test over the production artifact. Its job is to prove the
 // shell mounts, the accessibility landmarks exist, and, most importantly, that the
@@ -35,7 +87,7 @@ test('shell mounts and contacts nobody', async ({ page }) => {
   });
   page.on('pageerror', (err) => consoleErrors.push(err.message));
 
-  await page.goto('/');
+  await page.goto('/pdf/app/');
 
   await expect(page.getByRole('heading', { name: 'PDF editor', level: 1 })).toBeAttached();
   await expect(page.getByRole('navigation', { name: 'Tools' })).toBeVisible();
@@ -45,8 +97,44 @@ test('shell mounts and contacts nobody', async ({ page }) => {
   expect(consoleErrors, `Console errors: ${consoleErrors.join(' | ')}`).toEqual([]);
 });
 
+test('SIGN-018 opens a protected PDF after a wrong-password retry', async ({ page }) => {
+  await page.goto('/pdf/app/');
+  await page.getByLabel('Open PDF').setInputFiles(encryptedFixture);
+
+  const dialog = page.getByRole('dialog', { name: 'Unlock PDF' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('protected.pdf');
+  const password = page.getByLabel('Document password');
+  await expect(password).toBeFocused();
+  await password.fill('wrong-password');
+  await dialog.getByRole('button', { name: 'Unlock' }).click();
+  await expect(dialog.getByRole('alert')).toContainText('did not open this PDF');
+
+  await password.fill('reader-secret');
+  await dialog.getByRole('button', { name: 'Unlock' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('1 page · LOCAL')).toBeVisible();
+  const pages = page.getByLabel('Document pages');
+  await expect(pages).toBeVisible();
+  await pages.press('Control+f');
+  await page.getByLabel('Find in document').fill('Line');
+  await page.getByLabel('Find in document').press('Enter');
+  await expect(page.getByText('Match 1 of 6')).toBeVisible();
+});
+
+test('SIGN-019 authenticates owner controls for an owner-only PDF', async ({ page }) => {
+  await page.goto('/pdf/app/');
+  await page.getByLabel('Open PDF').setInputFiles(ownerOnlyFixture);
+  await expect(page.getByText('1 page · LOCAL')).toBeVisible();
+  await page.getByRole('button', { name: 'Protect' }).click();
+  await expect(page.getByText('Owner controls are locked')).toBeVisible();
+  await page.getByLabel('Current owner password').fill('owner-secret');
+  await page.getByRole('button', { name: 'Unlock owner controls' }).click();
+  await expect(page.getByText('Owner controls unlocked for this local session.')).toBeVisible();
+});
+
 test('honours the density switch through the token layer', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/pdf/app/');
 
   const rowHeight = () =>
     page.evaluate(() =>
@@ -70,7 +158,7 @@ test('honours the density switch through the token layer', async ({ page }) => {
 test('keeps command-palette focus modal and invokes a command by keyboard', async ({
   page,
 }) => {
-  await page.goto('/');
+  await page.goto('/pdf/app/');
 
   const trigger = page.getByRole('button', { name: /Commands/ });
   await trigger.focus();
@@ -108,7 +196,7 @@ test('opens and renders a PDF through the production worker and WASM build', asy
   });
   page.on('pageerror', (error) => consoleErrors.push(error.message));
 
-  await page.goto('/');
+  await page.goto('/pdf/app/');
   await page.getByLabel('Open PDF').setInputFiles(taggedFixture);
 
   await expect(page.getByText('1 page · LOCAL')).toBeVisible();
@@ -149,6 +237,13 @@ test('opens and renders a PDF through the production worker and WASM build', asy
   await page.getByLabel('Find in document').fill('Line');
   await page.getByLabel('Find in document').press('Enter');
   await expect(page.getByText(/matches$/)).toBeVisible();
+  await expect(page.getByText('Match 1 of 6')).toBeVisible();
+  await page.getByLabel('Find in document').press('Enter');
+  await expect(page.getByText('Match 2 of 6')).toBeVisible();
+  await page.getByLabel('Find in document').press('Shift+Enter');
+  await expect(page.getByText('Match 1 of 6')).toBeVisible();
+  await page.keyboard.press('Shift+F3');
+  await expect(page.getByText('Match 6 of 6')).toBeVisible();
   await pages.focus();
   await pages.press('Control+f');
   await expect(page.getByLabel('Find in document')).toBeFocused();

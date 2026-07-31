@@ -55,6 +55,20 @@ async function pdfJsFields(data: ArrayBuffer) {
   }
 }
 
+async function pdfJsAnnotations(data: ArrayBuffer) {
+  const task = getDocument({
+    data: new Uint8Array(data.slice(0)),
+    useSystemFonts: false,
+  });
+  const document = await task.promise;
+  try {
+    const page = await document.getPage(1);
+    return await page.getAnnotations();
+  } finally {
+    await task.destroy();
+  }
+}
+
 async function pdfJsActions(data: ArrayBuffer) {
   const task = getDocument({ data: new Uint8Array(data.slice(0)) });
   const document = await task.promise;
@@ -262,6 +276,23 @@ describe('FORM-001/FORM-009/FORM-022 AcroForm oracle', () => {
         value: 'Ada Lovelace',
         type: 'text',
       });
+      const formJson = qpdfJson(output, 'authored-form-resources.pdf');
+      expect(formJson).toContain('"/DR"');
+      expect(formJson).toContain('"/Helv"');
+      expect(formJson).toContain('"/BaseFont": "/Helvetica"');
+      expect(formJson).toContain('"/Encoding": "/WinAnsiEncoding"');
+      const annotations = await pdfJsAnnotations(output);
+      expect(annotations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            fieldName: 'full_name',
+            defaultAppearanceData: expect.objectContaining({
+              fontName: 'Helv',
+              fontSize: 12,
+            }),
+          }),
+        ]),
+      );
 
       document.undo();
       expect(formMutations.listFields(document)[0]?.value).toBe('');

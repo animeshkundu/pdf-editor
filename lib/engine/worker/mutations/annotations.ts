@@ -1,8 +1,8 @@
 import * as mupdf from '../../../../vendor/mupdf-wasm/dist/mupdf.js';
 import type { EngineTypes } from '../../port';
-import { encodeWithToUnicodeCMap } from '../../../text/encoding';
 import { selectionBounds } from '../../../text/overlay';
 import { withArenaSync, type Arena } from '../arena';
+import redactionMutations from './redaction';
 
 type AnnotationInfo = EngineTypes['AnnotationInfo'];
 type AnnotationInput = EngineTypes['AnnotationInput'];
@@ -296,9 +296,12 @@ export function listAnnotations(
 interface ExistingTextEditPreflight {
   readonly pageIndex: number;
   readonly rect: EngineTypes['PdfRect'];
+  readonly quads: readonly EngineTypes['PdfQuad'][];
   readonly fontName: string;
-  readonly encodedReplacement: Uint8Array;
-  readonly partialAnalysis: boolean;
+  readonly fontSize: number;
+  readonly beforeText: string;
+  readonly originalOffset: number;
+  readonly annotations: readonly string[];
 }
 
 function quadBounds(quad: EngineTypes['PdfQuad']): EngineTypes['PdfRect'] {
@@ -312,6 +315,61 @@ function quadBounds(quad: EngineTypes['PdfQuad']): EngineTypes['PdfRect'] {
 
 function rectsOverlap(left: EngineTypes['PdfRect'], right: EngineTypes['PdfRect']): boolean {
   return left[0] < right[2] && left[2] > right[0] && left[1] < right[3] && left[3] > right[1];
+}
+
+function rectsMatch(
+  left: EngineTypes['PdfRect'],
+  right: EngineTypes['PdfRect'],
+  tolerance = 0.1,
+): boolean {
+  return left.every((value, index) => Math.abs(value - (right[index] ?? value)) <= tolerance);
+}
+
+function axisAligned(quad: EngineTypes['PdfQuad']): boolean {
+  return (
+    Math.abs(quad[1] - quad[3]) <= 0.1 &&
+    Math.abs(quad[5] - quad[7]) <= 0.1 &&
+    Math.abs(quad[0] - quad[4]) <= 0.1 &&
+    Math.abs(quad[2] - quad[6]) <= 0.1
+  );
+}
+
+function annotationFingerprint(
+  arena: Arena,
+  annotation: mupdf.PDFAnnotation,
+  ordinal: number,
+): string {
+  return JSON.stringify({
+    id: annotationId(arena, annotation, ordinal),
+    type: annotation.getType(),
+    rect: annotation.hasRect() ? annotation.getRect() : annotation.getBounds(),
+    contents: annotation.getContents(),
+    flags: annotation.getFlags(),
+  });
+}
+
+function annotationFingerprints(arena: Arena, page: mupdf.PDFPage): readonly string[] {
+  return keepAnnotations(arena, page).map((annotation, ordinal) =>
+    annotationFingerprint(arena, annotation, ordinal),
+  );
+}
+
+function helveticaFontSize(arena: Arena, text: string, rect: EngineTypes['PdfRect']): number {
+  const font = arena.keep(new mupdf.Font('Helvetica'));
+  const advance = [...text].reduce(
+    (total, character) =>
+      total + font.advanceGlyph(font.encodeCharacter(character.codePointAt(0) ?? 0)),
+    0,
+  );
+  const width = rect[2] - rect[0];
+  const height = rect[3] - rect[1];
+  const size = Math.min(height * 0.8, advance > 0 ? (width * 0.96) / advance : 0, 72);
+  if (size < 4) {
+    throw new Error(
+      'Existing-text edit refused because the replacement does not fit the selected line at a readable size. Shorten the replacement or add a text annotation instead.',
+    );
+  }
+  return size;
 }
 
 function selectedFontNames(
@@ -332,6 +390,18 @@ function selectedFontNames(
   return names;
 }
 
+function pageCharacters(arena: Arena, page: mupdf.PDFPage): string {
+  const characters: string[] = [];
+  const text = arena.keep(page.toStructuredText());
+  text.walk({
+    onChar: (character, _origin, font) => {
+      arena.keep(font);
+      characters.push(character);
+    },
+  });
+  return characters.join('');
+}
+
 export function inspectExistingTextEdit(
   document: mupdf.PDFDocument,
   input: EngineTypes['ExistingTextEditInput'],
@@ -342,11 +412,66 @@ export function inspectExistingTextEdit(
     throw new Error('Existing-text edit refused because replacement text is empty.');
   if (input.quads.length === 0)
     throw new Error('Existing-text edit refused because the selection has no glyph geometry.');
+  if (/[\r\n]/u.test(input.originalText) || /[\r\n]/u.test(input.replacementText)) {
+    throw new Error(
+      'Existing-text edit refused because this verified path supports one line at a time. Select one line or add a text annotation instead.',
+    );
+  }
+  if (!/^[\x20-\x7e]+$/u.test(input.replacementText)) {
+    throw new Error(
+      'Existing-text edit refused because this verified path currently supports printable ASCII replacements only. Add a text annotation for other scripts.',
+    );
+  }
   return withArenaSync((arena) => {
     const page = pageAt(arena, document, input.pageIndex);
     const trace = arena.keep(page.processContents());
     const records = trace.getRecords();
     const partialAnalysis = records.some((record) => record.operator === 'Do_form');
+    if (partialAnalysis) {
+      throw new Error(
+        'Existing-text edit refused because the selected page uses Form XObject content that this engine cannot analyse completely. Add a text annotation instead.',
+      );
+    }
+    const redactionPreflight = redactionMutations.inspectApplyRedactions(document);
+    if (redactionPreflight.marks > 0) {
+      throw new Error(
+        'Existing-text edit refused while unapplied redaction marks exist. Apply or remove those marks first.',
+      );
+    }
+    if (redactionPreflight.unsupported.length > 0) {
+      throw new Error(
+        `Existing-text edit refused because ${redactionPreflight.unsupported.join('; ')}. Add a text annotation instead.`,
+      );
+    }
+    const matches = page.search(input.originalText, 2);
+    if (matches.length !== 1 || !matches[0]?.length) {
+      throw new Error(
+        'Existing-text edit refused because the selected text is not a unique page occurrence. Select a unique single-line run or add a text annotation instead.',
+      );
+    }
+    const matchedQuads = matches[0];
+    if (
+      matchedQuads.some((quad) => !axisAligned(quad)) ||
+      !rectsMatch(selectionBounds(matchedQuads), selectionBounds(input.quads))
+    ) {
+      throw new Error(
+        'Existing-text edit refused because the selected text is rotated, skewed, or does not match its extracted glyph geometry. Add a text annotation instead.',
+      );
+    }
+    const rect = selectionBounds(matchedQuads);
+    const existingAnnotations = keepAnnotations(arena, page);
+    if (
+      existingAnnotations.some((annotation) =>
+        rectsOverlap(
+          annotation.hasRect() ? annotation.getRect() : annotation.getBounds(),
+          rect,
+        ),
+      )
+    ) {
+      throw new Error(
+        'Existing-text edit refused because another annotation overlaps the selected glyphs. Move or remove that annotation first.',
+      );
+    }
     const selectedNames = selectedFontNames(arena, page, input.quads);
     if (selectedNames.size === 0) {
       throw new Error(
@@ -378,42 +503,99 @@ export function inspectExistingTextEdit(
         'Existing-text edit refused because Type3 fonts cannot be reused safely. This text cannot be edited; add a text annotation instead.',
       );
     }
-    const toUnicode = arena.keep(fontObject.get('ToUnicode'));
-    if (!toUnicode.isStream()) {
-      if (subtype.isName() && subtype.asName() === 'Type0') {
-        throw new Error(
-          'Existing-text edit refused because the selected CID font has no /ToUnicode map. This text cannot be encoded safely; add a text annotation instead.',
-        );
-      }
-      return {
-        pageIndex: input.pageIndex,
-        rect: selectionBounds(input.quads),
-        fontName,
-        encodedReplacement: new Uint8Array(0),
-        partialAnalysis,
-      };
+    const beforeText = pageCharacters(arena, page);
+    const originalOffset = beforeText.indexOf(input.originalText);
+    if (
+      originalOffset < 0 ||
+      beforeText.indexOf(input.originalText, originalOffset + input.originalText.length) >= 0
+    ) {
+      throw new Error(
+        'Existing-text edit refused because the extracted page text does not contain one unambiguous selected occurrence.',
+      );
     }
-    const cmapBuffer = arena.keep(toUnicode.readStream());
-    const cmap = new TextDecoder().decode(cmapBuffer.asUint8Array());
     return {
       pageIndex: input.pageIndex,
-      rect: selectionBounds(input.quads),
+      rect,
+      quads: matchedQuads.map((quad) => [...quad]),
       fontName,
-      encodedReplacement: encodeWithToUnicodeCMap(input.replacementText, cmap),
-      partialAnalysis,
+      fontSize: helveticaFontSize(arena, input.replacementText, rect),
+      beforeText,
+      originalOffset,
+      annotations: annotationFingerprints(arena, page),
     };
   });
 }
 
 export function editExistingText(
-  _arena: Arena,
-  _document: mupdf.PDFDocument,
-  _input: EngineTypes['ExistingTextEditInput'],
-  _preflight: ExistingTextEditPreflight,
+  arena: Arena,
+  document: mupdf.PDFDocument,
+  input: EngineTypes['ExistingTextEditInput'],
+  preflight: ExistingTextEditPreflight,
 ): AnnotationInfo {
-  throw new Error(
-    'Existing-text editing is temporarily unavailable because the replacement cannot yet be verified by an independent PDF reader before commit. The original text was not changed; add a text annotation instead.',
+  const page = pageAt(arena, document, preflight.pageIndex);
+  const redaction = arena.keep(page.createAnnotation('Redact'));
+  redaction.setQuadPoints(preflight.quads.map((quad) => [...quad]));
+  redaction.update();
+  page.applyRedactions(
+    false,
+    mupdf.PDFPage.REDACT_IMAGE_REMOVE,
+    mupdf.PDFPage.REDACT_LINE_ART_REMOVE_IF_COVERED,
+    mupdf.PDFPage.REDACT_TEXT_REMOVE,
   );
+  page.update();
+
+  const afterRemoval = pageCharacters(arena, page);
+  const expected =
+    preflight.beforeText.slice(0, preflight.originalOffset) +
+    preflight.beforeText.slice(preflight.originalOffset + input.originalText.length);
+  if (afterRemoval !== expected || afterRemoval.includes(input.originalText)) {
+    throw new Error(
+      'Existing-text edit was rolled back because removing the selected glyphs changed other page text.',
+    );
+  }
+  if (
+    JSON.stringify(annotationFingerprints(arena, page)) !==
+    JSON.stringify(preflight.annotations)
+  ) {
+    throw new Error(
+      'Existing-text edit was rolled back because removing the selected glyphs changed another annotation.',
+    );
+  }
+
+  const replacement = arena.keep(page.createAnnotation('FreeText'));
+  replacement.setRect([...preflight.rect]);
+  replacement.setContents(input.replacementText);
+  replacement.setDefaultAppearance('Helv', preflight.fontSize, [0, 0, 0]);
+  replacement.setBorderWidth(0);
+  replacement.setFlags(mupdf.PDFAnnotation.IS_PRINT);
+  replacement.update();
+  page.update();
+
+  const replacementObject = arena.keep(replacement.getObject());
+  const appearance = arena.keep(replacementObject.get('AP', 'N'));
+  if (!appearance.isStream()) {
+    throw new Error(
+      'Existing-text edit was rolled back because the replacement appearance was not written.',
+    );
+  }
+  const appearanceBytes = arena.keep(appearance.readStream());
+  const annotations = keepAnnotations(arena, page);
+  const replacementId = annotationId(arena, replacement, annotations.length - 1);
+  const ordinal = annotations.findIndex(
+    (annotation, index) => annotationId(arena, annotation, index) === replacementId,
+  );
+  if (
+    appearanceBytes.getLength() === 0 ||
+    replacement.getContents() !== input.replacementText ||
+    !rectsMatch(replacement.getRect(), preflight.rect) ||
+    ordinal < 0 ||
+    annotations.length !== preflight.annotations.length + 1
+  ) {
+    throw new Error(
+      'Existing-text edit was rolled back because the replacement could not be verified before commit.',
+    );
+  }
+  return annotationInfo(arena, replacement, preflight.pageIndex, ordinal);
 }
 
 export function projectedExistingTextEditBytes(

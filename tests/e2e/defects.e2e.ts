@@ -4,7 +4,7 @@ test('toolbar, platform shortcut, Radix density, and wide empty state stay coher
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/');
+  await page.goto('/pdf/app/');
 
   const commands = page.getByRole('button', { name: 'Commands' });
   await expect(commands).toBeVisible();

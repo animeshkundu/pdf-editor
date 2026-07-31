@@ -38,7 +38,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import * as Select from '@radix-ui/react-select';
-import type { EngineTypes } from '@/lib/engine/port';
+import engineErrors, { type EngineTypes } from '@/lib/engine/port';
 import commandRegistry, {
   type CommandAction,
   type CommandContext,
@@ -52,12 +52,14 @@ import CommandPalette from './CommandPalette';
 import DocumentPanel from './DocumentPanels';
 import DocumentViewport from './DocumentViewport';
 import SelectionActionBar, { type SelectionAction } from './SelectionActionBar';
+import PasswordDialog from './PasswordDialog';
 
 type Theme = 'light' | 'dark';
 type Density = 'compact' | 'comfortable' | 'touch';
 type PdfEngine = EngineTypes['PdfEngine'];
 type PdfEngineFactory = EngineTypes['PdfEngineFactory'];
 type SearchHit = EngineTypes['SearchHit'];
+const { EngineRequestError } = engineErrors;
 type PanelKind =
   | 'pages'
   | 'outline'
@@ -84,6 +86,12 @@ interface DocumentViewportHandle {
   toggleSelectionMode(): void;
   focus(): void;
   showSearchHit(hit: SearchHit | null): void;
+}
+
+interface PendingPasswordOpen {
+  readonly file: File;
+  readonly handle: LocalFileHandle | null;
+  readonly recoveredEntry: RecoveryEntry | null;
 }
 
 const PANEL_TOOLS: readonly {
@@ -159,11 +167,16 @@ export default function EditorShell({
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [documentEpoch, setDocumentEpoch] = useState(0);
   const [fileHandle, setFileHandle] = useState<LocalFileHandle | null>(null);
   const [recoveries, setRecoveries] = useState<readonly RecoveryEntry[]>([]);
   const [recoverySource, setRecoverySource] = useState<RecoveryEntry | null>(null);
   const [selectionAction, setSelectionAction] = useState<SelectionAction | null>(null);
+  const [pendingPasswordOpen, setPendingPasswordOpen] = useState<PendingPasswordOpen | null>(
+    null,
+  );
+  const [passwordError, setPasswordError] = useState('');
   const commandShortcut = useMemo(() => formatShortcut('Mod+K'), []);
   const journal = useDocumentStore((state) => state.journal);
   const outputState = useDocumentStore((state) => state.output);
@@ -201,6 +214,12 @@ export default function EditorShell({
   useEffect(() => {
     currentEngineRef.current = engine;
   }, [engine]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(''), 8_000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
 
   useEffect(
     () => () => {
@@ -277,8 +296,11 @@ export default function EditorShell({
       file: File,
       handle: LocalFileHandle | null = null,
       recoveredEntry: RecoveryEntry | null = null,
+      password?: string,
+      discardAlreadyConfirmed = false,
     ) => {
       if (
+        !discardAlreadyConfirmed &&
         dirty &&
         currentEngineRef.current &&
         !window.confirm(
@@ -292,7 +314,10 @@ export default function EditorShell({
       setLoading(true);
       setError('');
       try {
-        const nextEngine = await engineFactory(file, openController.current.signal);
+        const nextEngine =
+          password === undefined
+            ? await engineFactory(file, openController.current.signal)
+            : await engineFactory(file, openController.current.signal, password);
         const previousEngine = currentEngineRef.current;
         unsubscribeEngineRef.current?.();
         unsubscribeEngineRef.current = nextEngine.subscribe((event) => {
@@ -313,6 +338,8 @@ export default function EditorShell({
         setSelectionAction(null);
         setActivePanel('pages');
         setPanelOpen(true);
+        setPendingPasswordOpen(null);
+        setPasswordError('');
         void nextEngine
           .getOutputState()
           .then(setStoredOutput)
@@ -330,6 +357,14 @@ export default function EditorShell({
         return true;
       } catch (caught) {
         if (caught instanceof DOMException && caught.name === 'AbortError') return false;
+        if (
+          caught instanceof EngineRequestError &&
+          (caught.code === 'password_required' || caught.code === 'invalid_password')
+        ) {
+          setPendingPasswordOpen({ file, handle, recoveredEntry });
+          setPasswordError(caught.code === 'invalid_password' ? caught.message : '');
+          return false;
+        }
         const detail = caught instanceof Error ? caught.message : 'Unknown document error.';
         setError(`Opening ${file.name} failed. ${detail}`);
         return false;
@@ -806,6 +841,7 @@ export default function EditorShell({
           onMutation={onMutation}
           onClose={() => setSelectionAction(null)}
           onError={setError}
+          onNotice={setNotice}
         />
       ) : null}
 
@@ -940,6 +976,11 @@ export default function EditorShell({
           {redactionNotice}
         </div>
       ) : null}
+      {notice ? (
+        <div className="loading-toast" role="status">
+          {notice}
+        </div>
+      ) : null}
       {error ? (
         <div className="error-toast" role="alert">
           <span>{error}</span>
@@ -954,6 +995,26 @@ export default function EditorShell({
         </div>
       ) : null}
       <CommandPalette open={paletteOpen} commands={commands} onClose={closePalette} />
+      <PasswordDialog
+        open={pendingPasswordOpen !== null}
+        filename={pendingPasswordOpen?.file.name ?? ''}
+        error={passwordError}
+        busy={loading}
+        onCancel={() => {
+          setPendingPasswordOpen(null);
+          setPasswordError('');
+        }}
+        onSubmit={(password) => {
+          if (!pendingPasswordOpen) return;
+          void openFile(
+            pendingPasswordOpen.file,
+            pendingPasswordOpen.handle,
+            pendingPasswordOpen.recoveredEntry,
+            password,
+            true,
+          );
+        }}
+      />
     </div>
   );
 }

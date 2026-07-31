@@ -180,6 +180,7 @@ describe('SIGN-033 sanitize whole-file oracle', () => {
         signatures: 0,
         unsupported: [],
       });
+
       const report = journalOperation(
         document,
         'Apply redactions',
@@ -196,6 +197,63 @@ describe('SIGN-033 sanitize whole-file oracle', () => {
       ).toBe(false);
     } finally {
       document.destroy();
+    }
+  });
+
+  it('applies redactions to an authenticated encrypted PDF and preserves protection', async () => {
+    const source = createRedactionDocument();
+    let encrypted: ArrayBuffer;
+    try {
+      encrypted = saveDocument(source, {
+        mode: 'full',
+        garbage: 'deduplicate',
+        compress: true,
+        encrypt: 'aes-256',
+        'user-password': 'reader-secret',
+        'owner-password': 'owner-secret',
+        permissions: ['print', 'annotate', 'form', 'accessibility'],
+      });
+    } finally {
+      source.destroy();
+    }
+    const opened = mupdf.Document.openDocument(
+      new Uint8Array(encrypted),
+      'application/pdf',
+    ) as mupdf.PDFDocument;
+    try {
+      expect(opened.authenticatePassword('reader-secret')).not.toBe(0);
+      opened.enableJournal();
+      const preflight = redactionMutations.inspectApplyRedactions(opened);
+      const report = journalOperation(
+        opened,
+        'Apply encrypted redactions',
+        () => redactionMutations.assertApplyRedactions(preflight, false),
+        (arena) =>
+          redactionMutations.applyRedactions(arena, opened, preflight, 'reader-secret'),
+      );
+      const pdfJs = getDocument({
+        data: new Uint8Array(report.data.slice(0)),
+        password: 'reader-secret',
+      });
+      const document = await pdfJs.promise;
+      try {
+        const page = await document.getPage(1);
+        const text = await page.getTextContent();
+        expect(
+          text.items.map((item) => ('str' in item ? item.str : '')).join(''),
+        ).not.toContain('SECRET_REDACTION_TARGET');
+      } finally {
+        await pdfJs.destroy();
+      }
+      const output = join(workDir, 'encrypted-redaction.pdf');
+      writeFileSync(output, new Uint8Array(report.data));
+      const check = spawnSync(qpdf, ['--password=reader-secret', '--check', output], {
+        encoding: 'utf8',
+        shell: false,
+      });
+      expect(check.status, check.stderr || check.stdout).toBe(0);
+    } finally {
+      opened.destroy();
     }
   });
 

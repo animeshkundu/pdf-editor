@@ -11,10 +11,12 @@
   "scripts": {
     "dev": "vite --config vite.web.config.ts",
     "preview": "vite preview --config vite.web.config.ts",
+    "preview:site": "node scripts/serve-vercel-output.mjs",
     "build": "npm run build:wasm && npm run build:web",
     "build:web": "vite build --config vite.web.config.ts",
     "build:wasm": "node scripts/build-wasm.mjs",
-    "build:vercel": "node scripts/check-wasm-fresh.mjs --manifest-only && npm run build:web",
+    "build:site": "PDF_EDITOR_BASE=/pdf-editor/app/ npm run build:web && node scripts/prepare-site.mjs && node scripts/check-no-egress.mjs site && node scripts/check-bundle-size.mjs site --landing && node scripts/build-vercel-output.mjs && node scripts/check-vercel-output.mjs",
+    "build:vercel": "node scripts/check-wasm-fresh.mjs --manifest-only && npm run build:site",
     "typecheck": "tsc --noEmit",
     "lint": "npm run lint:js && npm run lint:rust && npm run lint:spec",
     "lint:js": "eslint .",

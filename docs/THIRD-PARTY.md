@@ -117,6 +117,12 @@ Never bundled, never shipped.
 pdf.js and qpdf are the correctness oracles. **MuPDF is never the acceptance reader for
 output MuPDF produced.** They are test-only and must never enter `dist/`.
 
+## Adapted implementation patterns
+
+- The mounted Build Output API route ordering, unmodified internal mount, prebuilt-artifact
+  deployment, and CSP extraction pattern in `scripts/build-vercel-output.mjs` were adapted
+  from `animeshkundu/photo-tools`. No runtime code or dependency was copied.
+
 ## Adding a dependency
 
 1. Check the licence is AGPL-compatible. Record the SPDX identifier.

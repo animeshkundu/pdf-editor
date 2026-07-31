@@ -2,6 +2,7 @@ import * as mupdf from '../../../vendor/mupdf-wasm/dist/mupdf.js';
 import { assertSaveFlags } from '../../core/limits';
 import type { EngineTypes } from '../port';
 import { withArenaSync, type Arena } from './arena';
+import { authenticateDocument } from './authentication';
 
 const PERMISSION_BITS: Record<EngineTypes['PdfPermission'], number> = {
   print: 1 << 2,
@@ -57,6 +58,7 @@ function saveWithArena(
   arena: Arena,
   document: mupdf.PDFDocument,
   options: EngineTypes['SaveOptions'],
+  password?: string,
 ): ArrayBuffer {
   assertSaveFlags(
     {
@@ -80,6 +82,7 @@ function saveWithArena(
     if (!(isolated instanceof mupdf.PDFDocument)) {
       throw new Error('The isolated save snapshot is not a PDF document.');
     }
+    authenticateDocument(isolated, password);
     target = isolated;
   }
   const buffer = arena.keep(target.saveToBuffer(writeOptions(options)));
@@ -89,29 +92,41 @@ function saveWithArena(
 export function saveDocument(
   document: mupdf.PDFDocument,
   options: EngineTypes['SaveOptions'],
+  password?: string,
 ): ArrayBuffer {
-  return withArenaSync((arena) => saveWithArena(arena, document, options));
+  return withArenaSync((arena) => saveWithArena(arena, document, options, password));
 }
 
-export function snapshotDocument(document: mupdf.PDFDocument): Uint8Array {
-  const data = saveDocument(document, {
-    mode: 'full',
-    garbage: 'none',
-    compress: true,
-    encrypt: 'keep',
-  });
+export function snapshotDocument(document: mupdf.PDFDocument, password?: string): Uint8Array {
+  const data = saveDocument(
+    document,
+    {
+      mode: 'full',
+      garbage: 'none',
+      compress: true,
+      encrypt: 'keep',
+    },
+    password,
+  );
   return new Uint8Array(data);
 }
 
-export function persistenceSnapshot(document: mupdf.PDFDocument): Uint8Array {
-  const data = saveDocument(document, {
-    mode: 'full',
-    // Recovery files are durable. Collect unreachable objects so applied redactions cannot
-    // leave their replaced content streams recoverable in OPFS.
-    garbage: 'deduplicate',
-    compress: true,
-    encrypt: 'keep',
-  });
+export function persistenceSnapshot(
+  document: mupdf.PDFDocument,
+  password?: string,
+): Uint8Array {
+  const data = saveDocument(
+    document,
+    {
+      mode: 'full',
+      // Recovery files are durable. Collect unreachable objects so applied redactions cannot
+      // leave their replaced content streams recoverable in OPFS.
+      garbage: 'deduplicate',
+      compress: true,
+      encrypt: 'keep',
+    },
+    password,
+  );
   return new Uint8Array(data);
 }
 

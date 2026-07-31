@@ -112,19 +112,39 @@ function expectNoThirdPartyUrls(label, text) {
 
 // --- the entry document -----------------------------------------------------------
 
-const index = await visit('/');
+const rootRedirect = await visit('/');
+if (rootRedirect) {
+  check(rootRedirect.status === 308, `/: expected 308, got ${rootRedirect.status}.`);
+  check(
+    rootRedirect.headers.get('location') === '/pdf/',
+    `/: expected Location: /pdf/, got ${rootRedirect.headers.get('location')}.`,
+  );
+}
+
+const landing = await visit('/pdf/');
+if (landing) {
+  check(landing.status === 200, `/pdf/: expected 200, got ${landing.status}.`);
+  expectSecurityHeaders('/pdf/', landing);
+  const landingHtml = await landing.response.text();
+  expectNoThirdPartyUrls('/pdf/', landingHtml);
+}
+
+const index = await visit('/pdf/app/');
 let html = '';
 
 if (index) {
-  check(index.status === 200, `/: expected 200, got ${index.status}.`);
+  check(index.status === 200, `/pdf/app/: expected 200, got ${index.status}.`);
   check(
     (index.headers.get('content-type') ?? '').includes('text/html'),
-    `/: expected text/html, got ${index.headers.get('content-type')}.`,
+    `/pdf/app/: expected text/html, got ${index.headers.get('content-type')}.`,
   );
-  expectSecurityHeaders('/', index);
+  expectSecurityHeaders('/pdf/app/', index);
 
   const policy = index.headers.get('content-security-policy') ?? '';
-  check(policy.includes("frame-ancestors 'none'"), `/: CSP missing frame-ancestors 'none'.`);
+  check(
+    policy.includes("frame-ancestors 'none'"),
+    `/pdf/app/: CSP missing frame-ancestors 'none'.`,
+  );
   check(
     (index.headers.get('x-frame-options') ?? '').toUpperCase() === 'DENY',
     `/: expected X-Frame-Options: DENY, got ${index.headers.get('x-frame-options')}.`,
@@ -160,8 +180,8 @@ if (index) {
 
 // Read out of the served HTML rather than guessed, so a content-hash change cannot make
 // this silently vacuous.
-const scriptPath = html.match(/(?:src|href)="(\/assets\/[^"]+\.js)"/)?.[1];
-const stylePath = html.match(/href="(\/assets\/[^"]+\.css)"/)?.[1];
+const scriptPath = html.match(/(?:src|href)="(\/pdf-editor\/app\/assets\/[^"]+\.js)"/)?.[1];
+const stylePath = html.match(/href="(\/pdf-editor\/app\/assets\/[^"]+\.css)"/)?.[1];
 
 if (!scriptPath) {
   failures.push('/: no hashed module script found in the served HTML.');
@@ -202,11 +222,47 @@ for (const [path, kind] of [
   }
 }
 
+// Vite keeps the engine in a lazy chunk, so the WASM URL is not necessarily present in the
+// entry module. Follow emitted JavaScript references until the reachable module graph is
+// exhausted, applying the same header and egress checks to every discovered chunk.
+const javascriptBodies = [entryJs];
+const visitedJavaScript = new Set(scriptPath ? [scriptPath] : []);
+const pendingJavaScript = [];
+const JS_REFERENCE = /(?:\/pdf-editor\/app\/assets\/|\.\/)[A-Za-z0-9._-]+\.js/g;
+const mountedAssetPath = (reference) =>
+  reference.startsWith('./') ? `/pdf-editor/app/assets/${reference.slice(2)}` : reference;
+for (const body of javascriptBodies) {
+  for (const match of body.matchAll(JS_REFERENCE)) {
+    const reference = match[0] ? mountedAssetPath(match[0]) : '';
+    if (reference && !visitedJavaScript.has(reference)) pendingJavaScript.push(reference);
+  }
+}
+while (pendingJavaScript.length > 0) {
+  const path = pendingJavaScript.shift();
+  if (!path || visitedJavaScript.has(path)) continue;
+  visitedJavaScript.add(path);
+  const result = await visit(path);
+  if (!result) continue;
+  check(result.status === 200, `${path}: expected 200, got ${result.status}.`);
+  expectSecurityHeaders(path, result);
+  if (result.status !== 200) continue;
+  const body = await result.response.text();
+  javascriptBodies.push(body);
+  expectNoThirdPartyUrls(path, body);
+  for (const match of body.matchAll(JS_REFERENCE)) {
+    const reference = match[0] ? mountedAssetPath(match[0]) : '';
+    if (reference && !visitedJavaScript.has(reference)) pendingJavaScript.push(reference);
+  }
+}
+
 // --- the WASM binary ------------------------------------------------------------------
 
 // Discovered from what is actually served rather than hardcoded, because the engine
 // chunk owns the URL and it is content-hashed.
-const wasmPath = (html + entryJs).match(/\/assets\/[A-Za-z0-9._-]+\.wasm/)?.[0];
+const wasmReference = (html + javascriptBodies.join('')).match(
+  /(?:\/pdf-editor\/app\/assets\/|\.\/)[A-Za-z0-9._-]+\.wasm/,
+)?.[0];
+const wasmPath = wasmReference ? mountedAssetPath(wasmReference) : undefined;
 
 if (!wasmPath) {
   const message =

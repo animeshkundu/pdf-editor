@@ -11,7 +11,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const distDir = process.argv[2] ? join(root, process.argv[2]) : join(root, 'dist');
+const target = process.argv.slice(2).find((argument) => !argument.startsWith('--')) ?? 'dist';
+const distDir = join(root, target);
+const landingOnly = process.argv.includes('--landing');
 
 const BUDGETS = {
   // Everything the browser must parse before the app shell can paint.
@@ -22,17 +24,22 @@ const BUDGETS = {
   wasm: 4_500_000,
   totalUnpacked: 80_000_000,
 };
+const LANDING_BUDGETS = {
+  compressed: 100_000,
+  totalUnpacked: 500_000,
+};
 
 if (!existsSync(distDir)) {
   console.error(`[check-bundle-size] Build output not found at ${distDir}.`);
   process.exit(1);
 }
 
-function walk(dir) {
+function walk(dir, top = dir) {
   const out = [];
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...walk(full));
+    if (landingOnly && dir === top && entry === 'app') continue;
+    if (statSync(full).isDirectory()) out.push(...walk(full, top));
     else out.push(full);
   }
   return out;
@@ -42,11 +49,36 @@ const brotli = (buf) =>
   brotliCompressSync(buf, {
     params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
   }).length;
+const kb = (n) => `${(n / 1000).toFixed(1)} kB`;
 
 const files = walk(distDir);
 if (files.length === 0) {
   console.error('[check-bundle-size] No output files. Refusing to pass vacuously.');
   process.exit(1);
+}
+
+if (landingOnly) {
+  const totalUnpacked = files.reduce((total, file) => total + statSync(file).size, 0);
+  const compressed = files.reduce((total, file) => total + brotli(readFileSync(file)), 0);
+  const results = { compressed, totalUnpacked };
+  let failed = false;
+  console.log('[check-bundle-size] Landing page budgets (site/app excluded):');
+  for (const [key, budget] of Object.entries(LANDING_BUDGETS)) {
+    const actual = results[key];
+    const ok = actual <= budget;
+    if (!ok) failed = true;
+    const pct = ((actual / budget) * 100).toFixed(0);
+    console.log(
+      `  ${ok ? 'ok  ' : 'FAIL'} ${key.padEnd(15)} ${kb(actual).padStart(12)} / ${kb(budget)} (${pct}%)`,
+    );
+  }
+  if (failed) {
+    console.error(
+      '\n[check-bundle-size] Landing page is over budget. Raise the ceiling deliberately, with a reason.',
+    );
+    process.exit(1);
+  }
+  process.exit(0);
 }
 
 // Anything the entry HTML references with a plain <script> or <link> is "initial".
@@ -87,7 +119,6 @@ for (const file of files) {
 }
 
 rows.sort((a, b) => b.size - a.size);
-const kb = (n) => `${(n / 1000).toFixed(1)} kB`;
 
 console.log('[check-bundle-size] Largest shipped files (brotli):');
 for (const r of rows.slice(0, 12)) {
