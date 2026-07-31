@@ -6,6 +6,7 @@ coverage/
 playwright-report/
 test-results/
 .vercel/
+site/app/
 *.log
 .DS_Store
 

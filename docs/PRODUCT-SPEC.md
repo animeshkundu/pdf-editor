@@ -1,9 +1,9 @@
 # PDF Editor product specification
 
-> **Status: partial draft.** Everything except text-editing depth is drafted. That one
-> section is deliberately open, because two spikes decide it and guessing the outcome
-> would reproduce exactly the overclaim this project exists to avoid. See
-> [Open: text-editing depth](#open-text-editing-depth).
+> **Status: living parity contract.** General content-stream rewriting remains withdrawn
+> after Spike A, while ADR 0028 restores one guarded, transactionally verified ASCII
+> existing-text replacement path. The parity inventory remains the source of truth for what
+> actually ships.
 
 This specification is the parity contract. It is what review is measured against and what
 the build pipeline consumes. It is long on purpose: an undifferentiated "Acrobat parity"
@@ -136,12 +136,15 @@ here; their detail is in the inventory item that depends on each.
 Spike C is the most serious: [ADR 0018](adr/0018-signing-via-custom-signer-vtable.md) rests
 entirely on that bridge and never addressed the synchrony mismatch.
 
-## Open: text-editing depth
+## Text-editing depth
 
 Two spikes were defined to decide the entire shape of text editing. Spike A has now run
 under the independent-reader rule and is red. Spike B was cancelled because encoding
 inversion cannot restore a write path after the semantic-null filter already perturbed
-unrelated producer classes.
+unrelated producer classes. ADR 0028 later restored a deliberately narrower mechanism: exact
+engine-search quadrilaterals are removed through MuPDF's native redaction path and printable
+ASCII is written as a standard-font annotation appearance, with surrounding-text,
+annotation-set, and appearance postconditions checked before journal commit.
 
 ### Spike A: the null filter — red
 
@@ -205,6 +208,26 @@ exceeded C8. The failures are diffuse across unrelated producers and font classe
 [ADR 0020](adr/0020-content-stream-rewriting-failed-stage-one.md) supersedes ADR 0012.
 Stage 2 was not run because a red stage 1 is conclusive under this rule.
 
+### Guarded replacement after Spike A
+
+The red result still prohibits a general trace-modify-reserialize editor, raw stream
+replacement, `/ToUnicode` inversion, embedded-font reuse, and reflow. It does not prohibit a
+native content-removal operation whose unsafe structures can be detected and whose compound
+mutation can be abandoned before commit.
+
+`EDIT-001` therefore ships as `DEGRADED` only for a unique, axis-aligned, single-font,
+single-line selection with printable ASCII replacement text that fits in the original bounds.
+Form XObjects, Type 3 fonts, metadata copies, marked-content property dictionaries, existing
+redaction marks, overlapping annotations, repeated text, unsupported scripts, rotation,
+skew, multiline input, and non-fitting output refuse before mutation. Inside the journal
+operation, the worker asserts that only the selected structured characters disappeared,
+every prior annotation is unchanged, and the exact replacement annotation has a non-empty
+appearance stream. A failed assertion rolls back glyph removal. pdf.js and qpdf independently
+grade the saved output; MuPDF's transaction checks are self-consistency interlocks only.
+
+`EDIT-002` reflow remains excluded because this guarded path preserves one line's bounds and
+does not shape or rewrite a text block.
+
 **A page passes** when qpdf reports the output structurally valid, extracted text is
 identical, and the pdf.js render differs by no more than the C8 per-page tolerance.
 
@@ -240,15 +263,14 @@ An `OPEN` item is promoted or withdrawn only by a written finding under
 label, and to the counts in [`spec/parity-inventory.md`](spec/parity-inventory.md), cite
 that finding. No `OPEN` item is resolved by judgement alone.
 
-### What cannot be written until both report
+### What the spike result fixed
 
-- Whether text editing is described as "edit the text" or "edit the text, with a new font
-  embedded in some documents".
-- Whether reflow within a text block is offered at all.
-- Whether redaction is real removal, or is restricted to the cases where it can be.
-- What proportion of documents are refused for text editing, and on what grounds.
-- Every item in [`spec/parity-inventory.md`](spec/parity-inventory.md) currently labelled
-  `OPEN`.
+- General content-stream text editing and reflow are withdrawn.
+- Guarded existing-text replacement is described as the Helvetica overlay path and names its
+  refusal classes.
+- Selective redaction is real removal but `DEGRADED`, with unsafe structures refused and full
+  garbage-collecting output required.
+- Encoding inversion remains research code and is not a product mutation path.
 
 Findings land under [`research/`](research/) as `YYYY-MM-DD-null-filter-fidelity.md` and
 `YYYY-MM-DD-encoding-inversion-corpus.md`, and this section is replaced by what they say.

@@ -30,6 +30,13 @@ export interface EngineTypes {
       readonly copy: boolean;
       readonly print: boolean;
       readonly annotate: boolean;
+      readonly edit?: boolean;
+      readonly form?: boolean;
+      readonly assemble?: boolean;
+    };
+    readonly encryption?: {
+      readonly protected: boolean;
+      readonly authenticatedAs: 'user' | 'owner';
     };
   };
   TileRequest: {
@@ -52,6 +59,7 @@ export interface EngineTypes {
   PageText: {
     readonly pageIndex: number;
     readonly text: string;
+    readonly characters: number;
     readonly analysis: 'complete' | 'inferred' | 'partial';
     readonly limitations: readonly ('form-xobject' | 'structure-tree')[];
   };
@@ -501,6 +509,7 @@ export interface EngineTypes {
       input: EngineTypes['JavaScriptActionIdentity'],
     ): Promise<EngineTypes['MutationResult']>;
     executeJavaScript(source: string): Promise<EngineTypes['JavaScriptExecutionResult']>;
+    authenticateOwner(password: string): Promise<EngineTypes['DocumentInfo']>;
     updateMetadata(
       values: Readonly<
         Partial<Record<'title' | 'author' | 'subject' | 'keywords' | 'language', string>>
@@ -523,7 +532,11 @@ export interface EngineTypes {
     subscribe(listener: (event: EngineTypes['EngineEvent']) => void): () => void;
     close(): Promise<void>;
   };
-  PdfEngineFactory: (file: File, signal?: AbortSignal) => Promise<EngineTypes['PdfEngine']>;
+  PdfEngineFactory: (
+    file: File,
+    signal?: AbortSignal,
+    password?: string,
+  ) => Promise<EngineTypes['PdfEngine']>;
   EngineRequest:
     | {
         readonly id: number;
@@ -533,7 +546,13 @@ export interface EngineTypes {
           readonly data: ArrayBuffer;
           readonly ios: boolean;
           readonly persistenceKey?: string;
+          readonly password?: string;
         };
+      }
+    | {
+        readonly id: number;
+        readonly operation: 'authenticateOwner';
+        readonly payload: { readonly password: string };
       }
     | {
         readonly id: number;

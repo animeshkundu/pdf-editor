@@ -16,6 +16,16 @@ export default function Security({
   const [encryption, setEncryption] = useState<'aes-256' | 'aes-128'>('aes-256');
   const [userPassword, setUserPassword] = useState('');
   const [ownerPassword, setOwnerPassword] = useState('');
+  const [currentOwnerPassword, setCurrentOwnerPassword] = useState('');
+  const [ownerAuthenticatedEngine, setOwnerAuthenticatedEngine] = useState<
+    EngineTypes['PdfEngine'] | null
+  >(null);
+  const authenticationRole =
+    ownerAuthenticatedEngine === engine
+      ? 'owner'
+      : (engine.info.encryption?.authenticatedAs ?? null);
+  const [ownerAuthenticationError, setOwnerAuthenticationError] = useState('');
+  const [authenticatingOwner, setAuthenticatingOwner] = useState(false);
   const [confirmRewrite, setConfirmRewrite] = useState(false);
   const [redactionOutcome, setRedactionOutcome] = useState<string | null>(null);
   const [applyingRedactions, setApplyingRedactions] = useState(false);
@@ -74,21 +84,17 @@ export default function Security({
               setRedactionOutcome(null);
               void engine
                 .listAnnotations()
-                .then((annotations) => [
-                  ...new Set(
-                    annotations
-                      .filter((annotation) => annotation.type === 'Redact')
-                      .map((annotation) => annotation.pageIndex),
-                  ),
-                ])
-                .then(async (markedPages) => {
-                  const before = await snapshotRedactionText(engine, markedPages);
+                .then(async (annotations) => {
+                  const redactions = annotations.filter(
+                    (annotation) => annotation.type === 'Redact',
+                  );
+                  const before = await snapshotRedactionText(engine, redactions);
                   const report = await engine.applyRedactions(confirmRewrite);
                   onMutation(report);
                   setState((current) =>
                     current ? { ...current, unappliedRedactions: 0 } : current,
                   );
-                  const after = await snapshotRedactionText(engine, markedPages);
+                  const after = await snapshotRedactionText(engine, redactions);
                   const notice = describeRedactionOutcome(report, before, after);
                   setRedactionOutcome(notice);
                   setRedactionNotice(notice);
@@ -108,6 +114,54 @@ export default function Security({
       ) : redactionOutcome ? (
         <p className="result-summary" role="status">
           {redactionOutcome}
+        </p>
+      ) : null}
+      {engine.info.encryption?.protected && authenticationRole === 'user' ? (
+        <form
+          className="security-form warning-card"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setAuthenticatingOwner(true);
+            setOwnerAuthenticationError('');
+            void engine
+              .authenticateOwner(currentOwnerPassword)
+              .then((info) => {
+                if (info.encryption?.authenticatedAs === 'owner') {
+                  setOwnerAuthenticatedEngine(engine);
+                }
+                setCurrentOwnerPassword('');
+              })
+              .catch((error: unknown) => {
+                const detail =
+                  error instanceof Error ? error.message : 'Unknown authentication error.';
+                setOwnerAuthenticationError(detail);
+              })
+              .finally(() => setAuthenticatingOwner(false));
+          }}
+        >
+          <strong>Owner controls are locked</strong>
+          <p>
+            This PDF opened with reader permissions. Authenticate its current owner password
+            before changing protection or permissions.
+          </p>
+          <label>
+            <span>Current owner password</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={currentOwnerPassword}
+              disabled={authenticatingOwner}
+              onChange={(event) => setCurrentOwnerPassword(event.target.value)}
+            />
+          </label>
+          {ownerAuthenticationError ? <p role="alert">{ownerAuthenticationError}</p> : null}
+          <button type="submit" disabled={authenticatingOwner}>
+            {authenticatingOwner ? 'Authenticating…' : 'Unlock owner controls'}
+          </button>
+        </form>
+      ) : authenticationRole === 'owner' ? (
+        <p className="result-summary" role="status">
+          Owner controls unlocked for this local session.
         </p>
       ) : null}
       <form

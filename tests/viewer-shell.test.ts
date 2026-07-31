@@ -4,6 +4,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import App from '@/entrypoints/app/App';
 import type { EngineTypes } from '@/lib/engine/port';
+import engineErrors from '@/lib/engine/port';
 import { useDocumentStore } from '@/lib/store/document';
 
 type PageText = EngineTypes['PageText'];
@@ -11,16 +12,23 @@ type PdfEngine = EngineTypes['PdfEngine'];
 type PdfEngineFactory = EngineTypes['PdfEngineFactory'];
 type SearchHit = EngineTypes['SearchHit'];
 type TileRequest = EngineTypes['TileRequest'];
+const { EngineRequestError } = engineErrors;
 
 const searchHit: SearchHit = {
   pageIndex: 1,
   pageLabel: 'ii',
   quads: [[1, 1, 20, 1, 20, 10, 1, 10]],
 };
+const secondSearchHit: SearchHit = {
+  pageIndex: 0,
+  pageLabel: 'i',
+  quads: [[4, 20, 28, 20, 28, 30, 4, 30]],
+};
 
 function makeEngine(
   title = 'Local contract',
   limitations: PageText['limitations'] = [],
+  encryption?: EngineTypes['DocumentInfo']['encryption'],
 ): PdfEngine {
   const info: EngineTypes['DocumentInfo'] = {
     name: 'contract.pdf',
@@ -32,6 +40,7 @@ function makeEngine(
     outline: [{ title: 'Terms', pageIndex: 1, children: [] }],
     attachments: [],
     permissions: { copy: true, print: true, annotate: true },
+    ...(encryption ? { encryption } : {}),
   };
   const mutation: EngineTypes['MutationResult'] = {
     document: info,
@@ -52,6 +61,7 @@ function makeEngine(
     getPageText: vi.fn(async (pageIndex: number) => ({
       pageIndex,
       text: pageIndex === 0 ? 'First page in logical reading order.' : 'Second page.',
+      characters: pageIndex === 0 ? 36 : 12,
       analysis: limitations.length > 0 ? ('partial' as const) : ('complete' as const),
       limitations,
     })),
@@ -136,6 +146,10 @@ function makeEngine(
       events: [],
       document: info,
       journal: mutation.journal,
+    })),
+    authenticateOwner: vi.fn(async () => ({
+      ...info,
+      encryption: { protected: true, authenticatedAs: 'owner' as const },
     })),
     updateMetadata: vi.fn(async () => mutation),
     save: vi.fn(async () => new ArrayBuffer(0)),
@@ -329,8 +343,86 @@ describe('Phase 3 viewer acceptance', () => {
     });
 
     expect(engine.search).toHaveBeenCalledWith('needle', expect.any(AbortSignal));
-    expect(container.textContent).toContain('1 matches');
+    expect(container.textContent).toContain('1 match');
     expect(container.textContent).toContain('Page ii');
+  });
+
+  it('SIGN-018 retries a protected document through an accessible password dialog', async () => {
+    engineFactory = vi
+      .fn<PdfEngineFactory>()
+      .mockRejectedValueOnce(
+        new EngineRequestError(
+          'password_required',
+          'This PDF is password-protected. Enter the document password to continue.',
+        ),
+      )
+      .mockResolvedValueOnce(engine);
+    await act(async () => root.render(createElement(App, { engineFactory })));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(['%PDF-1.7'], 'protected.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] });
+
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain('protected.pdf');
+    const password = document.querySelector<HTMLInputElement>('input[type="password"]');
+    expect(password).not.toBeNull();
+    await act(async () => {
+      if (!password) throw new Error('Missing document password input.');
+      setInputValue(password, 'reader-secret');
+      password.form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(engineFactory).toHaveBeenNthCalledWith(
+      2,
+      file,
+      expect.any(AbortSignal),
+      'reader-secret',
+    );
+    expect(container.textContent).toContain('Local contract');
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('SIGN-019 unlocks owner-only protection from the Protect panel', async () => {
+    engine = makeEngine('Owner-only PDF', [], {
+      protected: true,
+      authenticatedAs: 'user',
+    });
+    engineFactory = vi.fn(async () => engine);
+    await act(async () => root.render(createElement(App, { engineFactory })));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(['%PDF-1.7'], 'owner-only.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => buttonNamed(container, 'Protect').click());
+    const ownerPassword = container.querySelector<HTMLInputElement>(
+      'input[autocomplete="current-password"]',
+    );
+    expect(ownerPassword).not.toBeNull();
+    await act(async () => {
+      if (!ownerPassword) throw new Error('Missing current owner-password input.');
+      setInputValue(ownerPassword, 'owner-secret');
+      ownerPassword.form?.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(engine.authenticateOwner).toHaveBeenCalledWith('owner-secret');
+    expect(container.textContent).toContain('Owner controls unlocked for this local session.');
   });
 
   it('A1/H1 exposes keyboard commands and names degraded, excluded, and open limits', async () => {
@@ -358,7 +450,7 @@ describe('Phase 3 viewer acceptance', () => {
     });
     await act(async () => buttonNamed(container, 'Scope').click());
     expect(container.textContent).toContain('Existing-text editing');
-    expect(container.textContent).toContain('DEGRADED');
+    expect(container.textContent).toContain('OPEN');
     expect(container.textContent).toContain('True redaction');
     expect(container.textContent).toContain('content-stream filter can perturb rendering');
     expect(container.textContent).toContain('Digital signing');
@@ -405,9 +497,9 @@ describe('Phase 3 viewer acceptance', () => {
     });
 
     expect(engine.applyRedactions).toHaveBeenCalledWith(false);
-    expect(container.textContent).toContain('removed no extractable text');
-    expect(container.textContent).toContain('Do not treat this redaction as successful');
-    expect(container.textContent).not.toContain('Output is unblocked.');
+    expect(container.textContent).toContain('no extractable characters were removed');
+    expect(container.textContent).toContain('sampled marked region did not change');
+    expect(container.textContent).toContain('Inspect the marked region');
   });
 
   it('SIGN-031 renders a refusal category and remedy at the apply action', async () => {
@@ -455,11 +547,13 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
+
     await act(async () => {
       window.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }),
       );
     });
+
     const searchInput = container.querySelector<HTMLInputElement>(
       'input[aria-label="Find in document"]',
     );
@@ -475,8 +569,54 @@ describe('Phase 3 viewer acceptance', () => {
     });
 
     expect(container.textContent).toContain(
-      'First 1 matches · refine your search to see every result',
+      'First 1 match · refine your search to see every result',
     );
+  });
+
+  it('FIND-002 traverses matches forward and backward with wraparound', async () => {
+    engine.search = vi.fn(async () => ({
+      hits: [searchHit, secondSearchHit],
+      truncated: false,
+    }));
+    await act(async () => root.render(createElement(App, { engineFactory })));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(['%PDF-1.7'], 'contract.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => buttonNamed(container, 'Find').click());
+    const searchInput = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Find in document"]',
+    );
+    if (!searchInput) throw new Error('Missing search input.');
+    await act(async () => setInputValue(searchInput, 'needle'));
+    await act(async () => {
+      searchInput.form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('Match 1 of 2');
+    expect(container.querySelector('[aria-current="true"]')?.textContent).toContain('Page ii');
+    await act(async () => {
+      searchInput.form?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(container.textContent).toContain('Match 2 of 2');
+    expect(container.querySelector('[aria-current="true"]')?.textContent).toContain('Page i');
+
+    await act(async () => {
+      searchInput.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }),
+      );
+    });
+    expect(container.textContent).toContain('Match 1 of 2');
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', shiftKey: true }));
+    });
+    expect(container.textContent).toContain('Match 2 of 2');
   });
 
   it('H1 discloses both tagged-order and Form XObject analysis limits', async () => {

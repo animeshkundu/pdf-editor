@@ -90,6 +90,17 @@ function serializeError(error: unknown): EngineTypes['SerializedEngineError'] {
   if (error instanceof LimitError) {
     return { name: error.name, code: error.code, message: error.message };
   }
+  if (
+    error instanceof Error &&
+    'code' in error &&
+    typeof (error as Error & { code?: unknown }).code === 'string'
+  ) {
+    return {
+      name: error.name,
+      code: (error as Error & { code: string }).code,
+      message: error.message,
+    };
+  }
   if (error instanceof Error) {
     return { name: error.name, code: 'engine_error', message: error.message };
   }

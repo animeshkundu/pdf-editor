@@ -8,6 +8,8 @@ export default tseslint.config(
   {
     ignores: [
       'dist/**',
+      '.vercel/**',
+      'site/app/**',
       'coverage/**',
       'playwright-report/**',
       'test-results/**',

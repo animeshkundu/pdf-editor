@@ -22,17 +22,22 @@ export default function SelectionActionBar({
   onMutation,
   onClose,
   onError,
+  onNotice,
 }: {
   readonly engine: EngineTypes['PdfEngine'];
   readonly action: SelectionAction;
   readonly onMutation: (result: EngineTypes['MutationResult']) => void;
   readonly onClose: () => void;
   readonly onError: (message: string) => void;
+  readonly onNotice: (message: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [left, top, right, bottom] = action.viewportBounds;
+  const canCopy = engine.info.permissions.copy;
+  const canAnnotate = engine.info.permissions.annotate;
+  const canEdit = engine.info.permissions.edit !== false;
   const placeBelow = top < 64;
   const x = Math.max(8, Math.min(window.innerWidth - 280, (left + right) / 2 - 140));
   const y = placeBelow ? bottom + 8 : top - 52;
@@ -107,6 +112,9 @@ export default function SelectionActionBar({
               })
               .then((result) => {
                 onMutation(result);
+                onNotice(
+                  'Replaced the selected ASCII text through the verified Helvetica overlay path. The original glyphs were removed and the replacement appearance was checked before commit.',
+                );
                 onClose();
               })
               .catch((error: unknown) => {
@@ -123,6 +131,8 @@ export default function SelectionActionBar({
           <button
             type="button"
             aria-label="Copy selected text"
+            title={canCopy ? 'Copy selected text' : 'Copy is blocked by document permissions'}
+            disabled={!canCopy}
             onClick={() => {
               if (!navigator.clipboard) {
                 onError('Copy is unavailable because this browser has no clipboard API.');
@@ -143,6 +153,10 @@ export default function SelectionActionBar({
           <button
             type="button"
             aria-label="Edit selected text"
+            title={
+              canEdit ? 'Edit selected text' : 'Editing is blocked by document permissions'
+            }
+            disabled={!canEdit}
             onClick={() => setEditing(true)}
           >
             <PencilLine aria-hidden="true" size={16} />
@@ -150,6 +164,12 @@ export default function SelectionActionBar({
           <button
             type="button"
             aria-label="Highlight selection"
+            title={
+              canAnnotate
+                ? 'Highlight selection'
+                : 'Annotations are blocked by document permissions'
+            }
+            disabled={!canAnnotate}
             onClick={() => add('Highlight')}
           >
             <Highlighter aria-hidden="true" size={16} />
@@ -157,6 +177,7 @@ export default function SelectionActionBar({
           <button
             type="button"
             aria-label="Underline selection"
+            disabled={!canAnnotate}
             onClick={() => add('Underline')}
           >
             <Underline aria-hidden="true" size={16} />
@@ -164,16 +185,23 @@ export default function SelectionActionBar({
           <button
             type="button"
             aria-label="Strike out selection"
+            disabled={!canAnnotate}
             onClick={() => add('StrikeOut')}
           >
             <Strikethrough aria-hidden="true" size={16} />
           </button>
-          <button type="button" aria-label="Comment on selection" onClick={() => add('Text')}>
+          <button
+            type="button"
+            aria-label="Comment on selection"
+            disabled={!canAnnotate}
+            onClick={() => add('Text')}
+          >
             <MessageSquareText aria-hidden="true" size={16} />
           </button>
           <button
             type="button"
             aria-label="Mark selected text for redaction"
+            disabled={!canAnnotate}
             onClick={() => add('Redact')}
           >
             <ShieldAlert aria-hidden="true" size={16} />

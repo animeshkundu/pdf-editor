@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Superseded in part by
+[ADR 0028](0028-guarded-content-removal-and-existing-text-replacement.md)
 
 ## Date
 

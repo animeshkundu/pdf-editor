@@ -128,10 +128,11 @@ export default function ActiveTextEntry({
         </p>
       ) : kind === 'existing-text' ? (
         <p className="scope-note">
-          OPEN · Editing existing text is unavailable. It is blocked on being able to prove,
-          with an independent reader before the change is committed, that the replacement was
-          actually written. Until then a commit is refused and your document is left untouched.
-          Add a text annotation above the page instead.
+          DEGRADED · The verified path handles one unique, axis-aligned line with printable
+          ASCII replacement text. It removes the selected glyphs, writes a Helvetica FreeText
+          appearance, and rolls back unless the surrounding text and annotation set stay
+          unchanged. Other scripts, reflow, forms, marked content, and overlapping annotations
+          are refused before mutation.
         </p>
       ) : (
         <p className="scope-note">

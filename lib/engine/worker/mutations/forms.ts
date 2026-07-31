@@ -545,6 +545,26 @@ function acroForm(arena: Arena, document: mupdf.PDFDocument): mupdf.PDFObject {
   }
   const needAppearances = arena.keep(form.get('NeedAppearances'));
   if (!needAppearances.isBoolean()) arena.keep(form.put('NeedAppearances', true));
+  const existingResources = arena.keep(form.get('DR'));
+  const resources = existingResources.isDictionary()
+    ? existingResources
+    : arena.keep(document.newDictionary());
+  if (!existingResources.isDictionary()) arena.keep(form.put('DR', resources));
+  const existingFonts = arena.keep(resources.get('Font'));
+  const fonts = existingFonts.isDictionary()
+    ? existingFonts
+    : arena.keep(document.newDictionary());
+  if (!existingFonts.isDictionary()) arena.keep(resources.put('Font', fonts));
+  const existingHelvetica = arena.keep(fonts.get('Helv'));
+  if (!existingHelvetica.isDictionary()) {
+    const helvetica = arena.keep(document.newDictionary());
+    arena.keep(helvetica.put('Type', arena.keep(document.newName('Font'))));
+    arena.keep(helvetica.put('Subtype', arena.keep(document.newName('Type1'))));
+    arena.keep(helvetica.put('BaseFont', arena.keep(document.newName('Helvetica'))));
+    arena.keep(helvetica.put('Encoding', arena.keep(document.newName('WinAnsiEncoding'))));
+    const reference = arena.keep(document.addObject(helvetica));
+    arena.keep(fonts.put('Helv', reference));
+  }
   const defaultAppearance = arena.keep(form.get('DA'));
   if (!defaultAppearance.isString()) {
     const appearance = arena.keep(document.newString('/Helv 12 Tf 0 g'));
@@ -647,12 +667,14 @@ export function createFormField(
     }
     arena.keep(object.put('Opt', options));
   }
+  const form = acroForm(arena, document);
+  const defaultAppearance = arena.keep(document.newString('/Helv 12 Tf 0 g'));
+  arena.keep(object.put('DA', defaultAppearance));
   widget.setRect([...input.rect]);
   widget.setDefaultAppearance('Helv', 12, [0, 0, 0]);
   widget.update();
   page.update();
 
-  const form = acroForm(arena, document);
   const fields = arena.keep(form.get('Fields'));
   arena.keep(fields.push(object));
   const pageObject = arena.keep(document.findPage(input.pageIndex));

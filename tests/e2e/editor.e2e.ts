@@ -17,7 +17,7 @@ test('MARK-001/PAGE-020 adds and undoes one interoperable annotation action', as
   });
   page.on('pageerror', (error) => consoleErrors.push(error.message));
 
-  await page.goto('/');
+  await page.goto('/pdf/app/');
   await page.getByLabel('Open PDF').setInputFiles(fixture);
   await expect(page.getByText('1 page · LOCAL')).toBeVisible();
   await page.getByRole('button', { name: 'Markup' }).click();
@@ -37,7 +37,7 @@ test('SIGN-028 redaction marks block ordinary output and never claim removal', a
   const downloads: string[] = [];
   page.on('download', (download) => downloads.push(download.suggestedFilename()));
 
-  await page.goto('/');
+  await page.goto('/pdf/app/');
   await page.getByLabel('Open PDF').setInputFiles(redactionFixture);
   await expect(page.getByText('28 pages · LOCAL')).toBeVisible();
   await page.getByRole('button', { name: 'Markup' }).click();
@@ -72,7 +72,7 @@ test('SIGN-028 redaction marks block ordinary output and never claim removal', a
 
   await page.getByRole('button', { name: 'Apply redaction marks' }).click();
   const redactionOutcome = page.getByRole('status').filter({
-    hasText: 'removed no extractable text',
+    hasText: 'No extractable characters were removed',
   });
   await expect(redactionOutcome).toBeVisible();
   await expect(redactionOutcome).not.toContainText('Output is unblocked');
@@ -87,7 +87,7 @@ test('FORM-021/AUTO-006/AUTO-007 authors and observes worker-local JavaScript', 
   });
   page.on('pageerror', (error) => consoleErrors.push(error.message));
 
-  await page.goto('/');
+  await page.goto('/pdf/app/');
   await page.getByLabel('Open PDF').setInputFiles(fixture);
   await page.getByRole('button', { name: 'Forms' }).click();
   await page.getByLabel('Unique name').fill('amount');

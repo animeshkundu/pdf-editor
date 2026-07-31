@@ -2,6 +2,7 @@ import * as mupdf from '../../../vendor/mupdf-wasm/dist/mupdf.js';
 import { DESKTOP_BUDGET, IOS_BUDGET, assertFileSize, assertPageCount } from '../../core/limits';
 import type { EngineTypes } from '../port';
 import workerRuntime from './arena';
+import { authenticateDocument } from './authentication';
 
 type EngineRequest = EngineTypes['EngineRequest'];
 type SearchHit = EngineTypes['SearchHit'];
@@ -23,6 +24,7 @@ function openDocument(payload: Extract<EngineRequest, { operation: 'open' }>['pa
   const input = new Uint8Array(payload.data);
   const document = retain(DOCUMENT_KEY, mupdf.Document.openDocument(input, 'application/pdf'));
   try {
+    authenticateDocument(document, payload.password);
     assertPageCount(document.countPages(), budget);
   } catch (error) {
     releaseRetained();

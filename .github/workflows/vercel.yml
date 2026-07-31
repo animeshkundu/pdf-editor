@@ -1,0 +1,137 @@
+name: Vercel
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: vercel-deploy
+  # A newer accepted main build preempts an older deployment before it can move the
+  # production alias backwards. The artifact remains immutable and can be retried safely.
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy the validated artifact
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    environment:
+      name: vercel-production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Check for deployment credentials
+        id: guard
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "$VERCEL_TOKEN" ] && [ -n "$VERCEL_ORG_ID" ] && [ -n "$VERCEL_PROJECT_ID" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Vercel deployment skipped because credentials are not configured." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Set up Node.js
+        if: steps.guard.outputs.ready == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Resolve the accepted CI run
+        if: steps.guard.outputs.ready == 'true'
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_RUN_ID: ${{ github.event.workflow_run.id }}
+          EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            run_id="$(gh run list --workflow ci.yml --branch main --event push --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+            sha="$(gh run view "$run_id" --json headSha --jq '.headSha')"
+          else
+            run_id="$EVENT_RUN_ID"
+            sha="$EVENT_SHA"
+          fi
+          test -n "$run_id"
+          test -n "$sha"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the accepted commit
+        if: steps.guard.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          fetch-depth: 1
+
+      - name: Refuse a superseded production deploy
+        if: steps.guard.outputs.ready == 'true'
+        id: freshness
+        run: |
+          set -euo pipefail
+          current="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$current" = "${{ steps.source.outputs.sha }}" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Deployment skipped because main advanced to $current." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Download the exact app artifact CI accepted
+        if: steps.guard.outputs.ready == 'true' && steps.freshness.outputs.current == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: pdf-editor-web
+          path: site/app
+          run-id: ${{ steps.source.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assemble and verify the Vercel output
+        if: steps.guard.outputs.ready == 'true' && steps.freshness.outputs.current == 'true'
+        run: |
+          set -euo pipefail
+          node scripts/build-vercel-output.mjs
+          node scripts/check-no-egress.mjs .vercel/output/static/pdf-editor
+          node scripts/check-bundle-size.mjs .vercel/output/static/pdf-editor/app
+
+      - name: Deploy
+        if: steps.guard.outputs.ready == 'true' && steps.freshness.outputs.current == 'true'
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          current="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ "$current" != "${{ steps.source.outputs.sha }}" ]; then
+            echo "Deployment skipped because main advanced to $current." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          url="$(npx --yes vercel@56.4.0 deploy --prebuilt --prod --archive=tgz --scope kundus)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-test the mounted deployment
+        if: steps.deploy.outputs.url != ''
+        env:
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/check-deployment.mjs "${{ steps.deploy.outputs.url }}" --require-wasm

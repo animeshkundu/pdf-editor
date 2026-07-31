@@ -12,6 +12,16 @@ Nothing has been released yet. The repository is at `0.0.0`.
 
 ### Added
 
+- Password-protected PDF opening with an accessible retry dialog, user/owner authentication,
+  encrypted search seeding, and AES-128/AES-256 preservation across full saves.
+- Search next/previous controls, active match position, Enter/Shift+Enter and F3 traversal.
+- Guarded existing-text replacement for unique, axis-aligned single-line ASCII runs, with
+  exact surrounding-text and annotation postconditions inside the journal transaction and
+  independent pdf.js/qpdf acceptance of the saved appearance.
+- A static landing page at `/pdf/` and the mounted editor at `/pdf/app/`, deployed from the
+  exact CI artifact through Vercel Build Output API v3, with separate landing-page size and
+  zero-egress gates.
+
 - Repository scaffold: Vite 8, React 19, strict TypeScript 6, Tailwind 4, Vitest, and
   Playwright against the production build.
 - `lib/core/limits.ts`, the resource-ceiling contract and the project-assert-then-mutate
@@ -48,8 +58,8 @@ Nothing has been released yet. The repository is at `0.0.0`.
   overlay-entry panels.
 - Independent pdf.js and qpdf acceptance tests for annotations, page mutations, failed-action
   rollback, one-step undo, and AES-256 encryption.
-- ADRs 0021 through 0025 for the mutating port, command registry, Save semantics, redaction
-  gating, and active text entry.
+- ADRs 0021 through 0028 for the mutating port, command registry, Save semantics, redaction
+  gating, active text entry, mounted deployment, and guarded existing-text replacement.
 - Page composition workflows for drag reorder, exact insertion, extraction, replace, merge,
   duplicate, alternate/mix, named page boxes, labels, and split variants, all with result
   previews and journal undo.
@@ -81,6 +91,13 @@ Nothing has been released yet. The repository is at `0.0.0`.
 ### Removed
 
 ### Fixed
+
+- Newly authored AcroForm fields now resolve `/Helv` through `/AcroForm/DR/Font` in
+  independent readers instead of emitting a dangling default-appearance font name.
+- Redaction character counts now use structured-text character callbacks rather than block
+  separator-inflated text, and visual-only redactions no longer report that nothing changed.
+- The capability panel now discloses the narrow verified Helvetica-overlay path and the
+  document classes it refuses before mutation.
 
 - Narrow global-toolbar tracks now shrink without overlapping labels.
 - Development CSP transformation permits Vite HMR without changing the production CSP.

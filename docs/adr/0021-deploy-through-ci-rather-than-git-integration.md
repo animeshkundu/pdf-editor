@@ -4,9 +4,7 @@ Date: 2026-07-27
 
 ## Status
 
-Accepted, and **not yet in effect**. Amends
-[ADR 0006](0006-three-toolchain-build-and-committed-wasm.md) and the deployment mechanism
-recorded in [`docs/PUBLISHING.md`](../PUBLISHING.md).
+Superseded by [ADR 0027](0027-prebuilt-mounted-vercel-deployment.md).
 
 The Git integration was connected on 2026-07-27 and is currently the mechanism that
 deploys, producing the first production deployment at 23:37 UTC that day. `deploy.yml`

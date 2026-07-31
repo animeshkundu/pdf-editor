@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /pdf/
+Sitemap: /pdf/sitemap.xml

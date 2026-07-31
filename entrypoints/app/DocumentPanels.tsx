@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import engineErrors, { type EngineTypes } from '@/lib/engine/port';
 import renderLayout from '@/lib/render/layout';
 import type { ResolvedCommand } from '@/lib/commands/registry';
@@ -308,35 +308,110 @@ function SearchPanel({
   const [hits, setHits] = useState<readonly SearchHit[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const activeSearch = useRef<AbortController | null>(null);
+  const pendingSearch = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resultsRef = useRef<HTMLOListElement>(null);
 
-  const runSearch = () => {
-    const submittedQuery = query.trim();
-    activeSearch.current?.abort();
-    activeSearch.current = new AbortController();
-    setHits([]);
-    setTruncated(false);
-    setResultQuery(submittedQuery);
-    setSearching(true);
-    void engine
-      .search(submittedQuery, activeSearch.current.signal)
-      .then((result) => {
-        setHits(result.hits);
-        setTruncated(result.truncated);
-        if (result.hits[0]) onSearchHit(result.hits[0]);
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        if (error instanceof WorkerCrashedError && error.code === 'engine_closed') return;
+  const activate = useCallback(
+    (index: number, nextHits: readonly SearchHit[] = hits) => {
+      if (nextHits.length === 0) {
+        setActiveIndex(-1);
+        return;
+      }
+      const wrapped = ((index % nextHits.length) + nextHits.length) % nextHits.length;
+      setActiveIndex(wrapped);
+      onSearchHit(nextHits[wrapped]!);
+      requestAnimationFrame(() => {
+        resultsRef.current
+          ?.querySelector<HTMLElement>(`[data-search-index="${wrapped}"]`)
+          ?.scrollIntoView?.({ block: 'nearest' });
+      });
+    },
+    [hits, onSearchHit],
+  );
+
+  const runSearch = useCallback(
+    (submittedQuery: string) => {
+      activeSearch.current?.abort();
+      if (!submittedQuery) {
+        activeSearch.current = null;
         setHits([]);
         setTruncated(false);
-        const detail = error instanceof Error ? error.message : 'Unknown search error.';
-        onError(`Search failed. ${detail}`);
-      })
-      .finally(() => setSearching(false));
-  };
+        setResultQuery('');
+        setSearching(false);
+        setHasSearched(false);
+        setActiveIndex(-1);
+        return;
+      }
+      const controller = new AbortController();
+      activeSearch.current = controller;
+      setHits([]);
+      setTruncated(false);
+      setResultQuery(submittedQuery);
+      setSearching(true);
+      setHasSearched(true);
+      setActiveIndex(-1);
+      void engine
+        .search(submittedQuery, controller.signal)
+        .then((result) => {
+          if (activeSearch.current !== controller) return;
+          setHits(result.hits);
+          setTruncated(result.truncated);
+          if (result.hits[0]) {
+            setActiveIndex(0);
+            onSearchHit(result.hits[0]);
+          }
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === 'AbortError') return;
+          if (error instanceof WorkerCrashedError && error.code === 'engine_closed') return;
+          if (activeSearch.current !== controller) return;
+          setHits([]);
+          setTruncated(false);
+          setActiveIndex(-1);
+          const detail = error instanceof Error ? error.message : 'Unknown search error.';
+          onError(`Search failed. ${detail}`);
+        })
+        .finally(() => {
+          if (activeSearch.current === controller) setSearching(false);
+        });
+    },
+    [engine, onError, onSearchHit],
+  );
 
-  useEffect(() => () => activeSearch.current?.abort(), []);
+  const cancelPendingSearch = useCallback(() => {
+    if (pendingSearch.current === null) return;
+    clearTimeout(pendingSearch.current);
+    pendingSearch.current = null;
+  }, []);
+
+  useEffect(
+    () => () => {
+      cancelPendingSearch();
+      activeSearch.current?.abort();
+    },
+    [cancelPendingSearch],
+  );
+  useEffect(() => {
+    const submittedQuery = query.trim();
+    cancelPendingSearch();
+    pendingSearch.current = setTimeout(() => {
+      pendingSearch.current = null;
+      runSearch(submittedQuery);
+    }, 250);
+    return cancelPendingSearch;
+  }, [cancelPendingSearch, query, runSearch]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'F3' || hits.length === 0) return;
+      event.preventDefault();
+      activate(activeIndex + (event.shiftKey ? -1 : 1));
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activate, activeIndex, hits.length]);
 
   return (
     <>
@@ -351,7 +426,13 @@ function SearchPanel({
         className="search-form"
         onSubmit={(event) => {
           event.preventDefault();
-          runSearch();
+          cancelPendingSearch();
+          const submittedQuery = query.trim();
+          if (submittedQuery === resultQuery && hits.length > 0 && !searching) {
+            activate(activeIndex + 1);
+          } else {
+            runSearch(submittedQuery);
+          }
         }}
       >
         <input
@@ -359,6 +440,18 @@ function SearchPanel({
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (
+              event.key === 'Enter' &&
+              event.shiftKey &&
+              query.trim() === resultQuery &&
+              hits.length > 0 &&
+              !searching
+            ) {
+              event.preventDefault();
+              activate(activeIndex - 1);
+            }
+          }}
           placeholder="Search every page"
           aria-label="Find in document"
         />
@@ -366,17 +459,46 @@ function SearchPanel({
           {searching ? 'Searching…' : 'Find'}
         </button>
       </form>
+      <div className="search-traversal" aria-label="Search result navigation">
+        <button
+          type="button"
+          disabled={hits.length === 0}
+          onClick={() => activate(activeIndex - 1)}
+        >
+          Previous
+        </button>
+        <output aria-live="polite">
+          {activeIndex >= 0 ? `Match ${activeIndex + 1} of ${hits.length}` : 'No active match'}
+        </output>
+        <button
+          type="button"
+          disabled={hits.length === 0}
+          onClick={() => activate(activeIndex + 1)}
+        >
+          Next
+        </button>
+      </div>
       <p className="result-summary" aria-live="polite">
-        {hits.length === 0
-          ? 'No matches'
-          : truncated
-            ? `First ${hits.length} matches · refine your search to see every result`
-            : `${hits.length} matches`}
+        {!hasSearched
+          ? 'Enter text to search every page.'
+          : searching
+            ? `Searching for “${resultQuery}”…`
+            : hits.length === 0
+              ? `No matches for “${resultQuery}”`
+              : truncated
+                ? `First ${hits.length} ${hits.length === 1 ? 'match' : 'matches'} · refine your search to see every result`
+                : `${hits.length} ${hits.length === 1 ? 'match' : 'matches'}`}
       </p>
-      <ol className="search-results">
+      <ol ref={resultsRef} className="search-results">
         {hits.map((hit, index) => (
           <li key={`${hit.pageIndex}-${index}`}>
-            <button type="button" onClick={() => onSearchHit(hit)}>
+            <button
+              type="button"
+              data-search-index={index}
+              className={index === activeIndex ? 'active' : ''}
+              aria-current={index === activeIndex ? 'true' : undefined}
+              onClick={() => activate(index)}
+            >
               <span>“{resultQuery}”</span>
               <small>Page {hit.pageLabel}</small>
             </button>
@@ -413,9 +535,10 @@ function CapabilitiesPanel() {
         <div>
           <dt>Existing-text editing</dt>
           <dd>
-            <StatusBadge>DEGRADED</StatusBadge> Correct replacement is offered only when the
-            selected glyphs can be encoded with the page&apos;s own non-Type3 font. Unsupported
-            selections are visibly refused.
+            <StatusBadge>DEGRADED</StatusBadge> Unique, axis-aligned single-line ASCII
+            replacements use a verified Helvetica overlay after removing the original glyphs.
+            Unsupported geometry, scripts, forms, marked content, metadata, and overlaps are
+            refused before mutation.
           </dd>
         </div>
         <div>

@@ -207,6 +207,7 @@ class WorkerPdfEngine implements PdfEngine {
     private readonly sourceFile: File,
     private readonly budget: Budget,
     private readonly ios: boolean,
+    private readonly password?: string,
   ) {
     this.#info = info;
   }
@@ -215,7 +216,11 @@ class WorkerPdfEngine implements PdfEngine {
     return this.#info;
   }
 
-  static async open(file: File, signal?: AbortSignal): Promise<WorkerPdfEngine> {
+  static async open(
+    file: File,
+    signal?: AbortSignal,
+    password?: string,
+  ): Promise<WorkerPdfEngine> {
     const budget = budgetFor(navigator);
     assertFileSize(file.size, budget);
     assertHeadroom(0, file.size * 2, budget);
@@ -232,12 +237,18 @@ class WorkerPdfEngine implements PdfEngine {
       const info = await documentRpc.request<DocumentInfo>(
         {
           operation: 'open',
-          payload: { name: file.name, ios, data: bytes, persistenceKey },
+          payload: {
+            name: file.name,
+            ios,
+            data: bytes,
+            persistenceKey,
+            ...(password === undefined ? {} : { password }),
+          },
         },
         [bytes],
         signal,
       );
-      return new WorkerPdfEngine(info, documentRpc, file, budget, ios);
+      return new WorkerPdfEngine(info, documentRpc, file, budget, ios, password);
     } catch (error) {
       await documentRpc.close().catch(() => undefined);
       throw error;
@@ -661,6 +672,15 @@ class WorkerPdfEngine implements PdfEngine {
     });
   }
 
+  async authenticateOwner(password: string): Promise<DocumentInfo> {
+    const info = await this.documentRpc.request<DocumentInfo>({
+      operation: 'authenticateOwner',
+      payload: { password },
+    });
+    this.#info = info;
+    return info;
+  }
+
   async updateMetadata(
     values: Readonly<
       Partial<Record<'title' | 'author' | 'subject' | 'keywords' | 'language', string>>
@@ -780,7 +800,7 @@ class WorkerPdfEngine implements PdfEngine {
 
   async #createSearchRpc(): Promise<WorkerRpc> {
     const bytes =
-      this.#documentRevision === 0
+      this.#documentRevision === 0 && !this.info.encryption?.protected
         ? await this.sourceFile.arrayBuffer()
         : await this.documentRpc.request<ArrayBuffer>({
             operation: 'snapshotForSearch',
@@ -796,7 +816,12 @@ class WorkerPdfEngine implements PdfEngine {
       await searchRpc.request<void>(
         {
           operation: 'open',
-          payload: { name: this.sourceFile.name, ios: this.ios, data: bytes },
+          payload: {
+            name: this.sourceFile.name,
+            ios: this.ios,
+            data: bytes,
+            ...(this.password === undefined ? {} : { password: this.password }),
+          },
         },
         [bytes],
       );
