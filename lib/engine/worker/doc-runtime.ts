@@ -9,7 +9,7 @@ import {
   assertRenderSize,
   type Budget,
 } from '../../core/limits';
-import { classifyPageSequence } from '../../compare/page-sequence';
+import { classifyPageSequence, reconcileVisualChange } from '../../compare/page-sequence';
 import { rasterDiff } from '../../compare/raster-diff';
 import { diffWords } from '../../compare/text-diff';
 import { DebouncedPersistence, OpfsSnapshotStore } from '../../persistence/opfs';
@@ -881,12 +881,16 @@ function compareDocument(name: string, data: ArrayBuffer): EngineTypes['CompareR
                 ),
               )
             : undefined;
+        const status = reconcileVisualChange(
+          classification.status,
+          Boolean(visualDifference?.exceedsThreshold),
+        );
         return {
           pageIndex: classification.pageIndex,
           ...(classification.currentPageIndex === undefined
             ? {}
             : { currentPageIndex: classification.currentPageIndex }),
-          status: classification.status,
+          status,
           ...(classification.currentLabel === undefined
             ? {}
             : { currentLabel: classification.currentLabel }),
@@ -906,10 +910,13 @@ function compareDocument(name: string, data: ArrayBuffer): EngineTypes['CompareR
         };
       },
     );
+    const visuallyReclassified = pages.filter(
+      (page, index) => sequence.pages[index]?.status === 'same' && page.status === 'changed',
+    ).length;
     return {
       incomingName: name,
-      same: sequence.same,
-      changed: sequence.changed,
+      same: sequence.same - visuallyReclassified,
+      changed: sequence.changed + visuallyReclassified,
       added: sequence.inserted,
       removed: sequence.deleted,
       moved: sequence.moved,

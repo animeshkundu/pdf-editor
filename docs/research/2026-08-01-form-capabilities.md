@@ -81,10 +81,11 @@ writer can interpret.
 - `FORM-009`, `FORM-010`, `FORM-011`, and `FORM-012` are checked at `DEGRADED`. Each has a
   functional path and a point-of-use disclosure: scalar list filling, authored/list tab order,
   list highlighting with canvas-ready geometry, and required validation on form-data export.
-- `FORM-008`, `FORM-013`, and `FORM-023` are `EXCLUDED`, unchecked. No barcode encoder is
-  bundled; history is not wired without a stable document identity; and detection cannot scan
-  a real page without text geometry. The implementations refuse or remain disabled rather than
-  manufacture success.
+- `FORM-008` is `EXCLUDED`, unchecked: the built engine has no verified barcode authoring
+  surface and no independently decodable encoder is bundled.
+- `FORM-013` and `FORM-023` are `OPEN`, unchecked. History still needs a stable document
+  identity, and detection still needs page text geometry. Both are feasible client-side work,
+  so missing wiring does not meet the permanent `EXCLUDED` bar.
 
 ## Remaining prerequisites
 

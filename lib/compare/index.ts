@@ -29,6 +29,7 @@ export {
 
 export {
   classifyPageSequence,
+  reconcileVisualChange,
   type PageChangeType,
   type PageClassification,
   type PageInput,

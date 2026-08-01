@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, Download, Plus, TestTube2, Upload } from 'lucide-re
 import { assertFileSize, budgetFor } from '@/lib/core/limits';
 import type { EngineTypes } from '@/lib/engine/port';
 import formCapabilities from '@/lib/forms/capabilities';
+import { useToolStore } from '@/lib/store/tools';
 import formData, { type FormDataFormat } from '@/lib/text/fdf';
 import ActiveTextEntry from '../ActiveTextEntry';
 import FeatureBadge from '../FeatureBadge';
@@ -63,6 +64,7 @@ export default function PrepareForm({
   const [scriptSource, setScriptSource] = useState('event.rc = event.value.length > 0;');
   const [savingScript, setSavingScript] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
+  const setFormOverlay = useToolStore((state) => state.setFormOverlay);
 
   const load = useCallback(() => {
     void engine
@@ -97,6 +99,22 @@ export default function PrepareForm({
     load();
     loadJavaScript();
   }, [load, loadJavaScript]);
+
+  useEffect(() => {
+    setFormOverlay(fields, highlightFields);
+    return () => setFormOverlay([], false);
+  }, [fields, highlightFields, setFormOverlay]);
+
+  useEffect(() => {
+    const selectClickedField = (event: Event) => {
+      const detail = (event as CustomEvent<{ readonly name?: string }>).detail;
+      if (detail?.name && fields.some((field) => field.name === detail.name)) {
+        setSelected(detail.name);
+      }
+    };
+    document.addEventListener('pdf-form-field-click', selectClickedField);
+    return () => document.removeEventListener('pdf-form-field-click', selectClickedField);
+  }, [fields]);
 
   const selectedField = fields.find((field) => field.name === selected);
   const selectedOptions = useMemo(

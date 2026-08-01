@@ -59,6 +59,14 @@ import { textSimilarity, SIMILARITY_THRESHOLDS } from './fingerprint.ts';
 /** Classification status for a single page in the sequence comparison. */
 export type PageChangeType = 'same' | 'changed' | 'moved' | 'inserted' | 'deleted';
 
+/** A visually changed page is never reported as same, regardless of text similarity. */
+export function reconcileVisualChange(
+  status: PageChangeType,
+  rasterExceedsThreshold: boolean,
+): PageChangeType {
+  return status === 'same' && rasterExceedsThreshold ? 'changed' : status;
+}
+
 /** Input descriptor for one page in a document. */
 export interface PageInput {
   /** 0-based page index within the document. */

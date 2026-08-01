@@ -18,7 +18,11 @@ import {
 } from '@/lib/compare/fingerprint';
 import { diffWords, MAX_DIFF_TOKENS } from '@/lib/compare/text-diff';
 import { rasterDiff, RASTER_THRESHOLDS } from '@/lib/compare/raster-diff';
-import { classifyPageSequence, type PageInput } from '@/lib/compare/page-sequence';
+import {
+  classifyPageSequence,
+  reconcileVisualChange,
+  type PageInput,
+} from '@/lib/compare/page-sequence';
 
 // ─── fingerprint ────────────────────────────────────────────────────────────
 
@@ -296,6 +300,16 @@ describe('rasterDiff', () => {
 function makePage(pageIndex: number, text: string, label?: string): PageInput {
   return { pageIndex, label: label ?? String(pageIndex + 1), text };
 }
+
+describe('reconcileVisualChange', () => {
+  it('reclassifies text-same graphics-different pages as changed', () => {
+    expect(reconcileVisualChange('same', true)).toBe('changed');
+  });
+
+  it('keeps text-different graphics-same pages changed', () => {
+    expect(reconcileVisualChange('changed', false)).toBe('changed');
+  });
+});
 
 describe('classifyPageSequence', () => {
   it('classifies identical single-page documents as same', () => {

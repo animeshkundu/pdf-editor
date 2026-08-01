@@ -399,10 +399,12 @@ unambiguous parity in the product.
 - [x] `FORM-012` **Required-field indication and validation on submit** `DEGRADED`. Required fields
       are indicated and list-entered values can be checked, but there is no interactive page submit
       flow.
-- [ ] `FORM-013` **Auto-complete from previous entries** `EXCLUDED`. The opt-in, clearable,
+- [ ] `FORM-013` **Auto-complete from previous entries** `OPEN`. The opt-in, clearable,
       document-scoped history kernel exists, but the current port exposes no stable document
-      identity and the product stores no entries rather than risk crossing document boundaries
-      ([finding](../research/2026-08-01-form-capabilities.md)).
+      identity and the product stores no entries rather than risk crossing document boundaries.
+      Spike: add an opaque content fingerprint to `DocumentInfo`, then prove history remains
+      isolated across two same-named PDFs. This is ordinary client-side work, not permanently
+      excluded ([finding](../research/2026-08-01-form-capabilities.md)).
 - [ ] `FORM-014` **Reset form** `LOCAL`
 - [ ] `FORM-015` **Save a partially filled form and resume** `LOCAL`
 
@@ -419,10 +421,12 @@ unambiguous parity in the product.
       Real-world government and enterprise forms depend on these, and a form that silently
       does not calculate is worse than one that refuses to open.
 - [ ] `FORM-022` **Set and edit tab order**, including a visual order view `LOCAL`
-- [ ] `FORM-023` **Auto-detect fields on an unstructured document** `EXCLUDED`. A proposal-only
+- [ ] `FORM-023` **Auto-detect fields on an unstructured document** `OPEN`. A proposal-only
       heuristic has a labelled kernel fixture, but the engine port does not expose page text
       geometry needed to scan a real unstructured document. No detection result is claimed or
-      applied ([finding](../research/2026-08-01-form-capabilities.md)).
+      applied. Spike: expose bounded text-line geometry through the engine port and measure the
+      existing proposal kernel against labelled real-page fixtures. This is ordinary client-side
+      work, not permanently excluded ([finding](../research/2026-08-01-form-capabilities.md)).
 - [ ] `FORM-024` **Duplicate a field across pages** `LOCAL`
 
 ### Data

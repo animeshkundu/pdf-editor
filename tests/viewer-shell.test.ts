@@ -508,6 +508,9 @@ describe('Phase 3 viewer acceptance', () => {
     expect(conversionPanel?.textContent).toContain(
       'this build has no independently accepted writer',
     );
+    expect(conversionPanel?.textContent).toContain('Download Markdown');
+    expect(conversionPanel?.textContent).toContain('Download RTF');
+    expect(conversionPanel?.textContent).not.toContain('Markdown and RTF export are excluded');
 
     await act(async () => buttonNamed(container, 'Compare').click());
     const comparePanel = container.querySelector('[aria-label="Compare documents"]');

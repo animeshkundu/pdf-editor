@@ -21,6 +21,27 @@ const PDFBOX_LICENSE = 'Apache-2.0';
 
 export const corpus: readonly CorpusDocument[] = [
   {
+    file: 'inline-image-embedded-ei.pdf',
+    sha256: 'a82e5bfd6834017768d113f4d28e742dcc8ebf6186cc5f45bedaf2de6ce4708c',
+    producer: 'PDF Editor tokenizer regression fixture',
+    pages: 1,
+    source: 'Repository-authored ISO 32000 inline-image fixture',
+    license: 'AGPL-3.0-only',
+    features: ['inline-image', 'unfiltered-image', 'embedded-ei-sequence'],
+    // The null sanitize filter preserves the 12 sample bytes but drops the trailing Q, leaving
+    // the real EI terminator at stream EOF. pdf.js then recovers from the embedded sample EI
+    // differently and renders four pixels with a maximum channel delta of 248. See
+    // docs/research/2026-08-01-inline-image-null-filter-perturbation.md.
+    expectedC8Failures: [1],
+    observedCeilings: {
+      differentPixelRatio: 0.0025,
+      maxChannelDelta: 248,
+      rmse: 9.9699,
+    },
+    expectedFilteredRenderSha256:
+      'f04e9f8a53e33d1c60bdd8e28fdb865d7c2f129131a42a5e83a05e1505cf9365',
+  },
+  {
     file: 'distiller-tagged-linearized.pdf',
     sha256: 'bef74b4a96b426b56a87e7646d6e7b4e03e20793226df95af40d31ec68dfa8ec',
     producer: 'Acrobat Distiller 6.0 (Windows)',

@@ -205,6 +205,43 @@ describe('content-stream token scanner', () => {
     expect(bytes.subarray(imageToken!.start, imageToken!.end)).toEqual(data);
   });
 
+  it('frames a corpus inline image past whitespace-E-I-whitespace inside sample data', () => {
+    const entry = corpus.find((candidate) => candidate.file === 'inline-image-embedded-ei.pdf');
+    expect(entry).toBeDefined();
+    const document = mupdf.Document.openDocument(fixture(entry!.file), 'application/pdf');
+    try {
+      withArenaSync((arena) => {
+        const page = arena.keep((document as mupdf.PDFDocument).loadPage(0)) as mupdf.PDFPage;
+        const editable = resolveEditableContentStream(arena, page);
+        const bytes = readDecodedStreamBytes(arena, editable.object);
+        const tokens = scanContentTokens(bytes);
+        assertPartitionsExactly(tokens, bytes);
+        const imageToken = tokens.find((token) => token.kind === 'inline-image-data');
+        expect(imageToken).toBeDefined();
+        expect(bytes.subarray(imageToken!.start, imageToken!.end)).toEqual(
+          Uint8Array.from([1, 0x20, 0x45, 0x49, 0x20, 2, 3, 4, 5, 6, 7, 8]),
+        );
+        expect(new TextDecoder().decode(bytes.subarray(imageToken!.end))).toBe(' EI Q');
+      });
+    } finally {
+      document.destroy();
+    }
+  });
+
+  it('uses a verified declared length before the fallback EI scan', () => {
+    const data = Uint8Array.from([1, 0x20, 0x45, 0x49, 0x20, 2]);
+    const prefix = ascii('BI /L 6 /F /FlateDecode ID ');
+    const suffix = ascii(' EI');
+    const bytes = new Uint8Array(prefix.length + data.length + suffix.length);
+    bytes.set(prefix);
+    bytes.set(data, prefix.length);
+    bytes.set(suffix, prefix.length + data.length);
+    const tokens = scanContentTokens(bytes);
+    assertPartitionsExactly(tokens, bytes);
+    const image = tokens.find((token) => token.kind === 'inline-image-data');
+    expect(bytes.subarray(image!.start, image!.end)).toEqual(data);
+  });
+
   it('partitions a zero-length inline image without duplicating its separator byte', () => {
     const bytes = ascii('q BI /W 0 /H 0 ID EI Q');
     const tokens = scanContentTokens(bytes);

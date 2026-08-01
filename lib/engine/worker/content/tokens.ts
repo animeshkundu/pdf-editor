@@ -307,15 +307,13 @@ function keywordAt(bytes: Uint8Array, token: ContentToken, keyword: string): boo
  *
  * The key/value pairs between `BI` and `ID` are ordinary content-stream objects (names,
  * numbers, arrays, booleans) and are scanned with the same `scanOne` used everywhere else.
- * The bytes between `ID` and `EI` are opaque sample data with no self-delimiting grammar:
- * per ISO 32000-2 8.9.5.2 a reader either knows the length in advance (rare in a hand-written
- * content stream, and this scanner does not evaluate the `/L` key to avoid trusting a value
- * an adversarial or corrupt stream could lie about) or must search for `EI` bounded by
- * whitespace. That is what this does, and it is a known, documented limitation: sample data
- * that happens to contain the exact byte sequence whitespace-E-I-whitespace will truncate
- * early. See docs/research/2026-08-01-byte-span-content-splicing.md.
+ * The sample boundary is resolved strongest-first: a verified `/L` or `/Length`; an exact
+ * unfiltered sample length derived from width, height, bits-per-component, colour space, and
+ * image-mask parameters; then the ISO whitespace-bounded `EI` recovery scan. Both exact-length
+ * paths verify the computed boundary against the following `EI` syntax before accepting it.
  */
 function scanInlineImage(bytes: Uint8Array, cursor: number, tokens: ContentToken[]): number {
+  const preamble: ContentToken[] = [];
   let position = cursor;
   for (;;) {
     if (position >= bytes.length) {
@@ -325,6 +323,7 @@ function scanInlineImage(bytes: Uint8Array, cursor: number, tokens: ContentToken
     tokens.push(token);
     position = token.end;
     if (keywordAt(bytes, token, 'ID')) break;
+    preamble.push(token);
   }
   // Exactly one whitespace byte conventionally separates ID from the sample data. It is
   // part of the operator syntax, not the image data, and is scanned as its own token so the
@@ -334,31 +333,163 @@ function scanInlineImage(bytes: Uint8Array, cursor: number, tokens: ContentToken
     position += 1;
   }
   const dataStart = position;
-  let dataEnd = -1;
-  let terminatorStart = -1;
-  let keywordStart = -1;
-  for (let index = position; index < bytes.length - 1; index += 1) {
+  const parameters = inlineImageParameters(bytes, preamble);
+  const declaredLength = inlineImageInteger(bytes, parameters, 'L', 'Length');
+  const declaredFraming =
+    declaredLength === undefined
+      ? undefined
+      : verifyInlineImageBoundary(bytes, dataStart, declaredLength);
+  const computedLength = hasInlineImageFilter(parameters)
+    ? undefined
+    : inlineImageSampleLength(bytes, parameters);
+  const computedFraming =
+    computedLength === undefined
+      ? undefined
+      : verifyInlineImageBoundary(bytes, dataStart, computedLength);
+  const framing =
+    declaredFraming ?? computedFraming ?? recoverInlineImageBoundary(bytes, dataStart);
+  if (!framing) {
+    throw new ContentScanError('Unterminated inline image (no recoverable EI)', dataStart);
+  }
+  if (framing.dataEnd > dataStart) {
+    tokens.push({ start: dataStart, end: framing.dataEnd, kind: 'inline-image-data' });
+  }
+  if (framing.keywordStart > framing.dataEnd) {
+    tokens.push({
+      start: framing.dataEnd,
+      end: framing.keywordStart,
+      kind: 'whitespace',
+    });
+  }
+  tokens.push({ start: framing.keywordStart, end: framing.keywordStart + 2, kind: 'keyword' });
+  return framing.keywordStart + 2;
+}
+
+interface InlineImageFraming {
+  readonly dataEnd: number;
+  readonly keywordStart: number;
+}
+
+function inlineImageParameters(
+  bytes: Uint8Array,
+  tokens: readonly ContentToken[],
+): ReadonlyMap<string, ContentToken> {
+  const significant = tokens.filter(
+    (token) => token.kind !== 'whitespace' && token.kind !== 'comment',
+  );
+  const parameters = new Map<string, ContentToken>();
+  for (let index = 0; index + 1 < significant.length; index += 2) {
+    const key = significant[index];
+    const value = significant[index + 1];
+    if (key?.kind !== 'name' || !value) continue;
+    parameters.set(pdfName(bytes, key), value);
+  }
+  return parameters;
+}
+
+function pdfName(bytes: Uint8Array, token: ContentToken): string {
+  let value = '';
+  for (let index = token.start + 1; index < token.end; index += 1) {
+    if (
+      bytes[index] === 0x23 /* # */ &&
+      isHexDigit(bytes[index + 1]) &&
+      isHexDigit(bytes[index + 2])
+    ) {
+      value += String.fromCharCode(
+        Number.parseInt(String.fromCharCode(bytes[index + 1]!, bytes[index + 2]!), 16),
+      );
+      index += 2;
+    } else {
+      value += String.fromCharCode(bytes[index]!);
+    }
+  }
+  return value;
+}
+
+function tokenText(bytes: Uint8Array, token: ContentToken | undefined): string | undefined {
+  if (!token) return undefined;
+  if (token.kind === 'name') return pdfName(bytes, token);
+  let value = '';
+  for (let index = token.start; index < token.end; index += 1) {
+    value += String.fromCharCode(bytes[index]!);
+  }
+  return value;
+}
+
+function inlineImageInteger(
+  bytes: Uint8Array,
+  parameters: ReadonlyMap<string, ContentToken>,
+  shortName: string,
+  longName: string,
+): number | undefined {
+  const token = parameters.get(shortName) ?? parameters.get(longName);
+  if (!token || token.kind !== 'number') return undefined;
+  const value = Number(tokenText(bytes, token));
+  return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function hasInlineImageFilter(parameters: ReadonlyMap<string, ContentToken>): boolean {
+  return parameters.has('F') || parameters.has('Filter');
+}
+
+function inlineImageSampleLength(
+  bytes: Uint8Array,
+  parameters: ReadonlyMap<string, ContentToken>,
+): number | undefined {
+  const width = inlineImageInteger(bytes, parameters, 'W', 'Width');
+  const height = inlineImageInteger(bytes, parameters, 'H', 'Height');
+  if (width === undefined || height === undefined) return undefined;
+  const imageMask =
+    tokenText(bytes, parameters.get('IM') ?? parameters.get('ImageMask')) === 'true';
+  const bits = imageMask ? 1 : inlineImageInteger(bytes, parameters, 'BPC', 'BitsPerComponent');
+  if (bits === undefined) return undefined;
+  const colourSpace = tokenText(bytes, parameters.get('CS') ?? parameters.get('ColorSpace'));
+  const components = imageMask
+    ? 1
+    : colourSpace === 'DeviceGray' ||
+        colourSpace === 'G' ||
+        colourSpace === 'Indexed' ||
+        colourSpace === 'I'
+      ? 1
+      : colourSpace === 'DeviceRGB' || colourSpace === 'RGB'
+        ? 3
+        : colourSpace === 'DeviceCMYK' || colourSpace === 'CMYK'
+          ? 4
+          : undefined;
+  if (components === undefined) return undefined;
+  const rowBits = BigInt(width) * BigInt(bits) * BigInt(components);
+  const length = ((rowBits + 7n) / 8n) * BigInt(height);
+  return length <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(length) : undefined;
+}
+
+function verifyInlineImageBoundary(
+  bytes: Uint8Array,
+  dataStart: number,
+  length: number,
+): InlineImageFraming | undefined {
+  const dataEnd = dataStart + length;
+  if (!Number.isSafeInteger(dataEnd) || dataEnd > bytes.length) return undefined;
+  let keywordStart = dataEnd;
+  while (isWhitespace(bytes[keywordStart])) keywordStart += 1;
+  if (bytes[keywordStart] !== 0x45 || bytes[keywordStart + 1] !== 0x49) return undefined;
+  const after = bytes[keywordStart + 2];
+  if (after !== undefined && !isWhitespace(after) && !isDelimiter(after)) return undefined;
+  return { dataEnd, keywordStart };
+}
+
+function recoverInlineImageBoundary(
+  bytes: Uint8Array,
+  dataStart: number,
+): InlineImageFraming | undefined {
+  for (let index = dataStart; index < bytes.length - 1; index += 1) {
     if (bytes[index] !== 0x45 /* E */ || bytes[index + 1] !== 0x49 /* I */) continue;
     const before = index > dataStart ? bytes[index - 1] : bytes[dataStart - 1];
     const after = bytes[index + 2];
     if (!isWhitespace(before)) continue;
     if (after !== undefined && !isWhitespace(after) && !isDelimiter(after)) continue;
-    dataEnd = Math.max(dataStart, index - 1);
-    terminatorStart = index - 1;
-    keywordStart = index;
-    break;
+    return { dataEnd: Math.max(dataStart, index - 1), keywordStart: index };
   }
-  if (dataEnd < 0) {
-    throw new ContentScanError('Unterminated inline image (no recoverable EI)', dataStart);
-  }
-  if (dataEnd > dataStart) {
-    tokens.push({ start: dataStart, end: dataEnd, kind: 'inline-image-data' });
-  }
-  if (terminatorStart >= dataStart) {
-    tokens.push({ start: terminatorStart, end: terminatorStart + 1, kind: 'whitespace' });
-  }
-  tokens.push({ start: keywordStart, end: keywordStart + 2, kind: 'keyword' });
-  return keywordStart + 2;
+  return undefined;
 }
 
 /** Asserts that a token list partitions `bytes` exactly: gapless, non-overlapping, in order. */
