@@ -279,6 +279,7 @@ export default function EditorShell({
   const [engine, setEngine] = useState<PdfEngine | null>(null);
   const [openPanels, setOpenPanels] = useState<readonly PanelKind[]>([]);
   const [collapsedPanels, setCollapsedPanels] = useState<readonly PanelKind[]>([]);
+  const [findFocusRequest, setFindFocusRequest] = useState(0);
   const [panelWidths, setPanelWidths] = useState<Readonly<Partial<Record<PanelKind, number>>>>(
     {},
   );
@@ -439,8 +440,13 @@ export default function EditorShell({
     if (!engine) return;
     setOpenPanels((current) => (current.includes('search') ? current : [...current, 'search']));
     setCollapsedPanels((current) => current.filter((kind) => kind !== 'search'));
-    requestAnimationFrame(() => searchInputRef.current?.focus());
+    setFindFocusRequest((current) => current + 1);
   }, [engine]);
+
+  useEffect(() => {
+    if (findFocusRequest === 0) return;
+    searchInputRef.current?.focus();
+  }, [findFocusRequest]);
 
   const choosePanel = useCallback(
     (kind: PanelKind) => {

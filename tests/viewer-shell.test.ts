@@ -369,6 +369,12 @@ describe('Phase 3 viewer acceptance', () => {
     );
     expect(document.activeElement).toBe(searchInput);
 
+    const markupButton = buttonNamed(container, 'Markup');
+    markupButton.focus();
+    await act(async () => markupButton.click());
+    expect(document.activeElement).toBe(markupButton);
+    expect(document.activeElement).not.toBe(searchInput);
+
     await act(async () => {
       if (!searchInput) throw new Error('Missing search input.');
       setInputValue(searchInput, 'needle');

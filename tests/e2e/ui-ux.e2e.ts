@@ -731,12 +731,14 @@ test('keeps contextual panels concurrent, resizable, collapsible, and persistent
       .filter({ has: page.locator('.panel-chrome strong', { hasText: 'Markup' }) }),
   ).toHaveAttribute('data-collapsed', 'true');
 
-  const find = page.getByRole('button', { name: 'Find', exact: true });
-  await find.click();
-  await page.getByRole('searchbox', { name: 'Find in document' }).focus();
+  await page.getByRole('region', { name: 'Document pages' }).focus();
+  await page.keyboard.press('Control+f');
+  const searchInput = page.getByRole('searchbox', { name: 'Find in document' });
+  await expect(searchInput).toBeFocused();
   const markup = page.getByRole('button', { name: 'Markup', exact: true });
   await markup.click();
   await expect(markup).toBeFocused();
+  await expect(searchInput).not.toBeFocused();
 
   const closeAll = page.getByRole('button', { name: 'Close contextual panels' });
   await closeAll.focus();
