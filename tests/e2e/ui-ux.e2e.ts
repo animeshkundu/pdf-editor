@@ -171,7 +171,7 @@ test('keeps the production document shell structurally ready and titles long doc
   const title = page.locator('.document-title strong');
   await expect(title).toHaveText(longName);
 
-  for (const width of [1600, 1280, 1100, 900, 380]) {
+  for (const width of [1600, 1280, 1100, 900, 780, 380]) {
     await page.setViewportSize({ width, height: 720 });
     await expect(title).toBeVisible();
     expect(
@@ -188,6 +188,13 @@ test('keeps the production document shell structurally ready and titles long doc
       ),
       `page overflows horizontally at ${width}px`,
     ).toBe(true);
+    if (width === 780) {
+      expect((await title.boundingBox())?.width ?? 0).toBeGreaterThan(0);
+      const theme = page.getByRole('button', { name: /Use (dark|light) theme/ });
+      const themeBox = await theme.boundingBox();
+      expect(themeBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+      expect((themeBox?.x ?? 781) + (themeBox?.width ?? 0)).toBeLessThanOrEqual(width);
+    }
   }
   await capture(page, browserName, 'long-title-narrow.png');
 });
@@ -486,6 +493,13 @@ test('keeps every narrow-shell control inside the viewport and every tool reacha
     const box = await button.boundingBox();
     expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
     expect((box?.x ?? 381) + (box?.width ?? 0)).toBeLessThanOrEqual(380);
+    const labelBox = await button.locator('span').boundingBox();
+    expect(labelBox?.x ?? -1).toBeGreaterThanOrEqual(box?.x ?? 0);
+    expect((labelBox?.x ?? 381) + (labelBox?.width ?? 0)).toBeLessThanOrEqual(
+      (box?.x ?? 0) + (box?.width ?? 0),
+    );
+    expect(labelBox?.y ?? -1).toBeGreaterThanOrEqual(box?.y ?? 0);
+    expect((labelBox?.y ?? 781) + (labelBox?.height ?? 0)).toBeLessThanOrEqual(780);
   }
   await capture(page, browserName, 'narrow-shell.png');
 });
@@ -716,13 +730,40 @@ test('keeps contextual panels concurrent, resizable, collapsible, and persistent
       .locator('.panel-frame')
       .filter({ has: page.locator('.panel-chrome strong', { hasText: 'Markup' }) }),
   ).toHaveAttribute('data-collapsed', 'true');
+
+  const find = page.getByRole('button', { name: 'Find', exact: true });
+  await find.click();
+  await page.getByRole('searchbox', { name: 'Find in document' }).focus();
+  const markup = page.getByRole('button', { name: 'Markup', exact: true });
+  await markup.click();
+  await expect(markup).toBeFocused();
+
+  const closeAll = page.getByRole('button', { name: 'Close contextual panels' });
+  await closeAll.focus();
+  await closeAll.click();
+  await expect(page.getByRole('button', { name: 'Pages', exact: true })).toBeFocused();
+  await expect(page.locator('.panel-frame')).toHaveCount(0);
+  await page.reload();
+  await page.getByLabel('Open PDF').setInputFiles({
+    name: 'panel-layout.pdf',
+    mimeType: 'application/pdf',
+    buffer: readFileSync(fixture),
+  });
+  await expect(page.locator('canvas.pdf-tile').first()).toBeVisible();
+  await expect(page.locator('.panel-frame')).toHaveCount(0);
 });
 
 test('remaps tool shortcuts locally and selects text from the keyboard', async ({
   page,
   browserName,
 }) => {
-  await openFixture(page, 'keyboard.pdf');
+  await page.goto('/pdf/app/');
+  await page.getByLabel('Open PDF').setInputFiles({
+    name: 'keyboard.pdf',
+    mimeType: 'application/pdf',
+    buffer: readFileSync(multipageFixture),
+  });
+  await expect(page.locator('canvas.pdf-tile').first()).toBeVisible();
   await page.getByRole('button', { name: 'Commands' }).click();
   await page.getByRole('button', { name: 'Edit shortcuts' }).click();
   const markupShortcut = page.getByRole('textbox', {
@@ -751,14 +792,22 @@ test('remaps tool shortcuts locally and selects text from the keyboard', async (
 
   await page.getByRole('region', { name: 'Document pages' }).focus();
   const selectionStatus = page.getByLabel('Text selection status');
-  for (let count = 0; count < 3; count += 1) {
-    await page.keyboard.press('Shift+ArrowRight');
-    await expect(selectionStatus).toContainText('Selected text:');
-  }
-  const extendedSelection = await selectionStatus.textContent();
-  await page.keyboard.press('Shift+ArrowLeft');
-  await expect(selectionStatus).not.toHaveText(extendedSelection ?? '');
+  for (let count = 0; count < 5; count += 1) await page.keyboard.press('ArrowRight');
+  await expect(selectionStatus).toContainText('Text caret:');
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect(selectionStatus).toContainText('Selected text:');
+  const arbitrarySelection = await selectionStatus.textContent();
+  await page.keyboard.press('Shift+ArrowRight');
+  await expect(selectionStatus).not.toHaveText(arbitrarySelection ?? '');
+  await page.keyboard.press('Control+Shift+End');
+  await expect(selectionStatus).toContainText('Selected text:');
+  await expect(page.getByRole('button', { name: 'Copy selected text' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Edit selected text' })).toBeDisabled();
+  await expect(page.getByText('Editing a cross-page selection is unavailable.')).toBeVisible();
+  await page.keyboard.press('Control+Home');
+  await page.keyboard.press('Shift+ArrowRight');
   await expect(page.getByRole('toolbar', { name: 'Selection actions' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit selected text' })).toBeEnabled();
   expect(
     await page.locator('.pdf-highlight-tile').evaluateAll((canvases) =>
       canvases.some((canvas) => {

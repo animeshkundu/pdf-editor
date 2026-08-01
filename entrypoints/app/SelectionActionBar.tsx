@@ -22,6 +22,7 @@ import ActiveTextEntry from './ActiveTextEntry';
 export interface SelectionAction {
   readonly selection: EngineTypes['TextSelection'];
   readonly viewportBounds: readonly [number, number, number, number];
+  readonly crossPage?: boolean;
 }
 
 export default function SelectionActionBar({
@@ -51,8 +52,8 @@ export default function SelectionActionBar({
   }>({ left: 0, top: 0, side: 'below' });
   const [left, top, right, bottom] = action.viewportBounds;
   const canCopy = engine.info.permissions.copy;
-  const canAnnotate = engine.info.permissions.annotate;
-  const canEdit = engine.info.permissions.edit !== false;
+  const canAnnotate = engine.info.permissions.annotate && !action.crossPage;
+  const canEdit = engine.info.permissions.edit !== false && !action.crossPage;
   useEffect(() => {
     originRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -305,12 +306,16 @@ export default function SelectionActionBar({
       ) : null}
       {!canEdit ? (
         <p id="selection-edit-limit" className="selection-limit">
-          Editing is blocked by this document&apos;s permissions.
+          {action.crossPage
+            ? 'Editing a cross-page selection is unavailable. Select text on one page to edit it.'
+            : "Editing is blocked by this document's permissions."}
         </p>
       ) : null}
       {!canAnnotate ? (
         <p id="selection-annotation-limit" className="selection-limit">
-          Markup is blocked by this document&apos;s permissions.
+          {action.crossPage
+            ? 'Markup across pages is unavailable. Select text on one page to add markup.'
+            : "Markup is blocked by this document's permissions."}
         </p>
       ) : null}
     </div>

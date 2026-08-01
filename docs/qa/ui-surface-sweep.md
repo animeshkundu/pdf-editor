@@ -2,15 +2,20 @@
 
 ## Run contract
 
-This ledger records a completed production-artifact run on 2026-08-01. Playwright drove
+This ledger records a bounded production-artifact run on 2026-08-01. Playwright drove
 `http://127.0.0.1:4180/pdf/app/` from the assembled Build Output API artifact served by
 `scripts/serve-vercel-output.mjs`. The editor was never driven through the Vite development
 server or a root-mounted preview.
 
-The panel matrix is compact, comfortable, and touch density; light and dark theme; wide
-1440×900 and narrow 380×780 viewports. Chromium produced the 218 committed screenshots under
-`screenshots/ui-sweep/`; Firefox repeated the same reach and assertion routes. Every test
-installed fail-closed cross-origin-request, console-error, and page-error guards.
+The screenshot matrix covers the 16 rail panels at compact, comfortable, and touch density;
+light and dark theme; wide 1440×900 and narrow 380×780 viewports. Chromium produced the 218
+committed screenshots under `screenshots/ui-sweep/`; Firefox repeated those reach and assertion
+routes. Every test installed fail-closed cross-origin-request, console-error, and page-error
+guards. This is not a complete inventory of every product surface or state: layers,
+destinations, content tree, signatures, tags, view/read/full-screen modes, and the full
+modal/popover/error cross-product were not exercised by this run. The matrix cells were opened
+by pointer and captured; keyboard operation and 200% reflow are covered only by the specific
+behavioural routes below, not independently in every screenshot cell.
 
 Reproduce with:
 
@@ -79,6 +84,16 @@ The behavioural rows have direct captures at
 `screenshots/ui-sweep/{long-title-narrow,active-redaction-tool,error-notice,password-dialog,unsaved-changes-dialog,forced-colors-focus,narrow-shell,designed-property-controls,concurrent-panels,shortcut-editor,keyboard-selection-actions,print-preparation}.png`.
 Rows whose result is a focus return, cancellation, download, or persisted state additionally rely
 on the named Playwright assertion because a still image cannot prove the transition.
+
+## Explicitly untested surfaces
+
+The following are outside this run's evidence and must not be inferred as passing from the
+screenshots: layers, destinations, the content tree, signatures, tags, view mode, read mode,
+full-screen mode, and combinations of every modal, popover, and error state. They need dedicated
+fixtures or routes before they can be added as PASS rows. Actual browser-level 200% zoom was not
+applied to each panel cell; the recorded reflow route uses the repository's 320/380 CSS-pixel
+equivalent and keyboard-opens Commands. Keyboard-only operation was not repeated for every panel
+cell.
 
 ## Independent output validation
 

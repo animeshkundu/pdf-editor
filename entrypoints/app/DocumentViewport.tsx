@@ -221,13 +221,15 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
       let frame = 0;
       let currentPage = -1;
       let selection: TextSelection | null = null;
+      let keyboardSelections = new Map<number, TextSelection>();
       let searchHighlight: HighlightState | null = null;
       let dragStart: { readonly pageIndex: number; readonly point: PdfPoint } | null = null;
       let readingController: AbortController | null = null;
       let keyboardSelectionController: AbortController | null = null;
       let selectionMode = false;
-      let currentPageText = '';
-      let keyboardWordCount = 0;
+      const pageTextCache = new Map<number, string>();
+      let keyboardCaret: { pageIndex: number; wordIndex: number } | null = null;
+      let keyboardAnchor: { pageIndex: number; wordIndex: number } | null = null;
       let selectionGeneration = 0;
       viewportStore.getState().reset();
       viewportStore.getState().setZoom(zoom);
@@ -286,13 +288,16 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
                 searchColor,
               );
             }
-            if (selection?.pageIndex === pageIndex) {
+            const pageSelection =
+              keyboardSelections.get(pageIndex) ??
+              (selection?.pageIndex === pageIndex ? selection : null);
+            if (pageSelection) {
               drawHighlight(
                 context,
                 renderedTile.tile,
                 page,
                 deviceScale,
-                selection.quads,
+                pageSelection.quads,
                 selectionColor,
               );
             }
@@ -376,8 +381,7 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           .getPageText(pageIndex, readingController.signal)
           .then((pageText) => {
             reading.textContent = pageText.text;
-            currentPageText = pageText.text;
-            keyboardWordCount = 0;
+            pageTextCache.set(pageIndex, pageText.text);
             const structureUnavailable = pageText.limitations.includes('structure-tree');
             const formAnalysisPartial = pageText.limitations.includes('form-xobject');
             analysis.textContent =
@@ -786,51 +790,144 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         setZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1), event.clientY - bounds.top);
       };
 
-      const changeKeyboardSelection = async (direction: 1 | -1) => {
+      const pageWords = async (pageIndex: number, signal: AbortSignal) => {
+        let text = pageTextCache.get(pageIndex);
+        if (text === undefined) {
+          text = (await engine.getPageText(pageIndex, signal)).text;
+          pageTextCache.set(pageIndex, text);
+        }
+        return { text, words: [...text.matchAll(/\S+/g)] };
+      };
+
+      const moveKeyboardCaret = async (
+        direction: 1 | -1,
+        extend: boolean,
+        boundary: 'word' | 'page' | 'document' = 'word',
+      ) => {
         if (currentPage < 0) return;
         keyboardSelectionController?.abort();
         keyboardSelectionController = new AbortController();
         const signal = keyboardSelectionController.signal;
-        if (!currentPageText) {
-          currentPageText = (await engine.getPageText(currentPage, signal)).text;
+        const initial = keyboardCaret ?? { pageIndex: currentPage, wordIndex: 0 };
+        if (extend && !keyboardAnchor) keyboardAnchor = initial;
+        const currentWords = await pageWords(initial.pageIndex, signal);
+        let next: { pageIndex: number; wordIndex: number };
+        if (boundary === 'document') {
+          const pageIndex = direction < 0 ? 0 : engine.info.pages.length - 1;
+          const targetWords = await pageWords(pageIndex, signal);
+          next = { pageIndex, wordIndex: direction < 0 ? 0 : targetWords.words.length };
+        } else if (boundary === 'page') {
+          next = {
+            pageIndex: initial.pageIndex,
+            wordIndex: direction < 0 ? 0 : currentWords.words.length,
+          };
+        } else {
+          let wordIndex = initial.wordIndex + direction;
+          let pageIndex = initial.pageIndex;
+          if (wordIndex < 0 && pageIndex > 0) {
+            pageIndex -= 1;
+            wordIndex = (await pageWords(pageIndex, signal)).words.length;
+          } else if (
+            wordIndex > currentWords.words.length &&
+            pageIndex < engine.info.pages.length - 1
+          ) {
+            pageIndex += 1;
+            wordIndex = 0;
+          }
+          next = {
+            pageIndex,
+            wordIndex: Math.max(
+              0,
+              Math.min((await pageWords(pageIndex, signal)).words.length, wordIndex),
+            ),
+          };
         }
-        const words = [...currentPageText.matchAll(/\S+/g)];
-        keyboardWordCount = Math.min(words.length, Math.max(0, keyboardWordCount + direction));
-        if (keyboardWordCount === 0) {
+        keyboardCaret = next;
+        if (!extend) {
+          keyboardAnchor = null;
+          keyboardSelections.clear();
           selection = null;
-          selectionStatus.textContent = 'Text selection cleared.';
+          selectionStatus.textContent = `Text caret: page ${next.pageIndex + 1}, word ${next.wordIndex + 1}.`;
           onSelectionAction(null);
           paintOverlays();
           return;
         }
-        const firstWord = words[0];
-        const lastWord = words[keyboardWordCount - 1];
-        const node = pageNodes.get(currentPage);
-        if (!firstWord || firstWord.index === undefined || !lastWord || !node) return;
-        const end = (lastWord.index ?? 0) + lastWord[0].length;
-        const selectedText = currentPageText
-          .slice(firstWord.index, end)
-          .replace(/\s+/g, ' ')
-          .trim();
+
+        const anchor = keyboardAnchor ?? initial;
+        const [start, end] =
+          anchor.pageIndex < next.pageIndex ||
+          (anchor.pageIndex === next.pageIndex && anchor.wordIndex <= next.wordIndex)
+            ? [anchor, next]
+            : [next, anchor];
         const requestGeneration = ++selectionGeneration;
-        const result = await engine.search(selectedText, signal);
-        if (requestGeneration !== selectionGeneration) return;
-        const hit = result.hits.find((candidate) => candidate.pageIndex === currentPage);
-        if (!hit) {
-          throw new Error(
-            'The selected reading-order text could not be mapped back to page geometry.',
-          );
-        }
-        presentSelection(
-          {
-            pageIndex: currentPage,
-            text: selectedText,
+        const nextSelections = new Map<number, TextSelection>();
+        const selectedParts: string[] = [];
+        for (let pageIndex = start.pageIndex; pageIndex <= end.pageIndex; pageIndex += 1) {
+          const { text, words } = await pageWords(pageIndex, signal);
+          const from = pageIndex === start.pageIndex ? start.wordIndex : 0;
+          const to = pageIndex === end.pageIndex ? end.wordIndex : words.length;
+          if (to <= from) continue;
+          const firstWord = words[from];
+          const lastWord = words[to - 1];
+          if (!firstWord || firstWord.index === undefined || !lastWord) continue;
+          const part = text
+            .slice(firstWord.index, (lastWord.index ?? 0) + lastWord[0].length)
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (!part) continue;
+          const result = await engine.search(part, signal);
+          if (requestGeneration !== selectionGeneration) return;
+          const hit = result.hits.find((candidate) => candidate.pageIndex === pageIndex);
+          if (!hit) continue;
+          nextSelections.set(pageIndex, {
+            pageIndex,
+            text: part,
             quads: hit.quads,
             truncated: result.truncated,
-          },
-          currentPage,
-          node.element,
+          });
+          selectedParts.push(part);
+        }
+        keyboardSelections = nextSelections;
+        const activeSelection = [...nextSelections.values()].find((candidate) =>
+          pageNodes.has(candidate.pageIndex),
         );
+        const activeNode = activeSelection
+          ? pageNodes.get(activeSelection.pageIndex)
+          : undefined;
+        if (!activeSelection || !activeNode) {
+          selection = null;
+          onSelectionAction(null);
+          paintOverlays();
+          return;
+        }
+        presentSelection(
+          { ...activeSelection, text: selectedParts.join(' ') },
+          activeSelection.pageIndex,
+          activeNode.element,
+        );
+        if (nextSelections.size > 1) {
+          onSelectionAction({
+            selection: { ...activeSelection, text: selectedParts.join(' ') },
+            viewportBounds: (() => {
+              const bounds = activeSelection.quads.map(quadBounds);
+              const page = engine.info.pages[activeSelection.pageIndex];
+              const rect = activeNode.element.getBoundingClientRect();
+              const scale = PDF_POINT_SCALE * zoom;
+              if (!page) return [rect.left, rect.top, rect.right, rect.bottom] as const;
+              return [
+                rect.left +
+                  (Math.min(...bounds.map((value) => value[0])) - page.bounds[0]) * scale,
+                rect.top +
+                  (Math.min(...bounds.map((value) => value[1])) - page.bounds[1]) * scale,
+                rect.left +
+                  (Math.max(...bounds.map((value) => value[2])) - page.bounds[0]) * scale,
+                rect.top +
+                  (Math.max(...bounds.map((value) => value[3])) - page.bounds[1]) * scale,
+              ] as const;
+            })(),
+            crossPage: true,
+          });
+        }
       };
 
       const onKeyDown = (event: KeyboardEvent) => {
@@ -854,15 +951,22 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           return;
         }
         if (
-          event.shiftKey &&
-          !event.ctrlKey &&
-          !event.metaKey &&
           !event.altKey &&
-          (event.key === 'ArrowRight' || event.key === 'ArrowLeft')
+          (event.key === 'ArrowRight' ||
+            event.key === 'ArrowLeft' ||
+            event.key === 'Home' ||
+            event.key === 'End')
         ) {
+          const direction = event.key === 'ArrowLeft' || event.key === 'Home' ? -1 : 1;
+          const boundary =
+            event.key === 'Home' || event.key === 'End'
+              ? event.ctrlKey || event.metaKey
+                ? 'document'
+                : 'page'
+              : 'word';
           event.preventDefault();
-          void changeKeyboardSelection(event.key === 'ArrowRight' ? 1 : -1).catch(
-            (error: unknown) => reportError('Selecting text with the keyboard', error),
+          void moveKeyboardCaret(direction, event.shiftKey, boundary).catch((error: unknown) =>
+            reportError('Moving the text caret', error),
           );
         }
       };

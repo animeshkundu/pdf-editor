@@ -692,6 +692,7 @@ button:disabled {
 
 .tool-rail button {
   display: flex;
+  min-width: 0;
   min-height: var(--row-height);
   align-items: center;
   justify-content: center;
@@ -704,6 +705,12 @@ button:disabled {
   color: var(--text-secondary);
   cursor: pointer;
   font-size: var(--text-ui);
+}
+
+.tool-rail button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tool-rail button:hover:not(:disabled),
@@ -2257,8 +2264,21 @@ button:disabled {
 
 @media (max-width: 900px) {
   .global-bar {
-    grid-template-columns: max-content minmax(0, 1fr) max-content;
+    grid-template-columns: max-content minmax(8rem, 1fr);
+    grid-template-rows: var(--row-height) auto;
     gap: var(--space-100);
+  }
+
+  .document-title {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .toolbar-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-content: stretch;
+    overflow: visible;
   }
 
   .brand small,

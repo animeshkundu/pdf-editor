@@ -73,6 +73,8 @@ describe('AUTO-001/AUTO-002 command registry', () => {
       disabledReason: 'Open a PDF to use this command.',
     });
     expect(formatShortcut('Mod+K', { platform: 'MacIntel' })).toBe('⌘ K');
+    expect(formatShortcut('Mod++', { platform: 'Win32' })).toBe('Ctrl +');
+    expect(formatShortcut('Mod++', { platform: 'MacIntel' })).toBe('⌘ +');
   });
 
   it('parses imported pipelines for preview without executing them', async () => {

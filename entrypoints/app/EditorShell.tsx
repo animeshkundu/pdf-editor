@@ -250,7 +250,7 @@ function loadPanelLayout(name: string): {
     }
     return {
       key,
-      open: open.length > 0 ? open : ['pages'],
+      open,
       collapsed,
       widths,
       error: '',
@@ -442,12 +442,6 @@ export default function EditorShell({
     requestAnimationFrame(() => searchInputRef.current?.focus());
   }, [engine]);
 
-  useEffect(() => {
-    if (engine && openPanels.includes('search') && !collapsedPanels.includes('search')) {
-      searchInputRef.current?.focus();
-    }
-  }, [collapsedPanels, engine, openPanels]);
-
   const choosePanel = useCallback(
     (kind: PanelKind) => {
       if (!engine && kind !== 'capabilities') {
@@ -475,6 +469,12 @@ export default function EditorShell({
     setOpenPanels((current) => current.filter((candidate) => candidate !== kind));
     setCollapsedPanels((current) => current.filter((candidate) => candidate !== kind));
     requestAnimationFrame(() => panelButtonRefs.current.get(kind)?.focus());
+  }, []);
+
+  const closeAllPanels = useCallback(() => {
+    setOpenPanels([]);
+    setCollapsedPanels([]);
+    requestAnimationFrame(() => panelButtonRefs.current.get('pages')?.focus());
   }, []);
 
   const startPanelResize = useCallback(
@@ -1275,10 +1275,7 @@ export default function EditorShell({
               <button
                 type="button"
                 aria-label="Close contextual panels"
-                onClick={() => {
-                  setOpenPanels([]);
-                  setCollapsedPanels([]);
-                }}
+                onClick={closeAllPanels}
               >
                 <PanelRightClose aria-hidden="true" size={15} />
               </button>
