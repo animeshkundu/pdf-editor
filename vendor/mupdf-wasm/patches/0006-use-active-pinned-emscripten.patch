@@ -1,0 +1,23 @@
+diff --git a/platform/wasm/tools/build.sh b/platform/wasm/tools/build.sh
+index 5c36fcf..010cd3f 100755
+--- a/platform/wasm/tools/build.sh
++++ b/platform/wasm/tools/build.sh
+@@ -26,8 +26,16 @@ fi
+ export EMSDK_QUIET=1
+ source $EMSDK/emsdk_env.sh
+ 
+-emsdk install 4.0.8 >/dev/null || exit
+-emsdk activate 4.0.8 >/dev/null || exit
++PINNED_EMCC="$EMSDK/upstream/emscripten/emcc"
++if [ -x "$PINNED_EMCC" ] && "$PINNED_EMCC" --version 2>/dev/null | head -1 | grep -q '4\.0\.8'
++then
++	export PATH="$EMSDK/upstream/emscripten:$EMSDK/upstream/bin:$PATH"
++	export EM_CONFIG="$EMSDK/.emscripten"
++	export EMSDK_NODE="$(command -v node)"
++else
++	emsdk install 4.0.8 >/dev/null || exit
++	emsdk activate 4.0.8 >/dev/null || exit
++fi
+ 
+ mkdir -p dist
+ rm -f dist/*

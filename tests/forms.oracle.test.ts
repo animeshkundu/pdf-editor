@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -43,6 +43,34 @@ function qpdfJson(data: ArrayBuffer, name: string): string {
   });
   expect(result.status, result.stderr || result.stdout).toBe(0);
   return result.stdout;
+}
+
+function qpdfQdf(data: ArrayBuffer, name: string): string {
+  const input = join(workDir, `${name}.pdf`);
+  const output = join(workDir, `${name}.qdf.pdf`);
+  writeFileSync(input, new Uint8Array(data));
+  const result = spawnSync(qpdf, ['--qdf', '--object-streams=disable', input, output], {
+    encoding: 'utf8',
+    shell: false,
+  });
+  expect(result.status, result.stderr || result.stdout).toBe(0);
+  return readFileSync(output, 'latin1');
+}
+
+function qdfObjectForField(qdf: string, name: string): string {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const object = qdf
+    .split(/(?=^\d+ 0 obj\n)/m)
+    .find((candidate) => new RegExp(`/T \\(${escaped}\\)`).test(candidate));
+  if (!object) throw new Error(`qpdf did not serialize field "${name}".`);
+  return object;
+}
+
+function qdfObjectNumberForField(qdf: string, name: string): string {
+  const object = qdfObjectForField(qdf, name);
+  const objectNumber = object.match(/^(\d+) 0 obj/m)?.[1];
+  if (!objectNumber) throw new Error(`qpdf did not give field "${name}" an object number.`);
+  return objectNumber;
 }
 
 async function pdfJsFields(data: ArrayBuffer) {
@@ -278,16 +306,20 @@ describe('FORM-001/FORM-009/FORM-022 AcroForm oracle', () => {
       });
       const formJson = qpdfJson(output, 'authored-form-resources.pdf');
       expect(formJson).toContain('"/DR"');
-      expect(formJson).toContain('"/Helv"');
+      expect(formJson).toContain('"/FormHelv"');
       expect(formJson).toContain('"/BaseFont": "/Helvetica"');
       expect(formJson).toContain('"/Encoding": "/WinAnsiEncoding"');
+      const fieldObject = qdfObjectForField(qpdfQdf(output, 'authored-form-da'), 'full_name');
+      expect(fieldObject.match(/\/DA\b/g)).toHaveLength(1);
+      expect(fieldObject).toMatch(/\/FormHelv 12 Tf 0 0 0 rg/);
       const annotations = await pdfJsAnnotations(output);
       expect(annotations).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             fieldName: 'full_name',
+            hasAppearance: true,
             defaultAppearanceData: expect.objectContaining({
-              fontName: 'Helv',
+              fontName: 'FormHelv',
               fontSize: 12,
             }),
           }),
@@ -334,7 +366,138 @@ describe('FORM-001/FORM-009/FORM-022 AcroForm oracle', () => {
         position: 1,
         steps: ['Create text field'],
       });
+
       expect(formMutations.listFields(document)).toHaveLength(1);
+    } finally {
+      document.destroy();
+    }
+  });
+
+  it('writes all currently bindable field types for independent readers', async () => {
+    const document = createDocument();
+    try {
+      journalOperation(
+        document,
+        'Create supported field types',
+        () => undefined,
+        (arena) => {
+          const fields = [
+            { name: 'plain', type: 'text' as const },
+            { name: 'multiline', type: 'text' as const, multiline: true },
+            { name: 'password', type: 'text' as const, password: true },
+            { name: 'comb', type: 'text' as const, comb: true },
+            { name: 'check', type: 'checkbox' as const },
+            { name: 'radio', type: 'radio' as const },
+            { name: 'combo', type: 'combo' as const, options: ['red', 'blue'] },
+            { name: 'list', type: 'list' as const, options: ['one', 'two'] },
+            { name: 'multi', type: 'list' as const, multiple: true, options: ['one', 'two'] },
+            { name: 'button', type: 'button' as const },
+            { name: 'signature', type: 'signature' as const },
+          ];
+          fields.forEach((field, index) =>
+            formMutations.createFormField(arena, document, {
+              pageIndex: 0,
+              rect: [72, 650 - index * 38, 300, 680 - index * 38],
+              ...field,
+            }),
+          );
+        },
+      );
+      journalOperation(
+        document,
+        'Fill supported values',
+        () => undefined,
+        (arena) =>
+          formMutations.setFieldValues(arena, document, {
+            plain: 'Ada',
+            multiline: 'Ada\nLovelace',
+            password: 'secret',
+            comb: '1234',
+            check: true,
+            radio: true,
+            combo: 'blue',
+            list: 'two',
+          }),
+      );
+      expect(() =>
+        journalOperation(
+          document,
+          'Refuse multi-select protocol mismatch',
+          () => undefined,
+          (arena) => formMutations.setFieldValue(arena, document, 'multi', 'one'),
+        ),
+      ).toThrow('one value only');
+      expect(() =>
+        journalOperation(
+          document,
+          'Refuse button submission invention',
+          () => undefined,
+          (arena) => formMutations.setFieldValue(arena, document, 'button', 'submit'),
+        ),
+      ).toThrow('cannot be filled');
+      expect(formMutations.listFields(document)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'comb', value: '1234' }),
+          expect.objectContaining({ name: 'multi', options: ['one', 'two'] }),
+          expect.objectContaining({ name: 'signature', value: '' }),
+        ]),
+      );
+
+      const output = saveDocument(document, SAFE_FULL_SAVE);
+      expectQpdfAccepts(output, 'all-field-types.pdf');
+      expect(await pdfJsFields(output)).toMatchObject({
+        plain: [expect.objectContaining({ value: 'Ada' })],
+        multiline: [expect.objectContaining({ value: 'Ada\nLovelace' })],
+        combo: [expect.objectContaining({ value: 'blue' })],
+        list: [expect.objectContaining({ value: 'two' })],
+      });
+      expect(
+        (await pdfJsAnnotations(output)).filter(
+          (annotation) => annotation.subtype === 'Widget',
+        ),
+      ).toHaveLength(11);
+    } finally {
+      document.destroy();
+    }
+  });
+
+  it('serializes authored tab order in AcroForm, annotation order, and /Tabs', () => {
+    const document = createDocument();
+    try {
+      journalOperation(
+        document,
+        'Create tab fields',
+        () => undefined,
+        (arena) => {
+          for (const [index, name] of ['beta', 'alpha', 'gamma'].entries()) {
+            formMutations.createFormField(arena, document, {
+              pageIndex: 0,
+              name,
+              type: 'text',
+              rect: [72, 650 - index * 38, 300, 680 - index * 38],
+            });
+          }
+        },
+      );
+      journalOperation(
+        document,
+        'Set authored tab order',
+        () => undefined,
+        (arena) => formMutations.reorderFormFields(arena, document, ['gamma', 'alpha', 'beta']),
+      );
+      const output = saveDocument(document, SAFE_FULL_SAVE);
+      expectQpdfAccepts(output, 'authored-tab-order.pdf');
+      const qdf = qpdfQdf(output, 'authored-tab-order');
+      const pageObject = qdf.match(
+        /\d+ 0 obj\n<<[\s\S]*?\/Annots\s*\[([\s\S]*?)\][\s\S]*?\/Tabs \/A[\s\S]*?>>\nendobj/,
+      );
+      expect(pageObject).not.toBeNull();
+      const annotationReferences = [...(pageObject?.[1] ?? '').matchAll(/(\d+) 0 R/g)].map(
+        (match) => match[1],
+      );
+      expect(annotationReferences.slice(0, 3)).toEqual(
+        ['gamma', 'alpha', 'beta'].map((name) => qdfObjectNumberForField(qdf, name)),
+      );
     } finally {
       document.destroy();
     }

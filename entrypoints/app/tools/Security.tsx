@@ -29,6 +29,8 @@ export default function Security({
   const [confirmRewrite, setConfirmRewrite] = useState(false);
   const [redactionOutcome, setRedactionOutcome] = useState<string | null>(null);
   const [applyingRedactions, setApplyingRedactions] = useState(false);
+  const security = state?.security;
+  const rc4ReadOnly = security?.encryption.algorithm === 'rc4';
 
   useEffect(() => {
     void engine
@@ -49,6 +51,83 @@ export default function Security({
         </div>
         <FeatureBadge status="LOCAL" />
       </div>
+      {rc4ReadOnly ? (
+        <div className="warning-card" role="alert">
+          <strong>
+            Weak RC4 encryption · read-only <FeatureBadge status="DEGRADED" />
+          </strong>
+          <p>
+            {security.encryption.disclosure ??
+              'RC4 encryption is broken. This PDF is open for reading only.'}
+          </p>
+          <p>
+            Protection dictionary: V={security.encryption.version ?? 'unknown'}, R=
+            {security.encryption.revision ?? 'unknown'}. Output below is restricted to a full
+            garbage-collecting AES-256 replacement. RC4 is never written.
+          </p>
+        </div>
+      ) : null}
+      {security?.signatures.length ? (
+        <section className="sanitize-card" aria-label="Signature coverage">
+          <div>
+            <strong>
+              Signature fields <FeatureBadge status="DEGRADED" />
+            </strong>
+            <p>
+              Coverage and later-revision evidence are shown separately. This is not
+              cryptographic validation and does not classify changes against DocMDP or field
+              locks.
+            </p>
+          </div>
+          <ol className="capability-list compact">
+            {security.signatures.map((signature, index) => (
+              <li key={`${signature.name}:${index}`}>
+                <strong>{signature.name}</strong>
+                <p>{signature.signed ? 'Signed field' : 'Unsigned signature field'}</p>
+                {signature.coveredRanges.length ? (
+                  <>
+                    <p>
+                      Covered bytes: {signature.coveredBytes.toLocaleString()} across{' '}
+                      {signature.coveredRanges.length}{' '}
+                      {signature.coveredRanges.length === 1 ? 'range' : 'ranges'}.
+                    </p>
+                    <ul>
+                      {signature.coveredRanges.map((range, rangeIndex) => (
+                        <li key={`${range.offset}:${range.length}:${rangeIndex}`}>
+                          [{range.offset.toLocaleString()}, {range.end.toLocaleString()}) ·{' '}
+                          {range.length.toLocaleString()} bytes
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+                {signature.signed ? (
+                  <p>
+                    Current document: {signature.documentRevisions}{' '}
+                    {signature.documentRevisions === 1 ? 'revision' : 'revisions'}.{' '}
+                    {signature.laterChanges === true
+                      ? `${signature.laterBytes?.toLocaleString() ?? 'Unknown'} later bytes exist outside the signed revision.`
+                      : signature.laterChanges === false
+                        ? 'No later bytes exist after the signed revision.'
+                        : 'Later-byte evidence is unavailable.'}
+                  </p>
+                ) : null}
+                {signature.changeHistoryValidationCode !== null ? (
+                  <p>
+                    Raw change-history evidence code: {signature.changeHistoryValidationCode}.
+                    No semantic change classification is claimed.
+                  </p>
+                ) : null}
+                {signature.issues.map((issue) => (
+                  <p key={issue} role="alert">
+                    {issue}
+                  </p>
+                ))}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
       {state?.unappliedRedactions ? (
         <div className="warning-card" role="alert">
           <strong>
@@ -173,7 +252,7 @@ export default function Security({
               mode: 'full',
               garbage: 'deduplicate',
               compress: true,
-              encrypt: encryption,
+              encrypt: rc4ReadOnly ? 'aes-256' : encryption,
               'user-password': userPassword,
               'owner-password': ownerPassword,
               permissions: ['print', 'copy', 'annotate', 'form', 'accessibility'],
@@ -191,7 +270,8 @@ export default function Security({
         <label>
           <span>Encryption</span>
           <select
-            value={encryption}
+            value={rc4ReadOnly ? 'aes-256' : encryption}
+            disabled={rc4ReadOnly}
             onChange={(event) => setEncryption(event.target.value as typeof encryption)}
           >
             <option value="aes-256">AES-256</option>
@@ -214,7 +294,9 @@ export default function Security({
             onChange={(event) => setOwnerPassword(event.target.value)}
           />
         </label>
-        <button type="submit">Create encrypted copy</button>
+        <button type="submit">
+          {rc4ReadOnly ? 'Replace RC4 with AES-256 copy' : 'Create encrypted copy'}
+        </button>
       </form>
       <div className="sanitize-card">
         <div>

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -9,6 +9,7 @@ import {
   assertDocumentPermission,
   assertEncryptionChangeAllowed,
   authenticateDocument,
+  authenticateDocumentWithSecurity,
 } from '../lib/engine/worker/authentication';
 
 const workDir = mkdtempSync(join(tmpdir(), 'pdf-editor-encryption-'));
@@ -215,4 +216,163 @@ describe('SIGN-020/SIGN-022 password encryption oracle', () => {
       }
     },
   );
+
+  it('SIGN-024 opens RC4 read-only and replaces it with garbage-collected AES-256', async () => {
+    const sourceDocument = createDocument();
+    let plain: ArrayBuffer;
+    try {
+      plain = saveDocument(sourceDocument, {
+        mode: 'full',
+        garbage: 'deduplicate',
+        compress: true,
+        encrypt: 'none',
+      });
+    } finally {
+      sourceDocument.destroy();
+    }
+
+    const plainPath = join(workDir, 'rc4-source.pdf');
+    const rc4Path = join(workDir, 'rc4.pdf');
+    writeFileSync(plainPath, new Uint8Array(plain));
+    const encrypt = spawnSync(
+      qpdf,
+      [
+        '--allow-weak-crypto',
+        '--encrypt',
+        'reader-secret',
+        'owner-secret',
+        '128',
+        '--use-aes=n',
+        '--',
+        plainPath,
+        rc4Path,
+      ],
+      { encoding: 'utf8', shell: false },
+    );
+    expect(encrypt.status, encrypt.stderr || encrypt.stdout).toBe(0);
+
+    const rc4V4Path = join(workDir, 'rc4-v4.pdf');
+    const encryptV4 = spawnSync(
+      qpdf,
+      [
+        '--allow-weak-crypto',
+        '--encrypt',
+        'reader-secret',
+        'owner-secret',
+        '128',
+        '--use-aes=n',
+        '--force-V4',
+        '--',
+        plainPath,
+        rc4V4Path,
+      ],
+      { encoding: 'utf8', shell: false },
+    );
+    expect(encryptV4.status, encryptV4.stderr || encryptV4.stdout).toBe(0);
+    const rc4V4Bytes = readFileSync(rc4V4Path);
+    const openedV4 = mupdf.Document.openDocument(
+      new Uint8Array(rc4V4Bytes.buffer, rc4V4Bytes.byteOffset, rc4V4Bytes.byteLength),
+      'application/pdf',
+    );
+    try {
+      expect(
+        authenticateDocumentWithSecurity(openedV4, 'reader-secret').encryption,
+      ).toMatchObject({
+        algorithm: 'rc4',
+        version: 4,
+        revision: 4,
+        readOnly: true,
+      });
+    } finally {
+      openedV4.destroy();
+    }
+
+    const rc4Bytes = readFileSync(rc4Path);
+    const opened = mupdf.Document.openDocument(
+      new Uint8Array(rc4Bytes.buffer, rc4Bytes.byteOffset, rc4Bytes.byteLength),
+      'application/pdf',
+    );
+    let upgraded: ArrayBuffer;
+    try {
+      const authentication = authenticateDocumentWithSecurity(opened, 'reader-secret');
+      expect(authentication.role).toBe('user');
+      expect(authentication.encryption).toMatchObject({
+        protected: true,
+        algorithm: 'rc4',
+        readOnly: true,
+      });
+      expect(authentication.encryption.disclosure).toMatch(/broken RC4 encryption/i);
+      if (!(opened instanceof mupdf.PDFDocument)) throw new Error('RC4 fixture is not a PDF.');
+
+      expect(() =>
+        saveDocument(
+          opened,
+          {
+            mode: 'full',
+            garbage: 'deduplicate',
+            compress: true,
+            encrypt: 'keep',
+          },
+          'reader-secret',
+        ),
+      ).toThrow(/RC4 encryption is broken and read-only/);
+      expect(() =>
+        saveDocument(opened, {
+          mode: 'full',
+          garbage: 'none',
+          compress: true,
+          encrypt: 'aes-256',
+          'user-password': 'new-reader-secret',
+          'owner-password': 'new-owner-secret',
+        }),
+      ).toThrow(/full garbage-collecting AES-256/);
+      expect(() =>
+        saveDocument(opened, {
+          mode: 'full',
+          garbage: 'deduplicate',
+          compress: true,
+          encrypt: 'aes-128',
+          'user-password': 'new-reader-secret',
+          'owner-password': 'new-owner-secret',
+        }),
+      ).toThrow(/full garbage-collecting AES-256/);
+
+      upgraded = saveDocument(opened, {
+        mode: 'full',
+        garbage: 'all',
+        compress: true,
+        encrypt: 'aes-256',
+        'user-password': 'new-reader-secret',
+        'owner-password': 'new-owner-secret',
+        permissions: ['print', 'form', 'accessibility'],
+      });
+    } finally {
+      opened.destroy();
+    }
+
+    const upgradedPath = join(workDir, 'rc4-upgraded-aes-256.pdf');
+    writeFileSync(upgradedPath, new Uint8Array(upgraded));
+    const check = spawnSync(
+      qpdf,
+      [qpdfPasswordOption('new-reader-secret'), '--check', upgradedPath],
+      { encoding: 'utf8', shell: false },
+    );
+    expect(check.status, check.stderr || check.stdout).toBe(0);
+    const encryption = spawnSync(
+      qpdf,
+      [qpdfPasswordOption('new-reader-secret'), '--show-encryption', upgradedPath],
+      { encoding: 'utf8', shell: false },
+    );
+    expect(encryption.status, encryption.stderr).toBe(0);
+    expect(encryption.stdout).toContain('AESv3');
+    expect(encryption.stdout).not.toMatch(/RC4/i);
+
+    const pdfJsTask = getDocument({
+      data: new Uint8Array(upgraded.slice(0)),
+      password: 'new-reader-secret',
+    });
+    const pdfJsDocument = await pdfJsTask.promise;
+    expect(pdfJsDocument.numPages).toBe(1);
+    await pdfJsTask.destroy();
+  });
 });

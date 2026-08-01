@@ -24,6 +24,32 @@ const secondSearchHit: SearchHit = {
   pageLabel: 'i',
   quads: [[4, 20, 28, 20, 28, 30, 4, 30]],
 };
+const emptySecurity: EngineTypes['DocumentSecurityInspection'] = {
+  encryption: {
+    protected: false,
+    algorithm: 'none',
+    version: null,
+    revision: null,
+    readOnly: false,
+  },
+  signatures: [],
+  limitations: [
+    'No timestamping',
+    'No fresh revocation checking',
+    'No long-term validation (LTV)',
+  ],
+};
+
+function protectedEncryption(
+  authenticatedAs: 'user' | 'owner',
+): NonNullable<EngineTypes['DocumentInfo']['encryption']> {
+  return {
+    protected: true,
+    authenticatedAs,
+    algorithm: 'aes-256',
+    readOnly: false,
+  };
+}
 
 function makeEngine(
   title = 'Local contract',
@@ -80,6 +106,7 @@ function makeEngine(
       fidelity: 'DEGRADED' as const,
       analysis: 'inferred' as const,
       fontName: 'F1',
+      mechanism: 'redaction-overlay' as const,
     })),
     addAnnotations: vi.fn(async () => mutation),
     updateAnnotation: vi.fn(async () => mutation),
@@ -104,6 +131,12 @@ function makeEngine(
       changed: 1,
       added: 0,
       removed: 0,
+      moved: 0,
+      truncated: false,
+      comparedCurrentPages: 1,
+      comparedIncomingPages: 1,
+      totalCurrentPages: 1,
+      totalIncomingPages: 1,
       pages: [
         {
           pageIndex: 0,
@@ -114,6 +147,8 @@ function makeEngine(
           incomingCharacters: 24,
           dimensionsChanged: false,
           rasterReviewRecommended: false,
+          ocrRequired: false,
+          similarity: 0.5,
         },
       ],
     })),
@@ -149,7 +184,7 @@ function makeEngine(
     })),
     authenticateOwner: vi.fn(async () => ({
       ...info,
-      encryption: { protected: true, authenticatedAs: 'owner' as const },
+      encryption: protectedEncryption('owner'),
     })),
     updateMetadata: vi.fn(async () => mutation),
     save: vi.fn(async () => new ArrayBuffer(0)),
@@ -194,6 +229,7 @@ function makeEngine(
     getOutputState: vi.fn(async () => ({
       unappliedRedactions: 0,
       signatures: 0,
+      security: emptySecurity,
       canPersist: false,
     })),
     subscribe: vi.fn(() => () => undefined),
@@ -392,10 +428,7 @@ describe('Phase 3 viewer acceptance', () => {
   });
 
   it('SIGN-019 unlocks owner-only protection from the Protect panel', async () => {
-    engine = makeEngine('Owner-only PDF', [], {
-      protected: true,
-      authenticatedAs: 'user',
-    });
+    engine = makeEngine('Owner-only PDF', [], protectedEncryption('user'));
     engineFactory = vi.fn(async () => engine);
     await act(async () => root.render(createElement(App, { engineFactory })));
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
@@ -457,11 +490,38 @@ describe('Phase 3 viewer acceptance', () => {
     expect(container.textContent).toContain('OPEN');
   });
 
+  it('H1/H2 keeps excluded conversion and comparison paths labelled at their controls', async () => {
+    await act(async () => root.render(createElement(App, { engineFactory })));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(['%PDF-1.7'], 'contract.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => buttonNamed(container, 'Convert').click());
+    const conversionPanel = container.querySelector('[aria-label="Convert and validate"]');
+    expect(conversionPanel?.textContent).toContain('CONV-020');
+    expect(conversionPanel?.textContent).toContain('EXCLUDED');
+    expect(conversionPanel?.textContent).toContain(
+      'this build has no independently accepted writer',
+    );
+
+    await act(async () => buttonNamed(container, 'Compare').click());
+    const comparePanel = container.querySelector('[aria-label="Compare documents"]');
+    expect(comparePanel?.textContent).toContain('Scanned-against-digital comparison');
+    expect(comparePanel?.textContent).toContain('EXCLUDED');
+    expect(comparePanel?.textContent).toContain('never reported as a comparison result');
+  });
+
   it('SIGN-031 makes applying redactions reachable beside marks and unblocks output', async () => {
     let applied = false;
     engine.getOutputState = vi.fn(async () => ({
       unappliedRedactions: applied ? 0 : 1,
       signatures: 0,
+      security: emptySecurity,
       canPersist: true,
     }));
     engine.applyRedactions = vi.fn(async () => {
@@ -506,6 +566,7 @@ describe('Phase 3 viewer acceptance', () => {
     engine.getOutputState = vi.fn(async () => ({
       unappliedRedactions: 1,
       signatures: 0,
+      security: emptySecurity,
       canPersist: true,
     }));
     engine.applyRedactions = vi.fn(async () => {

@@ -9,7 +9,10 @@
     "0001-buffered-processor-and-filter-export.patch",
     "0002-typescript-processor-bindings.patch",
     "0003-observable-javascript.patch",
-    "0004-bounded-javascript-execution.patch"
+    "0004-bounded-javascript-execution.patch",
+    "0005-signature-introspection-export.patch",
+    "0006-use-active-pinned-emscripten.patch",
+    "0007-signature-introspection-bindings.patch"
   ],
   "overlays": [
     "vendor/mupdf-wasm/patches/files/mupdf-js-processor.c"

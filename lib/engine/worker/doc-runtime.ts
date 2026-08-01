@@ -9,6 +9,9 @@ import {
   assertRenderSize,
   type Budget,
 } from '../../core/limits';
+import { classifyPageSequence } from '../../compare/page-sequence';
+import { rasterDiff } from '../../compare/raster-diff';
+import { diffWords } from '../../compare/text-diff';
 import { DebouncedPersistence, OpfsSnapshotStore } from '../../persistence/opfs';
 import type { EngineTypes } from '../port';
 import workerRuntime, { withArenaSync, type Arena } from './arena';
@@ -31,6 +34,7 @@ import {
   DocumentAuthenticationError,
   type AuthenticationRole,
 } from './authentication';
+import { inspectDocumentEncryption, inspectDocumentSecurity } from './security';
 
 type BoundedPDFDocument = mupdf.PDFDocument & {
   setJSExecutionEnabled(enabled: boolean): void;
@@ -57,6 +61,37 @@ const DOCUMENT_KEY = 'document:active';
 const MAX_SELECTION_QUADS = 4_096;
 const MAX_JAVASCRIPT_EVENTS = 200;
 const MAX_JAVASCRIPT_EVENT_DETAIL = 4_096;
+const COMPARISON_RASTER_SIZE = 128;
+const READ_ONLY_MUTATIONS: ReadonlySet<EngineRequest['operation']> = new Set([
+  'addAnnotation',
+  'editExistingText',
+  'addAnnotations',
+  'updateAnnotation',
+  'deleteAnnotation',
+  'reorderPages',
+  'rotatePages',
+  'insertBlankPage',
+  'deletePages',
+  'setPageBoxes',
+  'setPageLabels',
+  'mergeDocument',
+  'composePages',
+  'setFieldValue',
+  'setFieldValues',
+  'createFormField',
+  'updateFormField',
+  'updateFormFields',
+  'reorderFormFields',
+  'resetForm',
+  'setJavaScriptAction',
+  'deleteJavaScriptAction',
+  'updateMetadata',
+  'applyRedactions',
+  'redactPages',
+  'sanitize',
+  'undo',
+  'redo',
+]);
 const cancelled = new Set<number>();
 const javaScriptEvents: EngineTypes['JavaScriptEvent'][] = [];
 let activeJavaScriptEvents: EngineTypes['JavaScriptEvent'][] | null = null;
@@ -278,6 +313,8 @@ function documentInfo(assertLimits = true): DocumentInfo {
       pageInfo(index, arena.keep(document.loadPage(index)), iosBudget, assertLimits),
     ),
   );
+  const pdfDocument = asPdfDocument();
+  const encryption = pdfDocument ? inspectDocumentEncryption(pdfDocument) : null;
   return {
     name: documentName,
     title: document.getMetaData(mupdf.Document.META_INFO_TITLE) || documentName,
@@ -298,6 +335,12 @@ function documentInfo(assertLimits = true): DocumentInfo {
           encryption: {
             protected: true,
             authenticatedAs: authenticationRole,
+            algorithm:
+              encryption?.algorithm === 'none'
+                ? 'unknown'
+                : (encryption?.algorithm ?? 'unknown'),
+            readOnly: encryption?.readOnly ?? false,
+            ...(encryption?.disclosure ? { disclosure: encryption.disclosure } : {}),
           },
         }),
   };
@@ -376,27 +419,29 @@ async function openDocument(
     if (document instanceof mupdf.PDFDocument) {
       document.setJSEventListener(recordJavaScriptEvent);
       document.enableJournal();
-      const projectedBytes = projectedJavaScriptMutationBytes(document, 'any');
-      if (projectedBytes > 0) assertMutationCost(projectedBytes);
-      const before = document.getJournal();
-      document.beginOperation('Run document JavaScript');
-      try {
-        withJavaScriptExecution(document, () => document.enableJS());
-        document.endOperation();
-      } catch (error) {
-        document.abandonOperation();
-        throw error;
+      if (!inspectDocumentEncryption(document).readOnly) {
+        const projectedBytes = projectedJavaScriptMutationBytes(document, 'any');
+        if (projectedBytes > 0) assertMutationCost(projectedBytes);
+        const before = document.getJournal();
+        document.beginOperation('Run document JavaScript');
+        try {
+          withJavaScriptExecution(document, () => document.enableJS());
+          document.endOperation();
+        } catch (error) {
+          document.abandonOperation();
+          throw error;
+        }
+        if (!document.isJSSupported()) {
+          throw new Error('This engine build does not provide PDF JavaScript.');
+        }
+        const after = document.getJournal();
+        openedWithJavaScriptMutation =
+          after.position !== before.position || after.steps.length !== before.steps.length;
+        if (openedWithJavaScriptMutation) {
+          journalRevision = 1;
+        }
+        openedJavaScriptBytes = projectedBytes;
       }
-      if (!document.isJSSupported()) {
-        throw new Error('This engine build does not provide PDF JavaScript.');
-      }
-      const after = document.getJournal();
-      openedWithJavaScriptMutation =
-        after.position !== before.position || after.steps.length !== before.steps.length;
-      if (openedWithJavaScriptMutation) {
-        journalRevision = 1;
-      }
-      openedJavaScriptBytes = projectedBytes;
     }
     const info = documentInfo();
     await configurePersistence(
@@ -574,6 +619,7 @@ function outputState(): OutputState {
   return {
     unappliedRedactions: redactionMutations.countUnappliedRedactions(document),
     signatures: redactionMutations.signatureCount(document),
+    security: inspectDocumentSecurity(document, documentSize.bytes),
     canPersist:
       persistenceAvailability.event === 'persistence-status' &&
       persistenceAvailability.available,
@@ -721,53 +767,74 @@ function inspectIncomingDocument(
   });
 }
 
-function pageComparison(
-  current: mupdf.PDFDocument | null,
-  incoming: mupdf.PDFDocument,
-  pageIndex: number,
-): EngineTypes['CompareResult']['pages'][number] {
-  if (!current) {
-    return withArenaSync((arena) => {
-      const page = arena.keep(incoming.loadPage(pageIndex));
+interface ComparisonPage {
+  readonly pageIndex: number;
+  readonly label: string;
+  readonly text: string;
+  readonly bounds: EngineTypes['PdfRect'];
+}
+
+function comparisonPages(document: mupdf.PDFDocument): ComparisonPage[] {
+  return Array.from({ length: document.countPages() }, (_, pageIndex) =>
+    withArenaSync((arena) => {
+      const page = arena.keep(document.loadPage(pageIndex));
       const structuredText = arena.keep(page.toStructuredText());
-      const text = structuredText.asText();
       return {
         pageIndex,
-        status: 'added',
-        incomingLabel: page.getLabel() || String(pageIndex + 1),
-        currentCharacters: 0,
-        incomingCharacters: text.length,
-        dimensionsChanged: true,
-        rasterReviewRecommended: !text.trim(),
+        label: page.getLabel() || String(pageIndex + 1),
+        text: structuredText.asText(),
+        bounds: [...page.getBounds()],
       };
-    });
+    }),
+  );
+}
+
+function comparisonRaster(
+  arena: Arena,
+  document: mupdf.PDFDocument,
+  pageIndex: number,
+): Uint8ClampedArray {
+  assertRenderSize(COMPARISON_RASTER_SIZE, COMPARISON_RASTER_SIZE, activeBudget());
+  const page = arena.keep(document.loadPage(pageIndex));
+  const bounds = page.getBounds();
+  const pageWidth = Math.max(1, bounds[2] - bounds[0]);
+  const pageHeight = Math.max(1, bounds[3] - bounds[1]);
+  const scale = Math.min(
+    COMPARISON_RASTER_SIZE / pageWidth,
+    COMPARISON_RASTER_SIZE / pageHeight,
+  );
+  const renderedWidth = pageWidth * scale;
+  const renderedHeight = pageHeight * scale;
+  const matrix: mupdf.Matrix = [
+    scale,
+    0,
+    0,
+    scale,
+    -bounds[0] * scale + (COMPARISON_RASTER_SIZE - renderedWidth) / 2,
+    -bounds[1] * scale + (COMPARISON_RASTER_SIZE - renderedHeight) / 2,
+  ];
+  const pixmap = arena.keep(
+    new mupdf.Pixmap(
+      mupdf.ColorSpace.DeviceRGB,
+      [0, 0, COMPARISON_RASTER_SIZE, COMPARISON_RASTER_SIZE],
+      true,
+    ),
+  );
+  pixmap.clear(255);
+  const device = arena.keep(new mupdf.DrawDevice(mupdf.Matrix.identity, pixmap));
+  try {
+    page.run(device, matrix);
+  } finally {
+    device.close();
   }
-  return withArenaSync((arena) => {
-    const currentPage = arena.keep(current.loadPage(pageIndex));
-    const incomingPage = arena.keep(incoming.loadPage(pageIndex));
-    const currentStructuredText = arena.keep(currentPage.toStructuredText());
-    const incomingStructuredText = arena.keep(incomingPage.toStructuredText());
-    const currentText = currentStructuredText.asText();
-    const incomingText = incomingStructuredText.asText();
-    const currentBounds = currentPage.getBounds();
-    const incomingBounds = incomingPage.getBounds();
-    const dimensionsChanged = currentBounds.some(
-      (value, index) => Math.abs(value - (incomingBounds[index] ?? value)) > 0.001,
-    );
-    return {
-      pageIndex,
-      status:
-        currentText === incomingText && !dimensionsChanged
-          ? ('same' as const)
-          : ('changed' as const),
-      currentLabel: currentPage.getLabel() || String(pageIndex + 1),
-      incomingLabel: incomingPage.getLabel() || String(pageIndex + 1),
-      currentCharacters: currentText.length,
-      incomingCharacters: incomingText.length,
-      dimensionsChanged,
-      rasterReviewRecommended: !currentText.trim() || !incomingText.trim(),
-    };
-  });
+  return Uint8ClampedArray.from(pixmap.getPixels());
+}
+
+function boundsChanged(
+  current: EngineTypes['PdfRect'],
+  incoming: EngineTypes['PdfRect'],
+): boolean {
+  return current.some((value, index) => Math.abs(value - (incoming[index] ?? value)) > 0.001);
 }
 
 function compareDocument(name: string, data: ArrayBuffer): EngineTypes['CompareResult'] {
@@ -782,37 +849,75 @@ function compareDocument(name: string, data: ArrayBuffer): EngineTypes['CompareR
       throw new Error('The selected comparison source is not a PDF document.');
     }
     assertPageCount(incomingDocument.countPages(), activeBudget());
-    const overlap = Math.min(current.countPages(), incomingDocument.countPages());
-    const pages: EngineTypes['CompareResult']['pages'][number][] = [];
-    for (let pageIndex = 0; pageIndex < overlap; pageIndex += 1) {
-      pages.push(pageComparison(current, incomingDocument, pageIndex));
-    }
-    for (let pageIndex = overlap; pageIndex < incomingDocument.countPages(); pageIndex += 1) {
-      pages.push(pageComparison(null, incomingDocument, pageIndex));
-    }
-    for (let pageIndex = overlap; pageIndex < current.countPages(); pageIndex += 1) {
-      const removed = withArenaSync((arena) => {
-        const page = arena.keep(current.loadPage(pageIndex));
-        const structuredText = arena.keep(page.toStructuredText());
-        const text = structuredText.asText();
+    const currentPages = comparisonPages(current);
+    const incomingPages = comparisonPages(incomingDocument);
+    const sequence = classifyPageSequence(currentPages, incomingPages);
+    const pages: EngineTypes['CompareResult']['pages'][number][] = sequence.pages.map(
+      (classification) => {
+        const currentPage =
+          classification.currentPageIndex === undefined
+            ? undefined
+            : currentPages[classification.currentPageIndex];
+        const incomingPage =
+          classification.status === 'deleted'
+            ? undefined
+            : incomingPages[classification.pageIndex];
+        const dimensionsChanged =
+          !currentPage ||
+          !incomingPage ||
+          boundsChanged(currentPage.bounds, incomingPage.bounds);
+        const textDiff =
+          currentPage && incomingPage && currentPage.text !== incomingPage.text
+            ? diffWords(currentPage.text, incomingPage.text)
+            : undefined;
+        const visualDifference =
+          currentPage && incomingPage
+            ? withArenaSync((rasterArena) =>
+                rasterDiff(
+                  comparisonRaster(rasterArena, current, currentPage.pageIndex),
+                  comparisonRaster(rasterArena, incomingDocument, incomingPage.pageIndex),
+                  COMPARISON_RASTER_SIZE,
+                  COMPARISON_RASTER_SIZE,
+                ),
+              )
+            : undefined;
         return {
-          pageIndex,
-          status: 'removed' as const,
-          currentLabel: page.getLabel() || String(pageIndex + 1),
-          currentCharacters: text.length,
-          incomingCharacters: 0,
-          dimensionsChanged: true,
-          rasterReviewRecommended: !text.trim(),
+          pageIndex: classification.pageIndex,
+          ...(classification.currentPageIndex === undefined
+            ? {}
+            : { currentPageIndex: classification.currentPageIndex }),
+          status: classification.status,
+          ...(classification.currentLabel === undefined
+            ? {}
+            : { currentLabel: classification.currentLabel }),
+          ...(classification.incomingLabel === undefined
+            ? {}
+            : { incomingLabel: classification.incomingLabel }),
+          currentCharacters: currentPage?.text.length ?? 0,
+          incomingCharacters: incomingPage?.text.length ?? 0,
+          dimensionsChanged,
+          rasterReviewRecommended:
+            classification.rasterReviewRecommended ||
+            Boolean(visualDifference?.exceedsThreshold),
+          ocrRequired: classification.ocrRequired,
+          similarity: classification.similarity,
+          ...(textDiff ? { textDiff } : {}),
+          ...(visualDifference ? { rasterDiff: visualDifference } : {}),
         };
-      });
-      pages.push(removed);
-    }
+      },
+    );
     return {
       incomingName: name,
-      same: pages.filter((page) => page.status === 'same').length,
-      changed: pages.filter((page) => page.status === 'changed').length,
-      added: pages.filter((page) => page.status === 'added').length,
-      removed: pages.filter((page) => page.status === 'removed').length,
+      same: sequence.same,
+      changed: sequence.changed,
+      added: sequence.inserted,
+      removed: sequence.deleted,
+      moved: sequence.moved,
+      truncated: sequence.truncated,
+      comparedCurrentPages: sequence.comparedCurrentPages,
+      comparedIncomingPages: sequence.comparedIncomingPages,
+      totalCurrentPages: sequence.totalCurrentPages,
+      totalIncomingPages: sequence.totalIncomingPages,
       pages,
     };
   });
@@ -921,6 +1026,19 @@ function validatePdfA(): EngineTypes['PdfAReport'] {
   });
 }
 
+function assertWritableRequest(request: EngineRequest): void {
+  const mutates =
+    READ_ONLY_MUTATIONS.has(request.operation) ||
+    (request.operation === 'extractPages' && request.payload.deleteOriginals);
+  if (!mutates) return;
+  const encryption = inspectDocumentEncryption(requirePdfDocument());
+  if (!encryption.readOnly) return;
+  throw new Error(
+    encryption.disclosure ??
+      'This document uses read-only encryption and cannot be changed. Create an AES-256 replacement copy first.',
+  );
+}
+
 scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
   const request = event.data;
   if (request.operation === 'cancel') {
@@ -930,6 +1048,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
 
   void (async () => {
     try {
+      if (request.operation !== 'open') assertWritableRequest(request);
       if (request.operation === 'open') {
         postSuccess(scope, request.id, await openDocument(request.payload));
       } else if (request.operation === 'authenticateOwner') {
@@ -938,16 +1057,9 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         postSuccess(scope, request.id, documentInfo());
       } else if (request.operation === 'snapshotForSearch') {
         assertOutputCost();
-        const data = saveDocument(
-          requirePdfDocument(),
-          {
-            mode: 'full',
-            garbage: 'none',
-            compress: true,
-            encrypt: 'none',
-          },
-          documentPassword,
-        );
+        const data = Uint8Array.from(
+          snapshotDocument(requirePdfDocument(), documentPassword),
+        ).buffer;
         postSuccess(scope, request.id, data, [data]);
       } else if (request.operation === 'renderTile') {
         const result = await renderTile(request.payload);
@@ -990,7 +1102,7 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         const signatures = redactionMutations.signatureCount(document);
         if (signatures > 0 && !request.payload.confirmSignatureInvalidation) {
           throw new Error(
-            'Existing-text edit requires confirmation because redacting the original glyphs invalidates existing signatures.',
+            'Existing-text edit requires confirmation because changing signed page content invalidates existing signatures.',
           );
         }
         const completed = journalOperation(
@@ -1003,13 +1115,28 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
             );
           },
           (arena) => {
-            const annotation = annotationMutations.editExistingText(
+            const splice = annotationMutations.spliceExistingText(
               arena,
               document,
               request.payload,
               preflight,
             );
-            return { annotation, info: documentInfo(false) };
+            if (splice.applied) {
+              return {
+                info: documentInfo(false),
+                mechanism: 'content-splice' as const,
+              };
+            }
+            return {
+              annotation: annotationMutations.editExistingText(
+                arena,
+                document,
+                request.payload,
+                preflight,
+              ),
+              info: documentInfo(false),
+              mechanism: 'redaction-overlay' as const,
+            };
           },
         );
         refreshSourceByteLength(document);
@@ -1017,10 +1144,11 @@ scope.addEventListener('message', (event: MessageEvent<EngineRequest>) => {
         const result: EngineTypes['ExistingTextEditReport'] = {
           document: completed.info,
           journal: journalState(document, ++journalRevision),
-          annotation: completed.annotation,
-          fidelity: 'DEGRADED',
+          ...(completed.annotation ? { annotation: completed.annotation } : {}),
+          fidelity: completed.mechanism === 'content-splice' ? 'LOCAL' : 'DEGRADED',
           analysis: 'inferred',
           fontName: preflight.fontName,
+          mechanism: completed.mechanism,
         };
         postSuccess(scope, request.id, result);
       } else if (request.operation === 'addAnnotations') {

@@ -8,31 +8,34 @@
     "submodulesSha256": "55efe81352c6723c81035fbb5ad8cabb5522e80eb8f918c8c59c0e71f7cc49dd"
   },
   "artifacts": {
-    "vendor/mupdf-wasm/dist/mupdf-wasm.wasm": "9e57a7ecf2a0e934c7b53923e1bf6738fb26362260d52354ed5e31d58d8f97ec",
-    "vendor/mupdf-wasm/dist/mupdf-wasm.js": "4d85280de3a1297d7d14ef3f3b7258f810d93fae3e7498296af1fa4effb4b853",
-    "vendor/mupdf-wasm/dist/mupdf-wasm.d.ts": "a0f38138be026b377e220ce6536cfb9807fefcc7dd9b4115d35ac542d0e44403",
-    "vendor/mupdf-wasm/dist/mupdf.js": "b906097a913cfcead8687fda53136bae45c881f92847f596292d6d3fabe4fd67",
-    "vendor/mupdf-wasm/dist/mupdf.d.ts": "72e596b5a92be751cc25f59082bfae80817e9bc6c90ef9062d1e12809bed1cbd"
+    "vendor/mupdf-wasm/dist/mupdf-wasm.wasm": "30da61a8c0db71327572e8dd6242ce4c026ec39ed5b322c23277b1a3967f394d",
+    "vendor/mupdf-wasm/dist/mupdf-wasm.js": "badcce34d043a0c350e695306a9cabd33ff8e36dcac24e3b63ef54135f0a32a7",
+    "vendor/mupdf-wasm/dist/mupdf-wasm.d.ts": "50e1ef8d58a88c454d4d2fc9965264e8d77ca532d0f1ee4d1178d4de6a500de2",
+    "vendor/mupdf-wasm/dist/mupdf.js": "5d5593c5ade9b87175e7aa973bf14dcbd9fae728b4f098258dd248a797b74e4f",
+    "vendor/mupdf-wasm/dist/mupdf.d.ts": "aff09107273d3e1d021f071e7969963471fa9bb41e10542c4f8c13d50173a33b"
   },
   "sources": {
-    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf-js-processor.c": "bb354baf092bc1d2f611c535b8bd9f211dd89b32a061fa0d5628a520d8ea8840",
-    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf-wasm.d.ts": "a0f38138be026b377e220ce6536cfb9807fefcc7dd9b4115d35ac542d0e44403",
+    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf-js-processor.c": "19e6ec40372163853e92b819e0ee1c4a8b3063f4ceb531d659506e8a413d6af9",
+    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf-wasm.d.ts": "50e1ef8d58a88c454d4d2fc9965264e8d77ca532d0f1ee4d1178d4de6a500de2",
     "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf.c": "45aa3d2f9ae9200c574290e82a8e9b944204688b40fae1b5aed29092d458ec5d",
-    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf.ts": "b3451abfec7a3dc2c10dc0ec0c1521109cf0483954a4ab8fc82164ce6744c231",
-    "vendor/mupdf-wasm/src/platform/wasm/tools/build.sh": "362257917de7aeab3eb5a00ebb8322550b112f5f102535b81679933dd020351c",
+    "vendor/mupdf-wasm/src/platform/wasm/lib/mupdf.ts": "49d6944427cf9cdd368e4c81c654622c3693a9a90ba4b82354496989cd592393",
+    "vendor/mupdf-wasm/src/platform/wasm/tools/build.sh": "26837311ca416f4c3451338a1f0c5ecd7d946fee875d868e0b71731fa877d2b4",
     "vendor/mupdf-wasm/src/platform/wasm/tools/compress.sh": "c88a89126ce951a34a0cdbb041f8ae15237419d6928c4c7e12659f379eccfd7a",
     "vendor/mupdf-wasm/src/platform/wasm/tools/make-wasm-type.js": "30449067538ebbb7185e983c24fbca4cd02dd9b72808e8d6dcb7c825114c0872"
   },
   "inputs": {
     "package.json": "9710f91347cee910e32f8d3bbd257d970dafb1b77f5731529b4dd18f6056b41c",
     "scripts/build-wasm.mjs": "07b08ce78ce5a6f0c3fd4f282994bb2dbc43784aa5d3707a635f1071085fbe79",
-    "scripts/vendor-mupdf.mjs": "130030e255e1bae204af311b68558989e51067ab851570b621b9138cb18d30fe",
+    "scripts/vendor-mupdf.mjs": "335e570099d04c87713ece3844abc14fc499f457d5868993d9d59c71ed127940",
     "vendor/mupdf-wasm/.emscripten-version": "f88f603fa5b8bbbdd6be6f7c9e65590259014ad190f144c673e89ecf536c1912",
     "vendor/mupdf-wasm/patches/0001-buffered-processor-and-filter-export.patch": "50e4315799be22e31b26f48fb9f799faa98d959a1259588c82bc40b74dd2879d",
     "vendor/mupdf-wasm/patches/0002-typescript-processor-bindings.patch": "f80fbde3f3d02aa3361218a760de258f186a52532c88ae8a3803f77e82182bce",
     "vendor/mupdf-wasm/patches/0003-observable-javascript.patch": "f84d52e85a45a6541954202f85c09d6bf787116796d767cf6d8e282b1b239e95",
     "vendor/mupdf-wasm/patches/0004-bounded-javascript-execution.patch": "5d9fd902707bf2ee602ee34cb88e8793e1d8aa0ce49a941a26be985156f189f4",
-    "vendor/mupdf-wasm/patches/files/mupdf-js-processor.c": "bb354baf092bc1d2f611c535b8bd9f211dd89b32a061fa0d5628a520d8ea8840",
-    "vendor/mupdf-wasm/source-stamp.json": "9b5d960533df574fe58b9b2bfb58772ab5294dcea771401b86ad936b1e6fd3f0"
+    "vendor/mupdf-wasm/patches/0005-signature-introspection-export.patch": "de4b22be8dbf000f6898b333733d8b909fdc2201d636b2c65f8226d00b30fd87",
+    "vendor/mupdf-wasm/patches/0006-use-active-pinned-emscripten.patch": "38f92f634fd1c80235677c91ceb67ddeec606ebd94206827c4d97f584c1ca223",
+    "vendor/mupdf-wasm/patches/0007-signature-introspection-bindings.patch": "c85313e18aa8a8cbb399449d5badbb7bb28185163efeacf145cc5cf9eff3e935",
+    "vendor/mupdf-wasm/patches/files/mupdf-js-processor.c": "19e6ec40372163853e92b819e0ee1c4a8b3063f4ceb531d659506e8a413d6af9",
+    "vendor/mupdf-wasm/source-stamp.json": "1198066d0bc151614c738717c874ee09a60e3e662038215e32723029abc94897"
   }
 }

@@ -34,25 +34,25 @@ Reintroducing anything in this section requires a superseding ADR.
 
 Present in `package.json` today.
 
-| Component                | Version | Source                              | License           | Purpose                                                        |
-| ------------------------ | ------: | ----------------------------------- | ----------------- | -------------------------------------------------------------- |
-| MuPDF                    |  1.28.0 | npm `mupdf`                         | AGPL-3.0-or-later | PDF engine: parse, repair, render, structured text, edit, save |
-| MuPDF WASM fork          |  1.28.0 | Artifex source, `vendor/mupdf-wasm` | AGPL-3.0-or-later | Processor/filter exports and observable MuJS form scripting    |
-| React                    |  19.2.7 | npm `react`                         | MIT               | Editor UI                                                      |
-| React DOM                |  19.2.7 | npm `react-dom`                     | MIT               | Browser renderer                                               |
-| Zustand                  |  5.0.14 | npm `zustand`                       | MIT               | Application state outside React's render path                  |
-| Radix Dialog             |  1.1.19 | npm `@radix-ui/react-dialog`        | MIT               | Accessible modal primitives                                    |
-| Radix Dropdown Menu      |  2.1.20 | npm `@radix-ui/react-dropdown-menu` | MIT               | Accessible menu primitives                                     |
-| Radix Popover            |  1.1.19 | npm `@radix-ui/react-popover`       | MIT               | Accessible popover primitives                                  |
-| Radix Scroll Area        |  1.2.14 | npm `@radix-ui/react-scroll-area`   | MIT               | Custom scroll containers                                       |
-| Radix Select             |   2.3.3 | npm `@radix-ui/react-select`        | MIT               | Accessible select primitives                                   |
-| Radix Slot               |   1.3.0 | npm `@radix-ui/react-slot`          | MIT               | Composition primitive for shadcn-style components              |
-| Radix Tabs               |  1.1.17 | npm `@radix-ui/react-tabs`          | MIT               | Accessible tab primitives                                      |
-| Radix Tooltip            |  1.2.12 | npm `@radix-ui/react-tooltip`       | MIT               | Accessible tooltip primitives                                  |
-| class-variance-authority |   0.7.1 | npm `class-variance-authority`      | Apache-2.0        | Component variant definitions                                  |
-| clsx                     |   2.1.1 | npm `clsx`                          | MIT               | Conditional class composition                                  |
-| tailwind-merge           |   3.6.0 | npm `tailwind-merge`                | MIT               | Tailwind class conflict resolution                             |
-| lucide-react             |  1.25.0 | npm `lucide-react`                  | ISC               | Icon set                                                       |
+| Component                | Version | Source                              | License           | Purpose                                                                |
+| ------------------------ | ------: | ----------------------------------- | ----------------- | ---------------------------------------------------------------------- |
+| MuPDF                    |  1.28.0 | npm `mupdf`                         | AGPL-3.0-or-later | PDF engine: parse, repair, render, structured text, edit, save         |
+| MuPDF WASM fork          |  1.28.0 | Artifex source, `vendor/mupdf-wasm` | AGPL-3.0-or-later | Processor/filter, signature-introspection, and observable MuJS exports |
+| React                    |  19.2.7 | npm `react`                         | MIT               | Editor UI                                                              |
+| React DOM                |  19.2.7 | npm `react-dom`                     | MIT               | Browser renderer                                                       |
+| Zustand                  |  5.0.14 | npm `zustand`                       | MIT               | Application state outside React's render path                          |
+| Radix Dialog             |  1.1.19 | npm `@radix-ui/react-dialog`        | MIT               | Accessible modal primitives                                            |
+| Radix Dropdown Menu      |  2.1.20 | npm `@radix-ui/react-dropdown-menu` | MIT               | Accessible menu primitives                                             |
+| Radix Popover            |  1.1.19 | npm `@radix-ui/react-popover`       | MIT               | Accessible popover primitives                                          |
+| Radix Scroll Area        |  1.2.14 | npm `@radix-ui/react-scroll-area`   | MIT               | Custom scroll containers                                               |
+| Radix Select             |   2.3.3 | npm `@radix-ui/react-select`        | MIT               | Accessible select primitives                                           |
+| Radix Slot               |   1.3.0 | npm `@radix-ui/react-slot`          | MIT               | Composition primitive for shadcn-style components                      |
+| Radix Tabs               |  1.1.17 | npm `@radix-ui/react-tabs`          | MIT               | Accessible tab primitives                                              |
+| Radix Tooltip            |  1.2.12 | npm `@radix-ui/react-tooltip`       | MIT               | Accessible tooltip primitives                                          |
+| class-variance-authority |   0.7.1 | npm `class-variance-authority`      | Apache-2.0        | Component variant definitions                                          |
+| clsx                     |   2.1.1 | npm `clsx`                          | MIT               | Conditional class composition                                          |
+| tailwind-merge           |   3.6.0 | npm `tailwind-merge`                | MIT               | Tailwind class conflict resolution                                     |
+| lucide-react             |  1.25.0 | npm `lucide-react`                  | ISC               | Icon set                                                               |
 
 ## Shipped: planned, not yet added
 

@@ -1,5 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const port = Number(process.env.PDF_EDITOR_E2E_PORT ?? 4180);
+if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+  throw new Error('PDF_EDITOR_E2E_PORT must be an integer from 1 through 65535.');
+}
+const origin = `http://127.0.0.1:${port}`;
+
 // E2E drives the PRODUCTION build, not the dev server. The engine's WASM loading,
 // worker instantiation and chunk splitting all behave differently under Vite's dev
 // transform than in a real build, and those are precisely the paths most likely to
@@ -12,13 +18,13 @@ export default defineConfig({
   retries: 0,
   reporter: [['line']],
   use: {
-    baseURL: 'http://127.0.0.1:4180/',
+    baseURL: `${origin}/`,
     headless: true,
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm run preview:site -- --port 4180',
-    url: 'http://127.0.0.1:4180/pdf/app/',
+    command: `npm run preview:site -- --port ${port}`,
+    url: `${origin}/pdf/app/`,
     reuseExistingServer: false,
     timeout: 60_000,
   },

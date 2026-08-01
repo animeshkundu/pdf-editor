@@ -75,12 +75,14 @@ boundary is what makes MuPDF's own journal a complete undo history
 
 ### 3. TypeScript: the application and guarded text replacement
 
-Everything else. The repository retains encoding-inversion analysis, but it is not a product
-write path: `/ToUnicode` cannot safely generate character codes, and the earlier broad path
-destroyed a CJK selection while reporting success. The shipped existing-text path is instead
-the narrow transactional mechanism in
+Everything else. `/ToUnicode` inversion is not a product write path: the earlier broad path
+destroyed a CJK selection while reporting success. Existing text has two guarded mechanisms.
+[ADR 0029](adr/0029-byte-span-content-splicing.md) directly replaces a same-length, unique,
+unescaped ASCII `Tj` byte span while preserving every other decoded stream byte. Inputs that
+cannot prove that path use
 [ADR 0028](adr/0028-guarded-content-removal-and-existing-text-replacement.md): native glyph
 removal, a standard-font appearance, strict refusal classes, and pre-commit postconditions.
+Non-ASCII, CID, multiline, multifont, and reflow remain refused.
 
 ## Module map
 

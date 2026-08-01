@@ -73,15 +73,15 @@ const EXPECTED_PATCHED_FILES = new Map([
   ],
   [
     'platform/wasm/lib/mupdf.ts',
-    'b3451abfec7a3dc2c10dc0ec0c1521109cf0483954a4ab8fc82164ce6744c231',
+    '49d6944427cf9cdd368e4c81c654622c3693a9a90ba4b82354496989cd592393',
   ],
   [
     'platform/wasm/lib/mupdf-js-processor.c',
-    'bb354baf092bc1d2f611c535b8bd9f211dd89b32a061fa0d5628a520d8ea8840',
+    '19e6ec40372163853e92b819e0ee1c4a8b3063f4ceb531d659506e8a413d6af9',
   ],
   [
     'platform/wasm/tools/build.sh',
-    '362257917de7aeab3eb5a00ebb8322550b112f5f102535b81679933dd020351c',
+    '26837311ca416f4c3451338a1f0c5ecd7d946fee875d868e0b71731fa877d2b4',
   ],
   [
     'include/mupdf/pdf/javascript.h',
@@ -200,19 +200,28 @@ if (patches.length === 0) {
   process.exit(0);
 }
 
-for (const patch of patches) {
-  const full = join(patchDir, patch);
-  // Check first so a re-run is idempotent rather than failing on already-applied work.
-  const already = spawnSync('git', ['apply', '--reverse', '--check', full], {
-    cwd: srcDir,
-    stdio: 'ignore',
-  });
-  if (already.status === 0) {
-    console.log(`[vendor-mupdf] Already applied: ${patch}`);
-    continue;
+const sourceAlreadyPatched = [...EXPECTED_PATCHED_FILES].every(
+  ([path, expected]) =>
+    existsSync(join(srcDir, path)) && sha256(readFileSync(join(srcDir, path))) === expected,
+);
+
+if (sourceAlreadyPatched) {
+  for (const patch of patches) console.log(`[vendor-mupdf] Already applied: ${patch}`);
+} else {
+  for (const patch of patches) {
+    const full = join(patchDir, patch);
+    // Check first so a partial patch sequence can resume without reapplying earlier patches.
+    const already = spawnSync('git', ['apply', '--reverse', '--check', full], {
+      cwd: srcDir,
+      stdio: 'ignore',
+    });
+    if (already.status === 0) {
+      console.log(`[vendor-mupdf] Already applied: ${patch}`);
+      continue;
+    }
+    console.log(`[vendor-mupdf] Applying ${patch}`);
+    run('git', ['apply', '--verbose', full], { cwd: srcDir });
   }
-  console.log(`[vendor-mupdf] Applying ${patch}`);
-  run('git', ['apply', '--verbose', full], { cwd: srcDir });
 }
 
 for (const [path, expected] of EXPECTED_PATCHED_FILES) {

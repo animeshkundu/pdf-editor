@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const previewOrigin = `http://127.0.0.1:${process.env.PDF_EDITOR_E2E_PORT ?? 4180}`;
 const taggedFixture = fileURLToPath(
   new URL('../fixtures/pdf-corpus/distiller-tagged-linearized.pdf', import.meta.url),
 );
@@ -17,6 +18,7 @@ const outlineFixture = fileURLToPath(
 const encryptedWorkDir = mkdtempSync(join(tmpdir(), 'pdf-editor-e2e-encrypted-'));
 const encryptedFixture = join(encryptedWorkDir, 'protected.pdf');
 const ownerOnlyFixture = join(encryptedWorkDir, 'owner-only.pdf');
+const rc4Fixture = join(encryptedWorkDir, 'rc4.pdf');
 
 test.beforeAll(() => {
   const setup = spawnSync(process.execPath, ['scripts/setup-qpdf.mjs', '--print-path'], {
@@ -45,6 +47,22 @@ test.beforeAll(() => {
     { encoding: 'utf8', shell: false },
   );
   if (ownerOnly.status !== 0) throw new Error(ownerOnly.stderr || ownerOnly.stdout);
+  const rc4 = spawnSync(
+    qpdf,
+    [
+      '--allow-weak-crypto',
+      '--encrypt',
+      'reader-secret',
+      'owner-secret',
+      '128',
+      '--use-aes=n',
+      '--',
+      taggedFixture,
+      rc4Fixture,
+    ],
+    { encoding: 'utf8', shell: false },
+  );
+  if (rc4.status !== 0) throw new Error(rc4.stderr || rc4.stdout);
 });
 
 test.afterAll(() => rmSync(encryptedWorkDir, { recursive: true, force: true }));
@@ -72,11 +90,7 @@ test('shell mounts and contacts nobody', async ({ page }) => {
   const foreign: string[] = [];
   page.on('request', (req) => {
     const url = new URL(req.url());
-    if (
-      url.origin !== 'http://127.0.0.1:4180' &&
-      url.protocol !== 'data:' &&
-      url.protocol !== 'blob:'
-    ) {
+    if (url.origin !== previewOrigin && url.protocol !== 'data:' && url.protocol !== 'blob:') {
       foreign.push(req.url());
     }
   });
@@ -133,6 +147,36 @@ test('SIGN-019 authenticates owner controls for an owner-only PDF', async ({ pag
   await expect(page.getByText('Owner controls unlocked for this local session.')).toBeVisible();
 });
 
+test('SIGN-024 opens RC4 read-only and offers only an AES-256 replacement', async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => consoleErrors.push(error.message));
+
+  await page.goto('/pdf/app/');
+  await page.getByLabel('Open PDF').setInputFiles(rc4Fixture);
+  await page.getByLabel('Document password').fill('reader-secret');
+  await page.getByRole('button', { name: 'Unlock' }).click();
+
+  await page.getByRole('button', { name: 'Forms' }).click();
+  await page.getByLabel('Unique name').fill('must-not-write');
+  await page.getByRole('button', { name: 'Create field' }).click();
+  await expect(page.getByRole('alert')).toContainText('broken RC4 encryption');
+  await page.getByRole('button', { name: 'Dismiss' }).click();
+
+  await page.getByRole('button', { name: 'Protect' }).click();
+  await expect(page.getByRole('alert')).toContainText('Weak RC4 encryption · read-only');
+  await expect(
+    page.getByRole('button', { name: 'Replace RC4 with AES-256 copy' }),
+  ).toBeVisible();
+  await expect(page.getByLabel('Encryption')).toHaveValue('aes-256');
+  await expect(page.getByLabel('Encryption')).toBeDisabled();
+  expect(consoleErrors).toEqual([]);
+});
+
 test('honours the density switch through the token layer', async ({ page }) => {
   await page.goto('/pdf/app/');
 
@@ -182,11 +226,7 @@ test('opens and renders a PDF through the production worker and WASM build', asy
   const foreign: string[] = [];
   page.on('request', (request) => {
     const url = new URL(request.url());
-    if (
-      url.origin !== 'http://127.0.0.1:4180' &&
-      url.protocol !== 'data:' &&
-      url.protocol !== 'blob:'
-    ) {
+    if (url.origin !== previewOrigin && url.protocol !== 'data:' && url.protocol !== 'blob:') {
       foreign.push(request.url());
     }
   });

@@ -132,3 +132,23 @@ test('FORM-021/AUTO-006/AUTO-007 authors and observes worker-local JavaScript', 
   await expect(page.getByLabel('Value for amount')).toHaveValue('');
   expect(consoleErrors).toEqual([]);
 });
+
+test('CMPR-004/CMPR-005 drives classified text and raster comparison in the worker', async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => consoleErrors.push(error.message));
+
+  await page.goto('/pdf/app/');
+  await page.getByLabel('Open PDF').setInputFiles(fixture);
+  await page.getByRole('button', { name: 'Compare' }).click();
+  await page.getByLabel('PDF to compare').setInputFiles(fixture);
+
+  await expect(page.getByText('1 same')).toBeVisible();
+  await expect(page.getByText('0 moved')).toBeVisible();
+  await expect(page.getByText('RMSE 0.000')).toBeVisible();
+  expect(consoleErrors).toEqual([]);
+});
