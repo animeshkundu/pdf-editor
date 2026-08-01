@@ -22,8 +22,9 @@ export function isTextEntryTarget(target: EventTarget | null): boolean {
   return (
     target.isContentEditable ||
     target instanceof HTMLInputElement ||
+    target instanceof HTMLSelectElement ||
     target instanceof HTMLTextAreaElement ||
-    target.getAttribute('role') === 'textbox'
+    ['textbox', 'combobox', 'searchbox'].includes(target.getAttribute('role') ?? '')
   );
 }
 

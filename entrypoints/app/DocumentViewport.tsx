@@ -159,6 +159,7 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
     const contentRef = useRef<HTMLDivElement>(null);
     const readingRef = useRef<HTMLDivElement>(null);
     const analysisRef = useRef<HTMLParagraphElement>(null);
+    const selectionStatusRef = useRef<HTMLParagraphElement>(null);
     const apiRef = useRef<DocumentViewportHandle | null>(null);
     const activeTool = useToolStore((state) => state.activeTool);
     const formFields = useToolStore((state) => state.formFields);
@@ -197,7 +198,8 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
       const content = contentRef.current;
       const reading = readingRef.current;
       const analysis = analysisRef.current;
-      if (!scroller || !content || !reading || !analysis) return;
+      const selectionStatus = selectionStatusRef.current;
+      if (!scroller || !content || !reading || !analysis || !selectionStatus) return;
 
       const pageNodes = new Map<number, PageNode>();
       const widestPagePoints = engine.info.pages.reduce(
@@ -222,9 +224,18 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
       let searchHighlight: HighlightState | null = null;
       let dragStart: { readonly pageIndex: number; readonly point: PdfPoint } | null = null;
       let readingController: AbortController | null = null;
+      let keyboardSelectionController: AbortController | null = null;
       let selectionMode = false;
+      let currentPageText = '';
+      let keyboardWordCount = 0;
+      let selectionGeneration = 0;
       viewportStore.getState().reset();
       viewportStore.getState().setZoom(zoom);
+      scroller.dataset.selectionMode = 'false';
+      if (selectionModeRef.current) {
+        selectionModeRef.current.textContent = 'Pan mode';
+        selectionModeRef.current.setAttribute('aria-pressed', 'false');
+      }
 
       const logicalScrollTop = () =>
         layout.logicalOffsetForScroll(scroller.scrollTop, scroller.clientHeight);
@@ -323,6 +334,41 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         return [page.bounds[0] + x / scale, page.bounds[1] + y / scale];
       };
 
+      const presentSelection = (
+        result: TextSelection,
+        pageIndex: number,
+        element: HTMLDivElement,
+      ) => {
+        selection = result;
+        if (result.truncated && analysisStatusRef.current) {
+          analysisStatusRef.current.textContent =
+            'DEGRADED · selection highlight limited to 4,096 regions';
+          analysisStatusRef.current.dataset.analysis = 'partial';
+        }
+        paintOverlays();
+        selectionStatus.textContent = result.text
+          ? `Selected text: ${result.text}`
+          : 'Text selection cleared.';
+        if (result.quads.length === 0) {
+          onSelectionAction(null);
+          return;
+        }
+        const bounds = result.quads.map(quadBounds);
+        const page = engine.info.pages[pageIndex];
+        if (!page) return;
+        const rect = element.getBoundingClientRect();
+        const scale = PDF_POINT_SCALE * zoom;
+        onSelectionAction({
+          selection: result,
+          viewportBounds: [
+            rect.left + (Math.min(...bounds.map((value) => value[0])) - page.bounds[0]) * scale,
+            rect.top + (Math.min(...bounds.map((value) => value[1])) - page.bounds[1]) * scale,
+            rect.left + (Math.max(...bounds.map((value) => value[2])) - page.bounds[0]) * scale,
+            rect.top + (Math.max(...bounds.map((value) => value[3])) - page.bounds[1]) * scale,
+          ],
+        });
+      };
+
       const loadReadingOrder = (pageIndex: number) => {
         readingController?.abort();
         readingController = new AbortController();
@@ -330,6 +376,8 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           .getPageText(pageIndex, readingController.signal)
           .then((pageText) => {
             reading.textContent = pageText.text;
+            currentPageText = pageText.text;
+            keyboardWordCount = 0;
             const structureUnavailable = pageText.limitations.includes('structure-tree');
             const formAnalysisPartial = pageText.limitations.includes('form-xobject');
             analysis.textContent =
@@ -382,7 +430,13 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         const node: PageNode = { element, surface, controller, tiles: new Map() };
 
         element.addEventListener('pointerdown', (event) => {
-          if (event.pointerType === 'touch' && !selectionMode) return;
+          if (
+            event.pointerType === 'touch' &&
+            !selectionMode &&
+            useToolStore.getState().activeTool === 'default'
+          ) {
+            return;
+          }
           element.setPointerCapture(event.pointerId);
           dragStart = { pageIndex, point: pointFromEvent(event, pageIndex) };
         });
@@ -390,6 +444,7 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           if (!dragStart || dragStart.pageIndex !== pageIndex) return;
           const start = dragStart.point;
           const end = pointFromEvent(event, pageIndex);
+          const activeTool = useToolStore.getState().activeTool;
           dragStart = null;
           if (Math.hypot(end[0] - start[0], end[1] - start[1]) < 1) {
             const hit = [...formFields]
@@ -440,36 +495,104 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
               .catch((error: unknown) => reportError('Adding region redaction mark', error));
             return;
           }
+          if (
+            activeTool === 'note' ||
+            activeTool === 'ink' ||
+            activeTool === 'shape' ||
+            activeTool === 'form-field'
+          ) {
+            const page = engine.info.pages[pageIndex];
+            if (!page) return;
+            const left = Math.min(start[0], end[0]);
+            const top = Math.min(start[1], end[1]);
+            const width = Math.max(72, Math.abs(end[0] - start[0]));
+            const height = Math.max(32, Math.abs(end[1] - start[1]));
+            const rect: EngineTypes['PdfRect'] = [
+              left,
+              top,
+              Math.min(page.bounds[2], left + width),
+              Math.min(page.bounds[3], top + height),
+            ];
+            const mutation =
+              activeTool === 'form-field'
+                ? engine.createFormField({
+                    pageIndex,
+                    name: `Field-${Date.now()}`,
+                    label: 'New form field',
+                    type: 'text',
+                    rect,
+                    required: false,
+                    readOnly: false,
+                  })
+                : engine.addAnnotation({
+                    pageIndex,
+                    type:
+                      activeTool === 'note' ? 'Text' : activeTool === 'ink' ? 'Ink' : 'Square',
+                    rect,
+                    contents:
+                      activeTool === 'note'
+                        ? 'New note'
+                        : activeTool === 'ink'
+                          ? 'Ink drawing'
+                          : 'Shape',
+                    color: [0.22, 0.33, 0.85],
+                    opacity: 1,
+                    flags: 4,
+                    ...(activeTool === 'ink'
+                      ? {
+                          inkList: [
+                            [
+                              [start[0], start[1]],
+                              [end[0], end[1]],
+                            ],
+                          ],
+                        }
+                      : {}),
+                  });
+            void mutation
+              .then((result) => {
+                onMutation(result);
+                resetTool();
+              })
+              .catch((error: unknown) =>
+                reportError(
+                  activeTool === 'form-field'
+                    ? 'Creating a form field'
+                    : 'Adding the selected markup',
+                  error,
+                ),
+              );
+            return;
+          }
           void engine
             .selectText(pageIndex, start, end, controller.signal)
             .then((result) => {
-              selection = result;
-              if (result.truncated && analysisStatusRef.current) {
-                analysisStatusRef.current.textContent =
-                  'DEGRADED · selection highlight limited to 4,096 regions';
-                analysisStatusRef.current.dataset.analysis = 'partial';
-              }
-              paintOverlays();
-              if (result.quads.length > 0) {
+              if (activeTool === 'highlight' && result.quads.length > 0) {
                 const bounds = result.quads.map(quadBounds);
-                const rect = element.getBoundingClientRect();
-                const scale = PDF_POINT_SCALE * zoom;
-                onSelectionAction({
-                  selection: result,
-                  viewportBounds: [
-                    rect.left +
-                      (Math.min(...bounds.map((value) => value[0])) - page.bounds[0]) * scale,
-                    rect.top +
-                      (Math.min(...bounds.map((value) => value[1])) - page.bounds[1]) * scale,
-                    rect.left +
-                      (Math.max(...bounds.map((value) => value[2])) - page.bounds[0]) * scale,
-                    rect.top +
-                      (Math.max(...bounds.map((value) => value[3])) - page.bounds[1]) * scale,
-                  ],
-                });
-              } else {
-                onSelectionAction(null);
+                const rect: EngineTypes['PdfRect'] = [
+                  Math.min(...bounds.map((value) => value[0])),
+                  Math.min(...bounds.map((value) => value[1])),
+                  Math.max(...bounds.map((value) => value[2])),
+                  Math.max(...bounds.map((value) => value[3])),
+                ];
+                return engine
+                  .addAnnotation({
+                    pageIndex,
+                    type: 'Highlight',
+                    rect,
+                    contents: result.text,
+                    quadPoints: result.quads,
+                    color: [0.96, 0.75, 0.28],
+                    opacity: 0.35,
+                    flags: 4,
+                  })
+                  .then((mutation) => {
+                    onMutation(mutation);
+                    resetTool();
+                  });
               }
+              presentSelection(result, pageIndex, element);
+              return undefined;
             })
             .catch((error: unknown) => reportError('Selecting text', error));
         });
@@ -663,6 +786,53 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         setZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1), event.clientY - bounds.top);
       };
 
+      const changeKeyboardSelection = async (direction: 1 | -1) => {
+        if (currentPage < 0) return;
+        keyboardSelectionController?.abort();
+        keyboardSelectionController = new AbortController();
+        const signal = keyboardSelectionController.signal;
+        if (!currentPageText) {
+          currentPageText = (await engine.getPageText(currentPage, signal)).text;
+        }
+        const words = [...currentPageText.matchAll(/\S+/g)];
+        keyboardWordCount = Math.min(words.length, Math.max(0, keyboardWordCount + direction));
+        if (keyboardWordCount === 0) {
+          selection = null;
+          selectionStatus.textContent = 'Text selection cleared.';
+          onSelectionAction(null);
+          paintOverlays();
+          return;
+        }
+        const firstWord = words[0];
+        const lastWord = words[keyboardWordCount - 1];
+        const node = pageNodes.get(currentPage);
+        if (!firstWord || firstWord.index === undefined || !lastWord || !node) return;
+        const end = (lastWord.index ?? 0) + lastWord[0].length;
+        const selectedText = currentPageText
+          .slice(firstWord.index, end)
+          .replace(/\s+/g, ' ')
+          .trim();
+        const requestGeneration = ++selectionGeneration;
+        const result = await engine.search(selectedText, signal);
+        if (requestGeneration !== selectionGeneration) return;
+        const hit = result.hits.find((candidate) => candidate.pageIndex === currentPage);
+        if (!hit) {
+          throw new Error(
+            'The selected reading-order text could not be mapped back to page geometry.',
+          );
+        }
+        presentSelection(
+          {
+            pageIndex: currentPage,
+            text: selectedText,
+            quads: hit.quads,
+            truncated: result.truncated,
+          },
+          currentPage,
+          node.element,
+        );
+      };
+
       const onKeyDown = (event: KeyboardEvent) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
           event.preventDefault();
@@ -681,6 +851,19 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           void navigator.clipboard
             .writeText(selection.text)
             .catch((error: unknown) => reportError('Copying selected text', error));
+          return;
+        }
+        if (
+          event.shiftKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          (event.key === 'ArrowRight' || event.key === 'ArrowLeft')
+        ) {
+          event.preventDefault();
+          void changeKeyboardSelection(event.key === 'ArrowRight' ? 1 : -1).catch(
+            (error: unknown) => reportError('Selecting text with the keyboard', error),
+          );
         }
       };
 
@@ -757,6 +940,7 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
       return () => {
         apiRef.current = null;
         readingController?.abort();
+        keyboardSelectionController?.abort();
         if (frame) cancelAnimationFrame(frame);
         for (const node of pageNodes.values()) {
           node.controller.abort();
@@ -768,7 +952,6 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         scroller.removeEventListener('keydown', onKeyDown);
       };
     }, [
-      activeTool,
       analysisStatusRef,
       currentPageRef,
       engine,
@@ -788,11 +971,23 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
         ref={scrollerRef}
         className="document-viewport"
         aria-label="Document pages"
+        aria-keyshortcuts="Shift+ArrowRight Shift+ArrowLeft"
+        aria-describedby="document-keyboard-help"
         tabIndex={0}
       >
         <div ref={contentRef} className="document-content" />
         <div ref={readingRef} className="sr-only" aria-label="Current page reading order" />
         <p ref={analysisRef} className="sr-only" aria-live="polite" />
+        <p
+          ref={selectionStatusRef}
+          className="sr-only"
+          aria-label="Text selection status"
+          aria-live="polite"
+        />
+        <p id="document-keyboard-help" className="sr-only">
+          Hold Shift and press Right Arrow to extend text selection by word. Press Shift and
+          Left Arrow to reduce it.
+        </p>
       </section>
     );
   },

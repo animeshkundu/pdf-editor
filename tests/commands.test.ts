@@ -41,6 +41,11 @@ function context(overrides: Partial<Omit<CommandContext, 'actions'>> = {}): {
     capabilities: run('capabilities'),
     toggleTheme: run('toggleTheme'),
     cycleDensity: run('cycleDensity'),
+    defaultTool: run('defaultTool'),
+    markupFamily: run('markupFamily'),
+    drawingFamily: run('drawingFamily'),
+    redactionTool: run('redactionTool'),
+    formFieldTool: run('formFieldTool'),
   };
   return {
     value: {
@@ -124,5 +129,31 @@ describe('AUTO-001/AUTO-002 command registry', () => {
     );
     expect(matched).toBeNull();
     input.remove();
+  });
+
+  it('validates remapped shortcuts, rejects collisions, and preserves disabled bindings', () => {
+    expect(
+      commandRegistry.importRemapping(
+        JSON.stringify({ version: 1, shortcuts: { 'default-tool': '' } }),
+      ),
+    ).toEqual({ 'default-tool': '' });
+    expect(() =>
+      commandRegistry.importRemapping(
+        JSON.stringify({
+          version: 1,
+          shortcuts: { 'markup-family': 'G', 'drawing-family': 'G' },
+        }),
+      ),
+    ).toThrow('already assigned');
+    expect(() =>
+      commandRegistry.importRemapping(
+        JSON.stringify({ version: 1, shortcuts: { 'markup-family': 'Shift+Shift+M' } }),
+      ),
+    ).toThrow('invalid');
+    expect(() =>
+      commandRegistry.importRemapping(
+        JSON.stringify({ version: 1, shortcuts: { save: 'Shift+M' } }),
+      ),
+    ).toThrow('reserved for cycling');
   });
 });

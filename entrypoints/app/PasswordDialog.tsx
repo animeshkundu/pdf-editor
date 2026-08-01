@@ -6,6 +6,7 @@ export default function PasswordDialog({
   filename,
   error,
   busy,
+  origin,
   onSubmit,
   onCancel,
 }: {
@@ -13,14 +14,18 @@ export default function PasswordDialog({
   readonly filename: string;
   readonly error: string;
   readonly busy: boolean;
+  readonly origin?: HTMLElement | null;
   readonly onSubmit: (password: string) => void;
   readonly onCancel: () => void;
 }) {
   const [password, setPassword] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const frame = requestAnimationFrame(() => {
       setPassword('');
       inputRef.current?.focus();
@@ -42,7 +47,14 @@ export default function PasswordDialog({
     >
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="password-dialog" aria-describedby="password-description">
+        <Dialog.Content
+          className="password-dialog"
+          aria-describedby="password-description"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            requestAnimationFrame(() => (origin ?? previousFocusRef.current)?.focus());
+          }}
+        >
           <Dialog.Title>Unlock PDF</Dialog.Title>
           <Dialog.Description id="password-description">
             <strong>{filename}</strong> is protected. Its password is used only in this local

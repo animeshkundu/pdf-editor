@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { EngineTypes } from '@/lib/engine/port';
+import { DesignedCheckbox, DesignedSelect } from '../DesignedControls';
 import FeatureBadge from '../FeatureBadge';
 import type { ToolPanelProps } from './types';
 
@@ -308,8 +309,9 @@ export default function OrganizePages({
         </div>
         <FeatureBadge status="LOCAL" />
       </div>
-      <p className="panel-intro">
-        Drag pages to reorder. Every destructive or bulk action stops at a result preview.
+      <p id="organize-drag-help" className="panel-intro">
+        Drag pages to enable insertion targets and reorder them. Every destructive or bulk
+        action stops at a result preview.
       </p>
 
       <div className="range-control">
@@ -343,6 +345,7 @@ export default function OrganizePages({
                   pageIndex + 1
                 }`}
                 disabled={dragging === null}
+                aria-describedby="organize-drag-help"
                 onDragOver={(event) => {
                   if (dragging !== null) event.preventDefault();
                 }}
@@ -362,22 +365,22 @@ export default function OrganizePages({
               >
                 <span aria-hidden="true" />
               </button>
-              <label
-                className={selectedSet.has(pageIndex) ? 'selected' : ''}
+              <div
+                className={`organize-page-choice${selectedSet.has(pageIndex) ? ' selected' : ''}`}
                 draggable
-                onDragStart={(event: DragEvent<HTMLLabelElement>) => {
+                onDragStart={(event: DragEvent<HTMLDivElement>) => {
                   setDragging(pageIndex);
                   event.dataTransfer.effectAllowed = 'move';
                   event.dataTransfer.setData('text/plain', String(pageIndex));
                 }}
                 onDragEnd={() => setDragging(null)}
               >
-                <input
-                  type="checkbox"
+                <DesignedCheckbox
+                  label={`Select page ${page.label}`}
                   checked={selectedSet.has(pageIndex)}
-                  onChange={(event) =>
+                  onCheckedChange={(checked) =>
                     setSelected((current) =>
-                      event.target.checked
+                      checked
                         ? [...current, pageIndex].sort((left, right) => left - right)
                         : current.filter((index) => index !== pageIndex),
                     )
@@ -385,7 +388,7 @@ export default function OrganizePages({
                 />
                 <strong>{page.label}</strong>
                 <small>Page {pageIndex + 1}</small>
-              </label>
+              </div>
             </div>
           );
         })}
@@ -394,6 +397,7 @@ export default function OrganizePages({
           className="insertion-target trailing"
           aria-label="Move page to end"
           disabled={dragging === null}
+          aria-describedby="organize-drag-help"
           onDragOver={(event) => {
             if (dragging !== null) event.preventDefault();
           }}
@@ -425,28 +429,34 @@ export default function OrganizePages({
           <button
             type="button"
             disabled={selected.length === 0}
+            aria-describedby="organize-selection-help"
             onClick={() => setPreview({ action: 'rotate', pages: selected, degrees: 90 })}
           >
             <RotateCw aria-hidden="true" size={16} /> Rotate document pages
           </button>
         </div>
-        <small>View rotation is temporary. Document rotation is written and undoable.</small>
+        <small id="organize-selection-help">
+          View rotation is temporary. Select one or more pages before rotating document pages;
+          document rotation is written and undoable.
+        </small>
       </fieldset>
 
       <fieldset className="workflow-group">
         <legend>Crop boxes & labels</legend>
         <label>
           <span>Page box</span>
-          <select
+          <DesignedSelect
+            label="Page box"
             value={pageBox}
-            onChange={(event) => setPageBox(event.target.value as EngineTypes['PageBox'])}
-          >
-            <option value="MediaBox">Media box</option>
-            <option value="CropBox">Crop box</option>
-            <option value="BleedBox">Bleed box</option>
-            <option value="TrimBox">Trim box</option>
-            <option value="ArtBox">Art box</option>
-          </select>
+            options={[
+              { value: 'MediaBox', label: 'Media box' },
+              { value: 'CropBox', label: 'Crop box' },
+              { value: 'BleedBox', label: 'Bleed box' },
+              { value: 'TrimBox', label: 'Trim box' },
+              { value: 'ArtBox', label: 'Art box' },
+            ]}
+            onValueChange={setPageBox}
+          />
         </label>
         <label>
           <span>Inset from current page bounds (pt)</span>
@@ -460,6 +470,7 @@ export default function OrganizePages({
         <button
           type="button"
           disabled={selected.length !== 1}
+          aria-describedby="organize-single-selection-help"
           onClick={() => {
             const pageIndex = selected[0];
             const page = pageIndex === undefined ? undefined : engine.info.pages[pageIndex];
@@ -482,19 +493,19 @@ export default function OrganizePages({
         <div className="property-grid">
           <label>
             <span>Label style</span>
-            <select
+            <DesignedSelect
+              label="Page label style"
               value={labelStyle}
-              onChange={(event) =>
-                setLabelStyle(event.target.value as EngineTypes['PageLabelStyle'])
-              }
-            >
-              <option value="none">Prefix only</option>
-              <option value="decimal">1, 2, 3</option>
-              <option value="roman-upper">I, II, III</option>
-              <option value="roman-lower">i, ii, iii</option>
-              <option value="alpha-upper">A, B, C</option>
-              <option value="alpha-lower">a, b, c</option>
-            </select>
+              options={[
+                { value: 'none', label: 'Prefix only' },
+                { value: 'decimal', label: '1, 2, 3' },
+                { value: 'roman-upper', label: 'I, II, III' },
+                { value: 'roman-lower', label: 'i, ii, iii' },
+                { value: 'alpha-upper', label: 'A, B, C' },
+                { value: 'alpha-lower', label: 'a, b, c' },
+              ]}
+              onValueChange={setLabelStyle}
+            />
           </label>
           <label>
             <span>Prefix</span>
@@ -527,9 +538,9 @@ export default function OrganizePages({
         >
           Preview page labels
         </button>
-        <small>
-          Each PDF page box is edited by name. The app never approximates every box as one
-          generic “crop”.
+        <small id="organize-single-selection-help">
+          Select exactly one page to preview a page box. Each PDF page box is edited by name;
+          the app never approximates every box as one generic “crop”.
         </small>
       </fieldset>
 
@@ -537,27 +548,33 @@ export default function OrganizePages({
         <legend>Insert, merge & replace</legend>
         <label>
           <span>Insert before position</span>
-          <select
-            value={insertAt}
-            onChange={(event) => setInsertAt(Number(event.target.value))}
-          >
-            {Array.from({ length: engine.info.pages.length + 1 }, (_, index) => (
-              <option key={index} value={index}>
-                {index === engine.info.pages.length ? 'End of document' : `Page ${index + 1}`}
-              </option>
-            ))}
-          </select>
+          <DesignedSelect
+            label="Insert before position"
+            value={String(insertAt)}
+            options={Array.from({ length: engine.info.pages.length + 1 }, (_, index) => ({
+              value: String(index),
+              label:
+                index === engine.info.pages.length ? 'End of document' : `Page ${index + 1}`,
+            }))}
+            onValueChange={(value) => setInsertAt(Number(value))}
+          />
         </label>
         <div className="panel-actions">
           <button type="button" onClick={() => setPreview({ action: 'insert', at: insertAt })}>
             <Plus aria-hidden="true" size={16} /> Insert blank page
           </button>
-          <button type="button" onClick={() => mergeInput.current?.click()} disabled={busy}>
+          <button
+            type="button"
+            onClick={() => mergeInput.current?.click()}
+            disabled={busy}
+            aria-describedby="organize-source-help"
+          >
             <FileInput aria-hidden="true" size={16} /> Choose source PDF
           </button>
           <button
             type="button"
             disabled={!incoming}
+            aria-describedby="organize-source-help"
             onClick={() => {
               if (incoming)
                 setPreview({
@@ -573,6 +590,7 @@ export default function OrganizePages({
           <button
             type="button"
             disabled={!incoming || selected.length === 0}
+            aria-describedby="organize-source-help"
             onClick={previewReplace}
           >
             Replace selected pages
@@ -580,6 +598,7 @@ export default function OrganizePages({
           <button
             type="button"
             disabled={!incoming}
+            aria-describedby="organize-source-help"
             onClick={() => {
               if (!incoming) return;
               setPreview({
@@ -602,10 +621,10 @@ export default function OrganizePages({
           aria-label="Source PDF for page organization"
           onChange={inspectIncoming}
         />
-        <small>
+        <small id="organize-source-help">
           {incoming
-            ? `${incoming.file.name} · ${incoming.info.pageCount} pages ready`
-            : 'No source PDF selected.'}
+            ? `${incoming.file.name} · ${incoming.info.pageCount} pages ready. Select current pages before replacing them.`
+            : 'Choose a source PDF before merging, replacing, or alternating pages.'}
         </small>
       </fieldset>
 
@@ -631,6 +650,7 @@ export default function OrganizePages({
           <button
             type="button"
             disabled={selected.length === 0}
+            aria-describedby="organize-extract-help"
             onClick={() =>
               setPreview({ action: 'extract', pages: selected, deleteOriginals: false })
             }
@@ -640,6 +660,7 @@ export default function OrganizePages({
           <button
             type="button"
             disabled={selected.length === 0 || selected.length === engine.info.pages.length}
+            aria-describedby="organize-extract-help"
             onClick={() =>
               setPreview({ action: 'extract', pages: selected, deleteOriginals: true })
             }
@@ -649,6 +670,7 @@ export default function OrganizePages({
           <button
             type="button"
             disabled={selected.length === 0}
+            aria-describedby="organize-extract-help"
             onClick={() => {
               const order = pageOrder.flatMap((pageIndex): CompositionItem[] =>
                 selectedSet.has(pageIndex)
@@ -671,11 +693,15 @@ export default function OrganizePages({
           <button
             type="button"
             disabled={selected.length === 0 || selected.length === engine.info.pages.length}
+            aria-describedby="organize-extract-help"
             onClick={() => setPreview({ action: 'delete', pages: selected })}
           >
             <Trash2 aria-hidden="true" size={16} /> Delete selected
           </button>
         </div>
+        <small id="organize-extract-help">
+          Select pages first. Removing or deleting also requires at least one page to remain.
+        </small>
       </fieldset>
 
       <fieldset className="workflow-group">
@@ -694,6 +720,7 @@ export default function OrganizePages({
           <button
             type="button"
             disabled={engine.info.pages.length < 2}
+            aria-describedby="organize-split-help"
             onClick={() => {
               const groups = groupsByCount(engine.info.pages.length, splitSize);
               contiguousRanges(groups);
@@ -705,6 +732,7 @@ export default function OrganizePages({
           <button
             type="button"
             disabled={engine.info.pages.length < 2}
+            aria-describedby="organize-split-help"
             onClick={() => {
               const firstSize = Math.ceil(engine.info.pages.length / 2);
               const groups = groupsByCount(engine.info.pages.length, firstSize);
@@ -716,6 +744,7 @@ export default function OrganizePages({
           <button
             type="button"
             disabled={engine.info.pages.length < 2}
+            aria-describedby="organize-split-help"
             onClick={() =>
               previewSplit('Create separate odd-page and even-page PDFs.', [
                 pageOrder.filter((page) => page % 2 === 0),
@@ -728,6 +757,7 @@ export default function OrganizePages({
           <button
             type="button"
             disabled={engine.info.outline.filter((item) => item.pageIndex !== null).length < 2}
+            aria-describedby="organize-split-help"
             onClick={() => {
               const starts = [
                 ...new Set(
@@ -761,6 +791,7 @@ export default function OrganizePages({
         <button
           type="button"
           disabled={!splitText.trim()}
+          aria-describedby="organize-split-help"
           onClick={() => {
             void engine
               .search(splitText.trim())
@@ -791,6 +822,10 @@ export default function OrganizePages({
         >
           Preview split by text
         </button>
+        <small id="organize-split-help">
+          Split operations need at least two pages; bookmark splitting needs two bookmark
+          destinations, and text splitting needs a search term.
+        </small>
       </fieldset>
 
       {preview ? (

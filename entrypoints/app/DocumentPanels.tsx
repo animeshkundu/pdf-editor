@@ -41,6 +41,7 @@ const { PDF_POINT_SCALE } = renderLayout;
 
 interface PanelProps {
   readonly kind: PanelKind;
+  readonly label: string;
   readonly engine: PdfEngine;
   readonly searchInputRef: RefObject<HTMLInputElement | null>;
   readonly onNavigate: (pageIndex: number) => void;
@@ -50,6 +51,7 @@ interface PanelProps {
   readonly onRotateView: (degrees: 90 | -90) => void;
   readonly commands: readonly ResolvedCommand[];
   readonly onError: (message: string) => void;
+  readonly onNotice: (message: string) => void;
 }
 
 function StatusBadge({ children }: { readonly children: string }) {
@@ -182,9 +184,11 @@ function PagesPanel({
 function OutlineTree({
   nodes,
   onNavigate,
+  describedBy,
 }: {
   readonly nodes: readonly OutlineNode[];
   readonly onNavigate: (pageIndex: number) => void;
+  readonly describedBy: string;
 }) {
   return (
     <ul className="outline-tree">
@@ -193,6 +197,7 @@ function OutlineTree({
           <button
             type="button"
             disabled={node.pageIndex === null}
+            aria-describedby={node.pageIndex === null ? describedBy : undefined}
             onClick={() => {
               if (node.pageIndex !== null) onNavigate(node.pageIndex);
             }}
@@ -200,7 +205,11 @@ function OutlineTree({
             {node.title}
           </button>
           {node.children.length > 0 ? (
-            <OutlineTree nodes={node.children} onNavigate={onNavigate} />
+            <OutlineTree
+              nodes={node.children}
+              onNavigate={onNavigate}
+              describedBy={describedBy}
+            />
           ) : null}
         </li>
       ))}
@@ -219,7 +228,17 @@ function OutlinePanel({ engine, onNavigate }: Pick<PanelProps, 'engine' | 'onNav
         <StatusBadge>LOCAL</StatusBadge>
       </div>
       {engine.info.outline.length > 0 ? (
-        <OutlineTree nodes={engine.info.outline} onNavigate={onNavigate} />
+        <>
+          <p id="outline-destination-help" className="scope-note">
+            Outline entries without a page destination are shown for context but cannot
+            navigate.
+          </p>
+          <OutlineTree
+            nodes={engine.info.outline}
+            onNavigate={onNavigate}
+            describedBy="outline-destination-help"
+          />
+        </>
       ) : (
         <p className="empty-message">This document has no bookmarks.</p>
       )}
@@ -455,7 +474,11 @@ function SearchPanel({
           placeholder="Search every page"
           aria-label="Find in document"
         />
-        <button type="submit" disabled={!query.trim() || searching}>
+        <button
+          type="submit"
+          disabled={!query.trim() || searching}
+          aria-describedby="search-status"
+        >
           {searching ? 'Searching…' : 'Find'}
         </button>
       </form>
@@ -463,6 +486,7 @@ function SearchPanel({
         <button
           type="button"
           disabled={hits.length === 0}
+          aria-describedby="search-status"
           onClick={() => activate(activeIndex - 1)}
         >
           Previous
@@ -473,12 +497,13 @@ function SearchPanel({
         <button
           type="button"
           disabled={hits.length === 0}
+          aria-describedby="search-status"
           onClick={() => activate(activeIndex + 1)}
         >
           Next
         </button>
       </div>
-      <p className="result-summary" aria-live="polite">
+      <p id="search-status" className="result-summary" aria-live="polite">
         {!hasSearched
           ? 'Enter text to search every page.'
           : searching
@@ -509,7 +534,7 @@ function SearchPanel({
   );
 }
 
-function CapabilitiesPanel() {
+export function CapabilitiesPanel() {
   return (
     <>
       <div className="panel-heading">
@@ -560,7 +585,14 @@ function CapabilitiesPanel() {
           <dt>Digital signing</dt>
           <dd>
             <StatusBadge>OPEN</StatusBadge> Unavailable pending the synchronous signer bridge
-            spike; timestamping, revocation, and LTV remain excluded.
+            spike.
+          </dd>
+        </div>
+        <div>
+          <dt>Timestamping, revocation, and LTV</dt>
+          <dd>
+            <StatusBadge>EXCLUDED</StatusBadge> These require external trust services and are
+            not provided in this local app.
           </dd>
         </div>
       </dl>
@@ -570,7 +602,7 @@ function CapabilitiesPanel() {
 
 export default function DocumentPanel(props: PanelProps) {
   return (
-    <aside className="context-panel" aria-label={`${props.kind} panel`}>
+    <aside className="context-panel" aria-label={`${props.label} panel`}>
       {props.kind === 'pages' ? <PagesPanel {...props} /> : null}
       {props.kind === 'outline' ? <OutlinePanel {...props} /> : null}
       {props.kind === 'attachments' ? <AttachmentsPanel {...props} /> : null}

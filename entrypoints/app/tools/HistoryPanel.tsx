@@ -34,7 +34,7 @@ export default function HistoryPanel({
         <button
           type="button"
           disabled={!journal?.canUndo}
-          title={journal?.canUndo ? undefined : 'There is no document change to undo.'}
+          aria-describedby={journal?.canUndo ? undefined : 'undo-unavailable'}
           onClick={() => {
             void engine
               .undo()
@@ -53,7 +53,7 @@ export default function HistoryPanel({
         <button
           type="button"
           disabled={!journal?.canRedo}
-          title={journal?.canRedo ? undefined : 'There is no document change to redo.'}
+          aria-describedby={journal?.canRedo ? undefined : 'redo-unavailable'}
           onClick={() => {
             void engine
               .redo()
@@ -70,6 +70,16 @@ export default function HistoryPanel({
           Redo
         </button>
       </div>
+      {!journal?.canUndo ? (
+        <p id="undo-unavailable" className="scope-note">
+          There is no document change to undo.
+        </p>
+      ) : null}
+      {!journal?.canRedo ? (
+        <p id="redo-unavailable" className="scope-note">
+          There is no document change to redo.
+        </p>
+      ) : null}
       {journal?.steps.length ? (
         <ol className="history-list">
           {journal.steps.map((step, index) => (

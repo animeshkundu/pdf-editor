@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { EngineTypes } from '@/lib/engine/port';
 import { useDocumentStore } from '@/lib/store/document';
+import { DesignedCheckbox, DesignedSelect } from '../DesignedControls';
 import FeatureBadge from '../FeatureBadge';
 import { describeRedactionOutcome, snapshotRedactionText } from '../redactionOutcome';
 import type { ToolPanelProps } from './types';
@@ -143,17 +144,16 @@ export default function Security({
             on some documents.
           </p>
           {state.signatures > 0 ? (
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={confirmRewrite}
-                onChange={(event) => setConfirmRewrite(event.target.checked)}
-              />
-              <span>
-                I understand that applying redactions invalidates {state.signatures} existing{' '}
-                {state.signatures === 1 ? 'signature' : 'signatures'}.
-              </span>
-            </label>
+            <DesignedCheckbox
+              checked={confirmRewrite}
+              onCheckedChange={setConfirmRewrite}
+              label={
+                <>
+                  I understand that applying redactions invalidates {state.signatures} existing{' '}
+                  {state.signatures === 1 ? 'signature' : 'signatures'}.
+                </>
+              }
+            />
           ) : null}
           <button
             type="button"
@@ -269,14 +269,16 @@ export default function Security({
       >
         <label>
           <span>Encryption</span>
-          <select
+          <DesignedSelect
+            label="Encryption"
             value={rc4ReadOnly ? 'aes-256' : encryption}
             disabled={rc4ReadOnly}
-            onChange={(event) => setEncryption(event.target.value as typeof encryption)}
-          >
-            <option value="aes-256">AES-256</option>
-            <option value="aes-128">AES-128 compatibility</option>
-          </select>
+            options={[
+              { value: 'aes-256', label: 'AES-256' },
+              { value: 'aes-128', label: 'AES-128 compatibility' },
+            ]}
+            onValueChange={setEncryption}
+          />
         </label>
         <label>
           <span>Open password</span>
@@ -307,15 +309,16 @@ export default function Security({
           </p>
         </div>
         {state?.signatures ? (
-          <label>
-            <input
-              type="checkbox"
-              checked={confirmRewrite}
-              onChange={(event) => setConfirmRewrite(event.target.checked)}
-            />
-            I understand that a full rewrite invalidates {state.signatures} existing{' '}
-            {state.signatures === 1 ? 'signature' : 'signatures'}.
-          </label>
+          <DesignedCheckbox
+            checked={confirmRewrite}
+            onCheckedChange={setConfirmRewrite}
+            label={
+              <>
+                I understand that a full rewrite invalidates {state.signatures} existing{' '}
+                {state.signatures === 1 ? 'signature' : 'signatures'}.
+              </>
+            }
+          />
         ) : null}
         <button
           type="button"
@@ -349,10 +352,23 @@ export default function Security({
           </dd>
         </div>
         <div>
-          <dt>Signing and certificate encryption</dt>
+          <dt>Digital signing</dt>
           <dd>
-            <FeatureBadge status="OPEN" /> Not available. Timestamping, fresh revocation
-            checking, and LTV are not provided.
+            <FeatureBadge status="OPEN" /> Not available pending the synchronous signer bridge.
+          </dd>
+        </div>
+        <div>
+          <dt>Timestamping, revocation, and LTV</dt>
+          <dd>
+            <FeatureBadge status="EXCLUDED" /> External trust services are not contacted by this
+            local app.
+          </dd>
+        </div>
+        <div>
+          <dt>Request e-signatures and rights management</dt>
+          <dd>
+            <FeatureBadge status="EXCLUDED" /> Hosted signature requests and LiveCycle or AEM
+            rights services are not available.
           </dd>
         </div>
       </dl>

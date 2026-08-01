@@ -28,6 +28,17 @@ Nothing has been released yet. The repository is at `0.0.0`.
 - A static landing page at `/pdf/` and the mounted editor at `/pdf/app/`, deployed from the
   exact CI artifact through Vercel Build Output API v3, with separate landing-page size and
   zero-egress gates.
+- Concurrent resizable and collapsible contextual panels with per-document local persistence,
+  command-palette shortcut remapping, single-key tool families, and quad-backed keyboard text
+  selection without positioned DOM text.
+- Designed Radix controls across all tool panels, density-aware target sizing, ordered
+  dismissible shell feedback, narrow-screen chrome reflow, and a production-artifact UI matrix
+  across every panel, density, theme, and viewport.
+- Keyboard-operable panel resizing, validated shortcut disabling and collision handling,
+  responsive selection actions, visible disabled-control explanations, and a local print-window
+  path whose generated PDF blob is exercised in both browser engines.
+- Tool switching that preserves zoom, rotation, reading position, and Select/Pan mode, including
+  consistent empty-shell refusals for single-key tool shortcuts.
 
 - Repository scaffold: Vite 8, React 19, strict TypeScript 6, Tailwind 4, Vitest, and
   Playwright against the production build.
@@ -106,6 +117,8 @@ Nothing has been released yet. The repository is at `0.0.0`.
 - Re-running MuPDF vendoring now recognizes the complete patched source state before attempting
   individual reverse-apply checks, and a locally installed exact Emscripten 4.0.8 toolchain no
   longer reinstalls its Node archive.
+- Shell feedback now has ordered announcements, semantic status-color roles, responsive
+  toolbar treatment, and clearer capability and permission disclosures.
 - Newly authored AcroForm fields now resolve `/Helv` through `/AcroForm/DR/Font` in
   independent readers instead of emitting a dangling default-appearance font name.
 - Redaction character counts now use structured-text character callbacks rather than block

@@ -1,4 +1,11 @@
-import { useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import {
   Copy,
   Highlighter,
@@ -9,6 +16,7 @@ import {
   Underline,
 } from 'lucide-react';
 import type { EngineTypes } from '@/lib/engine/port';
+import { isTextEntryTarget } from '@/lib/commands/shortcuts';
 import ActiveTextEntry from './ActiveTextEntry';
 
 export interface SelectionAction {
@@ -34,13 +42,84 @@ export default function SelectionActionBar({
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  const originRef = useRef<HTMLElement | null>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{
+    readonly left: number;
+    readonly top: number;
+    readonly side: 'above' | 'below';
+  }>({ left: 0, top: 0, side: 'below' });
   const [left, top, right, bottom] = action.viewportBounds;
   const canCopy = engine.info.permissions.copy;
   const canAnnotate = engine.info.permissions.annotate;
   const canEdit = engine.info.permissions.edit !== false;
-  const placeBelow = top < 64;
-  const x = Math.max(8, Math.min(window.innerWidth - 280, (left + right) / 2 - 140));
-  const y = placeBelow ? bottom + 8 : top - 52;
+  useEffect(() => {
+    originRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }, []);
+  const close = useCallback(() => {
+    onClose();
+    requestAnimationFrame(() => originRef.current?.focus());
+  }, [onClose]);
+
+  useLayoutEffect(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return;
+    const place = () => {
+      const bounds = toolbar.getBoundingClientRect();
+      const styles = getComputedStyle(document.documentElement);
+      const gap =
+        Number.parseFloat(styles.getPropertyValue('--space-100')) ||
+        Number.parseFloat(styles.getPropertyValue('--focus-ring-offset')) ||
+        4;
+      const availableAbove = top - gap;
+      const availableBelow = window.innerHeight - bottom - gap;
+      const side =
+        availableAbove >= bounds.height || availableAbove >= availableBelow ? 'above' : 'below';
+      setPosition({
+        left: Math.max(
+          gap,
+          Math.min(window.innerWidth - bounds.width - gap, (left + right - bounds.width) / 2),
+        ),
+        top: Math.max(
+          gap,
+          Math.min(
+            window.innerHeight - bounds.height - gap,
+            side === 'below' ? bottom + gap : top - bounds.height - gap,
+          ),
+        ),
+        side,
+      });
+    };
+    place();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
+    observer?.observe(toolbar);
+    window.addEventListener('resize', place);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', place);
+    };
+  }, [bottom, busy, editing, left, refusal, right, top]);
+
+  const moveToolbarFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (editing || isTextEntryTarget(event.target)) return;
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const controls = [
+      ...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+    ];
+    if (controls.length === 0) return;
+    const current = controls.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? controls.length - 1
+          : event.key === 'ArrowLeft'
+            ? (Math.max(0, current) - 1 + controls.length) % controls.length
+            : (Math.max(-1, current) + 1) % controls.length;
+    event.preventDefault();
+    controls[next]?.focus();
+  };
 
   const add = (type: 'Highlight' | 'Underline' | 'StrikeOut' | 'Text' | 'Redact') => {
     if (action.selection.quads.length === 0) {
@@ -78,7 +157,7 @@ export default function SelectionActionBar({
       })
       .then((result) => {
         onMutation(result);
-        onClose();
+        close();
       })
       .catch((error: unknown) => {
         const detail = error instanceof Error ? error.message : 'Unknown annotation error.';
@@ -88,11 +167,13 @@ export default function SelectionActionBar({
 
   return (
     <div
+      ref={toolbarRef}
       className="selection-action-bar"
-      role={editing ? 'dialog' : 'toolbar'}
+      role="toolbar"
       aria-label={editing ? 'Edit selected text' : 'Selection actions'}
-      data-side={placeBelow ? 'below' : 'above'}
-      style={{ left: `${x}px`, top: `${Math.max(8, y)}px` }}
+      data-side={position.side}
+      style={{ left: `${position.left}px`, top: `${position.top}px` }}
+      onKeyDown={moveToolbarFocus}
     >
       {editing ? (
         <ActiveTextEntry
@@ -133,8 +214,8 @@ export default function SelectionActionBar({
           <button
             type="button"
             aria-label="Copy selected text"
-            title={canCopy ? 'Copy selected text' : 'Copy is blocked by document permissions'}
             disabled={!canCopy}
+            aria-describedby={!canCopy ? 'selection-copy-limit' : undefined}
             onClick={() => {
               if (!navigator.clipboard) {
                 onError('Copy is unavailable because this browser has no clipboard API.');
@@ -142,7 +223,7 @@ export default function SelectionActionBar({
               }
               void navigator.clipboard
                 .writeText(action.selection.text)
-                .then(onClose)
+                .then(close)
                 .catch((error: unknown) => {
                   const detail =
                     error instanceof Error ? error.message : 'Unknown clipboard error.';
@@ -151,67 +232,87 @@ export default function SelectionActionBar({
             }}
           >
             <Copy aria-hidden="true" size={16} />
+            <span>Copy</span>
           </button>
           <button
             type="button"
             aria-label="Edit selected text"
-            title={
-              canEdit ? 'Edit selected text' : 'Editing is blocked by document permissions'
-            }
             disabled={!canEdit}
+            aria-describedby={!canEdit ? 'selection-edit-limit' : undefined}
             onClick={() => setEditing(true)}
           >
             <PencilLine aria-hidden="true" size={16} />
+            <span>Edit</span>
           </button>
           <button
             type="button"
             aria-label="Highlight selection"
-            title={
-              canAnnotate
-                ? 'Highlight selection'
-                : 'Annotations are blocked by document permissions'
-            }
             disabled={!canAnnotate}
+            aria-describedby={!canAnnotate ? 'selection-annotation-limit' : undefined}
             onClick={() => add('Highlight')}
           >
             <Highlighter aria-hidden="true" size={16} />
+            <span>Highlight</span>
           </button>
           <button
             type="button"
             aria-label="Underline selection"
             disabled={!canAnnotate}
+            aria-describedby={!canAnnotate ? 'selection-annotation-limit' : undefined}
             onClick={() => add('Underline')}
           >
             <Underline aria-hidden="true" size={16} />
+            <span>Underline</span>
           </button>
           <button
             type="button"
             aria-label="Strike out selection"
             disabled={!canAnnotate}
+            aria-describedby={!canAnnotate ? 'selection-annotation-limit' : undefined}
             onClick={() => add('StrikeOut')}
           >
             <Strikethrough aria-hidden="true" size={16} />
+            <span>Strike</span>
           </button>
           <button
             type="button"
             aria-label="Comment on selection"
             disabled={!canAnnotate}
+            aria-describedby={!canAnnotate ? 'selection-annotation-limit' : undefined}
             onClick={() => add('Text')}
           >
             <MessageSquareText aria-hidden="true" size={16} />
+            <span>Comment</span>
           </button>
           <button
             type="button"
             aria-label="Mark selected text for redaction"
             disabled={!canAnnotate}
+            aria-describedby={!canAnnotate ? 'selection-annotation-limit' : undefined}
             onClick={() => add('Redact')}
           >
             <ShieldAlert aria-hidden="true" size={16} />
+            <span>Redact</span>
           </button>
         </>
       )}
       {busy ? <span role="status">Replacing text…</span> : null}
       {refusal ? <p role="alert">{refusal}</p> : null}
+      {!canCopy ? (
+        <p id="selection-copy-limit" className="selection-limit">
+          Copying is blocked by this document&apos;s permissions.
+        </p>
+      ) : null}
+      {!canEdit ? (
+        <p id="selection-edit-limit" className="selection-limit">
+          Editing is blocked by this document&apos;s permissions.
+        </p>
+      ) : null}
+      {!canAnnotate ? (
+        <p id="selection-annotation-limit" className="selection-limit">
+          Markup is blocked by this document&apos;s permissions.
+        </p>
+      ) : null}
     </div>
   );
 }

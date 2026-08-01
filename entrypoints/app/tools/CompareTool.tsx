@@ -94,8 +94,8 @@ export default function CompareTool({
         <FeatureBadge status="DEGRADED" />
       </div>
       <p className="panel-intro">
-        Compare page text, dimensions, labels, additions, and removals without uploading either
-        document.
+        Text, dimensions, labels, additions, and removals are compared locally. Scanned or
+        raster-only pages need raster/OCR review before you rely on the result.
       </p>
       <button
         type="button"

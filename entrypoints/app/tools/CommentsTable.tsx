@@ -3,6 +3,7 @@ import { Download, MessageSquareReply, Upload } from 'lucide-react';
 import type { EngineTypes } from '@/lib/engine/port';
 import commentData, { type CommentFormat } from '@/lib/text/comment-data';
 import ActiveTextEntry from '../ActiveTextEntry';
+import { DesignedSelect } from '../DesignedControls';
 import FeatureBadge from '../FeatureBadge';
 import type { ToolPanelProps } from './types';
 
@@ -148,28 +149,33 @@ export default function CommentsTable({
         />
         <label>
           <span>Status</span>
-          <select
+          <DesignedSelect
+            label="Filter comment status"
             value={status}
-            onChange={(event) =>
-              setStatus(event.target.value as 'all' | EngineTypes['AnnotationState'])
-            }
-          >
-            <option value="all">All</option>
-            <option value="None">Open</option>
-            <option value="Accepted">Accepted</option>
-            <option value="Rejected">Rejected</option>
-            <option value="Cancelled">Cancelled</option>
-            <option value="Completed">Completed</option>
-          </select>
+            options={[
+              { value: 'all', label: 'All' },
+              { value: 'None', label: 'Open' },
+              { value: 'Accepted', label: 'Accepted' },
+              { value: 'Rejected', label: 'Rejected' },
+              { value: 'Cancelled', label: 'Cancelled' },
+              { value: 'Completed', label: 'Completed' },
+            ]}
+            onValueChange={setStatus}
+          />
         </label>
         <label>
           <span>Sort</span>
-          <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}>
-            <option value="page">Page</option>
-            <option value="type">Type</option>
-            <option value="author">Author</option>
-            <option value="state">Status</option>
-          </select>
+          <DesignedSelect
+            label="Sort comments"
+            value={sort}
+            options={[
+              { value: 'page', label: 'Page' },
+              { value: 'type', label: 'Type' },
+              { value: 'author', label: 'Author' },
+              { value: 'state', label: 'Status' },
+            ]}
+            onValueChange={setSort}
+          />
         </label>
       </div>
       <div className="data-table-scroll">
@@ -230,21 +236,18 @@ export default function CommentsTable({
             <button type="button" onClick={() => setTextMode('reply')}>
               Reply
             </button>
-            <select
-              aria-label="Comment status"
+            <DesignedSelect
+              label="Comment status"
               value={selected.state}
-              onChange={(event) =>
-                update(selected, {
-                  state: event.target.value as EngineTypes['AnnotationState'],
-                })
-              }
-            >
-              <option value="None">Open</option>
-              <option value="Accepted">Accepted</option>
-              <option value="Rejected">Rejected</option>
-              <option value="Cancelled">Cancelled</option>
-              <option value="Completed">Completed</option>
-            </select>
+              options={[
+                { value: 'None', label: 'Open' },
+                { value: 'Accepted', label: 'Accepted' },
+                { value: 'Rejected', label: 'Rejected' },
+                { value: 'Cancelled', label: 'Cancelled' },
+                { value: 'Completed', label: 'Completed' },
+              ]}
+              onValueChange={(state) => update(selected, { state })}
+            />
             <button
               type="button"
               onClick={() => {
@@ -283,13 +286,15 @@ export default function CommentsTable({
         <legend>Comment interchange</legend>
         <label>
           <span>Format</span>
-          <select
+          <DesignedSelect
+            label="Comment interchange format"
             value={format}
-            onChange={(event) => setFormat(event.target.value as CommentFormat)}
-          >
-            <option value="xfdf">XFDF</option>
-            <option value="fdf">FDF</option>
-          </select>
+            options={[
+              { value: 'xfdf', label: 'XFDF' },
+              { value: 'fdf', label: 'FDF' },
+            ]}
+            onValueChange={setFormat}
+          />
         </label>
         <div className="panel-actions">
           <button
@@ -324,6 +329,10 @@ export default function CommentsTable({
           Comment text, author, subject, review state, reply links, page, and rectangle are
           preserved for Text and FreeText comments. Non-comment markup geometry is omitted and
           counted before export. Actions, scripts, and external references are rejected.
+        </p>
+        <p className="scope-note">
+          <FeatureBadge status="EXCLUDED" /> Shared reviews and migration from hosted comment
+          services are not available. Use XFDF or FDF to interchange supported local comments.
         </p>
       </fieldset>
 

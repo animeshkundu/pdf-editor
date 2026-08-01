@@ -32,7 +32,12 @@ export type CommandAction =
   | 'automation'
   | 'capabilities'
   | 'toggleTheme'
-  | 'cycleDensity';
+  | 'cycleDensity'
+  | 'defaultTool'
+  | 'markupFamily'
+  | 'drawingFamily'
+  | 'redactionTool'
+  | 'formFieldTool';
 
 export interface CommandContext {
   readonly hasDocument: boolean;
@@ -319,9 +324,128 @@ export const COMMANDS: readonly CommandDefinition[] = [
     action: 'cycleDensity',
     pipelineSafe: false,
   },
+  {
+    id: 'default-tool',
+    parityId: 'CMNT-001',
+    status: 'LOCAL',
+    label: 'Select and pan tool',
+    action: 'defaultTool',
+    shortcut: 'V',
+    requiresDocument: true,
+    pipelineSafe: false,
+  },
+  {
+    id: 'markup-family',
+    parityId: 'CMNT-001',
+    status: 'LOCAL',
+    label: 'Select markup tool family',
+    action: 'markupFamily',
+    shortcut: 'M',
+    requiresDocument: true,
+    pipelineSafe: false,
+  },
+  {
+    id: 'drawing-family',
+    parityId: 'CMNT-001',
+    status: 'LOCAL',
+    label: 'Select drawing tool family',
+    action: 'drawingFamily',
+    shortcut: 'D',
+    requiresDocument: true,
+    pipelineSafe: false,
+  },
+  {
+    id: 'redaction-tool',
+    parityId: 'SIGN-031',
+    status: 'DEGRADED',
+    label: 'Select redaction mark tool',
+    action: 'redactionTool',
+    shortcut: 'R',
+    requiresDocument: true,
+    pipelineSafe: false,
+  },
+  {
+    id: 'form-field-tool',
+    parityId: 'FORM-009',
+    status: 'DEGRADED',
+    label: 'Select form field tool',
+    action: 'formFieldTool',
+    shortcut: 'F',
+    requiresDocument: true,
+    pipelineSafe: false,
+  },
 ];
 
 export type ShortcutRemapping = Readonly<Record<string, string>>;
+
+function canonicalShortcut(shortcut: string): string {
+  const tokens = shortcut.trim().replace(/\s+/g, '').replace(/\+\+$/, '+Plus').split('+');
+  const key = tokens.pop() ?? '';
+  return [
+    ...(tokens.includes('Mod') ? ['Mod'] : []),
+    ...(tokens.includes('Shift') ? ['Shift'] : []),
+    ...(tokens.includes('Alt') ? ['Alt'] : []),
+    key,
+  ]
+    .join('+')
+    .toLocaleLowerCase();
+}
+
+export function shortcutValidationError(shortcut: string): string | null {
+  const normalized = shortcut.trim().replace(/\s+/g, '').replace(/\+\+$/, '+Plus');
+  if (!normalized) return null;
+  const tokens = normalized.split('+');
+  const key = tokens.pop();
+  if (!key || !/^[^\s+]+$/.test(key) || ['Mod', 'Shift', 'Alt'].includes(key)) {
+    return 'Use one key, optionally preceded by Mod, Shift, or Alt.';
+  }
+  const modifiers = new Set<string>();
+  for (const token of tokens) {
+    if (!['Mod', 'Shift', 'Alt'].includes(token) || modifiers.has(token)) {
+      return 'Use each of Mod, Shift, and Alt at most once before the key.';
+    }
+    modifiers.add(token);
+  }
+  return null;
+}
+
+export function validateShortcutRemapping(remapping: ShortcutRemapping): void {
+  const bindings = new Map<string, string>();
+  for (const command of COMMANDS) {
+    const shortcut = remapping[command.id] ?? command.shortcut ?? '';
+    const validationError = shortcutValidationError(shortcut);
+    if (validationError) {
+      throw new Error(`The shortcut for "${command.id}" is invalid. ${validationError}`);
+    }
+    if (!shortcut) continue;
+    const canonical = canonicalShortcut(shortcut);
+    const existing = bindings.get(canonical);
+    if (existing) {
+      throw new Error(
+        `The shortcut "${shortcut}" is already assigned to "${existing}" and "${command.id}".`,
+      );
+    }
+    bindings.set(canonical, command.id);
+  }
+  for (const id of [
+    'default-tool',
+    'markup-family',
+    'drawing-family',
+    'redaction-tool',
+    'form-field-tool',
+  ]) {
+    const definition = commandById(id);
+    const shortcut = remapping[id] ?? definition.shortcut ?? '';
+    if (!shortcut || canonicalShortcut(shortcut).split('+').includes('shift')) continue;
+    const shifted = canonicalShortcut(`Shift+${shortcut}`);
+    const existing = bindings.get(shifted);
+    if (existing) {
+      throw new Error(
+        `The shortcut "Shift+${shortcut}" is reserved for cycling "${id}" and is already assigned to "${existing}".`,
+      );
+    }
+  }
+}
 
 export function resolveCommands(
   context: CommandContext,
@@ -410,11 +534,12 @@ export function importRemapping(serialized: string): ShortcutRemapping {
   const shortcuts: Record<string, string> = {};
   for (const [id, shortcut] of Object.entries(value.shortcuts)) {
     commandById(id);
-    if (typeof shortcut !== 'string' || !shortcut.trim()) {
-      throw new Error(`The shortcut for "${id}" is empty or invalid.`);
+    if (typeof shortcut !== 'string') {
+      throw new Error(`The shortcut for "${id}" is invalid.`);
     }
-    shortcuts[id] = shortcut;
+    shortcuts[id] = shortcut.trim().replace(/\s+/g, '');
   }
+  validateShortcutRemapping(shortcuts);
   return shortcuts;
 }
 
@@ -505,4 +630,6 @@ export default {
   parsePipeline,
   resolveCommandMetadata,
   resolveCommands,
+  shortcutValidationError,
+  validateShortcutRemapping,
 };

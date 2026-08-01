@@ -7,4 +7,5 @@ export interface ToolPanelProps {
   readonly onOutput: (data: ArrayBuffer, name: string) => void;
   readonly onRotateView: (degrees: 90 | -90) => void;
   readonly onError: (message: string) => void;
+  readonly onNotice: (message: string) => void;
 }
