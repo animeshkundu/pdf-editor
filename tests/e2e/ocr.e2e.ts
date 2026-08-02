@@ -21,7 +21,9 @@ test.beforeAll(() => {
 test('CONV-017 and CONV-019 run bundled OCR lazily and produce an independent-reader PDF', async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  // Recognition takes about 70s in Firefox running alone and longer under the
+  // suite's parallel load, against 60s for the rest of the suite.
+  test.setTimeout(240_000);
   const requests: string[] = [];
   page.on('request', (request) => requests.push(request.url()));
 
@@ -37,7 +39,7 @@ test('CONV-017 and CONV-019 run bundled OCR lazily and produce an independent-re
   await convert.getByRole('button', { name: 'Recognize current page' }).click();
 
   const recognized = convert.getByLabel('Recognized page text');
-  await expect(recognized).not.toHaveValue('', { timeout: 90_000 });
+  await expect(recognized).not.toHaveValue('', { timeout: 180_000 });
   await expect(convert.getByText(/Overall confidence:/)).toBeVisible();
   await expect(convert.getByText(/recognized words/)).toBeVisible();
 
