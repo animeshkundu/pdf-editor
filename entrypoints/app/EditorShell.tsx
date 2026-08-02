@@ -326,6 +326,7 @@ export default function EditorShell({
   const paletteOriginRef = useRef<HTMLElement | null>(null);
   const openController = useRef<AbortController | null>(null);
   const unsavedDialogOriginRef = useRef<HTMLElement | null>(null);
+  const pendingPanelRef = useRef<PanelKind | null>(null);
   const panelButtonRefs = useRef(new Map<PanelKind, HTMLButtonElement>());
   const toolFamilyIndexRef = useRef<Record<string, number>>({});
   const currentEngineRef = useRef<PdfEngine | null>(null);
@@ -451,6 +452,10 @@ export default function EditorShell({
   const choosePanel = useCallback(
     (kind: PanelKind) => {
       if (!engine && kind !== 'capabilities') {
+        if (loading) {
+          pendingPanelRef.current = kind;
+          return;
+        }
         setNotice(
           `Open a PDF to use ${PANEL_TOOLS.find((tool) => tool.kind === kind)?.label}.`,
         );
@@ -463,7 +468,7 @@ export default function EditorShell({
       );
       setCollapsedPanels((current) => current.filter((candidate) => candidate !== kind));
     },
-    [engine],
+    [engine, loading],
   );
 
   const showPanel = useCallback((kind: PanelKind) => {
@@ -569,8 +574,18 @@ export default function EditorShell({
         setDocumentEpoch((value) => value + 1);
         setSelectionAction(null);
         const panelLayout = loadPanelLayout(nextEngine.info.name);
-        setOpenPanels(panelLayout.open);
-        setCollapsedPanels(panelLayout.collapsed);
+        const pendingPanel = pendingPanelRef.current;
+        pendingPanelRef.current = null;
+        setOpenPanels(
+          pendingPanel && !panelLayout.open.includes(pendingPanel)
+            ? [...panelLayout.open, pendingPanel]
+            : panelLayout.open,
+        );
+        setCollapsedPanels(
+          pendingPanel
+            ? panelLayout.collapsed.filter((kind) => kind !== pendingPanel)
+            : panelLayout.collapsed,
+        );
         setPanelWidths(panelLayout.widths);
         setPanelLayoutKey(panelLayout.key);
         if (panelLayout.error) setNotice(panelLayout.error);

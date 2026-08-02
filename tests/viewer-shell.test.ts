@@ -1037,6 +1037,31 @@ describe('Phase 3 viewer acceptance', () => {
     expect(container.textContent).not.toContain('Authoring controls remain unavailable');
   });
 
+  it('CMPR-004 preserves a Compare request made while the document is opening', async () => {
+    let resolveEngine: ((value: PdfEngine) => void) | undefined;
+    engineFactory = vi.fn(
+      () =>
+        new Promise<PdfEngine>((resolve) => {
+          resolveEngine = resolve;
+        }),
+    );
+    await act(async () => root.render(createElement(App, { engineFactory })));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(['%PDF-1.7'], 'contract.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+    await act(async () => buttonNamed(container, 'Compare').click());
+    await act(async () => {
+      resolveEngine?.(engine);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('input[aria-label="PDF to compare"]')).not.toBeNull();
+  });
+
   it('CMPR-001 and CONV-024 expose working local comparison and PDF/A reports', async () => {
     await act(async () => root.render(createElement(App, { engineFactory })));
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
