@@ -161,7 +161,6 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
     const analysisRef = useRef<HTMLParagraphElement>(null);
     const selectionStatusRef = useRef<HTMLParagraphElement>(null);
     const apiRef = useRef<DocumentViewportHandle | null>(null);
-    const activeTool = useToolStore((state) => state.activeTool);
     const formFields = useToolStore((state) => state.formFields);
     const formFieldsHighlighted = useToolStore((state) => state.formFieldsHighlighted);
     const resetTool = useToolStore((state) => state.resetTool);

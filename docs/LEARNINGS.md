@@ -47,6 +47,7 @@ to do next time.
 - **What to do next time.** Probe the pinned compiler at
   `$EMSDK/upstream/emscripten/emcc`, add its directories to `PATH`, set `EM_CONFIG` and
   `EMSDK_NODE`, and install only when that exact compiler is genuinely absent.
+
 ## 2026-08-01: a UI sweep is evidence, not a capability claim
 
 - **Context.** Recording shell accessibility, responsive behaviour, and document-dependent
