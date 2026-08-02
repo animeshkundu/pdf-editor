@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Printer } from 'lucide-react';
 import { viewportStore } from '@/lib/store/viewport';
+import { DesignedCheckbox, DesignedSelect } from '../DesignedControls';
 import FeatureBadge from '../FeatureBadge';
 import type { ToolPanelProps } from './types';
 
@@ -36,7 +37,7 @@ export default function PrintTools({
       onError('Printing is disabled by this document’s permission settings.');
       return;
     }
-    const popup = window.open('', '_blank', 'noopener,noreferrer');
+    const popup = window.open('', '_blank');
     if (!popup) {
       onError('Printing needs permission to open a local print window.');
       return;
@@ -73,7 +74,6 @@ export default function PrintTools({
           })
         : (await engine.extractPages(pages)).data;
       const url = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }));
-      popup.location.href = url;
       popup.addEventListener(
         'load',
         () => {
@@ -82,6 +82,7 @@ export default function PrintTools({
         },
         { once: true },
       );
+      popup.location.replace(url);
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     })()
       .catch((error: unknown) => {
@@ -113,14 +114,16 @@ export default function PrintTools({
       <div className="property-grid">
         <label>
           <span>Pages</span>
-          <select
+          <DesignedSelect
+            label="Pages to print"
             value={rangeMode}
-            onChange={(event) => setRangeMode(event.target.value as typeof rangeMode)}
-          >
-            <option value="all">All pages</option>
-            <option value="current">Current page</option>
-            <option value="range">Page range</option>
-          </select>
+            options={[
+              { value: 'all', label: 'All pages' },
+              { value: 'current', label: 'Current page' },
+              { value: 'range', label: 'Page range' },
+            ]}
+            onValueChange={setRangeMode}
+          />
         </label>
         {rangeMode === 'range' ? (
           <label>
@@ -130,60 +133,86 @@ export default function PrintTools({
         ) : null}
         <label>
           <span>Subset</span>
-          <select
+          <DesignedSelect
+            label="Page subset"
             value={subset}
-            onChange={(event) => setSubset(event.target.value as typeof subset)}
-          >
-            <option value="all">All selected pages</option>
-            <option value="odd">Odd pages</option>
-            <option value="even">Even pages</option>
-          </select>
+            options={[
+              { value: 'all', label: 'All selected pages' },
+              { value: 'odd', label: 'Odd pages' },
+              { value: 'even', label: 'Even pages' },
+            ]}
+            onValueChange={setSubset}
+          />
         </label>
         <label>
           <span>Scale</span>
-          <select
+          <DesignedSelect
+            label="Print scale"
             value={scale}
-            onChange={(event) => setScale(event.target.value as typeof scale)}
-          >
-            <option value="fit">Fit printable area</option>
-            <option value="actual">Actual size</option>
-            <option value="shrink">Shrink oversized pages</option>
-          </select>
+            options={[
+              { value: 'fit', label: 'Set in system dialog' },
+              { value: 'actual', label: 'Actual size' },
+              { value: 'shrink', label: 'Shrink oversized pages' },
+            ]}
+            disabled
+            describedBy="print-scale-limit"
+            onValueChange={setScale}
+          />
         </label>
         <label>
           <span>Content</span>
-          <select
+          <DesignedSelect
+            label="Print content"
             value={include}
-            onChange={(event) => setInclude(event.target.value as typeof include)}
-          >
-            <option value="markups">Document and markups</option>
-            <option value="document">Document</option>
-          </select>
-        </label>
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={reverse}
-            onChange={(event) => setReverse(event.target.checked)}
+            options={[
+              { value: 'markups', label: 'Document and markups' },
+              { value: 'document', label: 'Document only' },
+            ]}
+            disabled
+            describedBy="print-content-limit"
+            onValueChange={setInclude}
           />
-          <span>Reverse order</span>
         </label>
+        <DesignedCheckbox
+          label="Reverse order"
+          checked={reverse}
+          onCheckedChange={setReverse}
+        />
       </div>
+      <p id="print-scale-limit" className="scope-note">
+        Scaling is chosen in the browser or operating-system print dialog.
+      </p>
+      <p id="print-content-limit" className="scope-note">
+        Annotation suppression is unavailable; printable annotations remain included.
+      </p>
       <button
         type="button"
         className="primary-action"
         disabled={busy || !engine.info.permissions.print}
+        aria-describedby={
+          !engine.info.permissions.print
+            ? 'print-permission-limit'
+            : busy
+              ? 'print-busy-status'
+              : undefined
+        }
         onClick={print}
       >
         <Printer aria-hidden="true" size={16} /> {busy ? 'Preparing…' : 'Open print dialog'}
       </button>
+      {!engine.info.permissions.print ? (
+        <p id="print-permission-limit" className="scope-note">
+          Printing is disabled by this document’s permission settings.
+        </p>
+      ) : null}
+      {busy ? (
+        <p id="print-busy-status" className="scope-note">
+          The selected pages are being prepared for the local print dialog.
+        </p>
+      ) : null}
       <p className="scope-note">
         Selected range, odd/even filtering, and reverse order are applied before the dialog. The
-        browser owns printer selection, copies, duplex, paper source, and final scaling policy (
-        {scale}).{' '}
-        {include === 'document'
-          ? 'Annotation suppression is not approximated.'
-          : 'Printable annotations remain included.'}
+        browser owns printer selection, copies, duplex, paper source, and final scaling policy.
       </p>
       <p className="scope-note">
         <FeatureBadge status="EXCLUDED" /> Prepress marks, separations, and colour-management

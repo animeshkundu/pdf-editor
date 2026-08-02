@@ -6,6 +6,7 @@ import commandRegistry, {
   type ResolvedCommand,
 } from '@/lib/commands/registry';
 import type { EngineTypes } from '@/lib/engine/port';
+import { DesignedSelect } from '../DesignedControls';
 import FeatureBadge from '../FeatureBadge';
 
 function downloadPipeline(pipeline: Pipeline): void {
@@ -93,23 +94,27 @@ export default function AutomationBuilder({
         </div>
         <FeatureBadge status="LOCAL" />
       </div>
-      <p className="panel-intro">
+      <p id="pipeline-step-help" className="panel-intro">
         Build from the same registry as the toolbar and command palette. Imported pipelines are
-        shown first and never execute on import.
+        shown first and never execute on import. Add at least one step before running or
+        exporting.
       </p>
       <label>
         <span>Pipeline name</span>
         <input value={name} onChange={(event) => setName(event.target.value)} />
       </label>
       <div className="pipeline-add">
-        <select value={candidate} onChange={(event) => setCandidate(event.target.value)}>
-          {safe.map((command) => (
-            <option key={command.id} value={command.id}>
-              {typeof command.label === 'string' ? command.label : command.id} ·{' '}
-              {command.status}
-            </option>
-          ))}
-        </select>
+        <DesignedSelect
+          label="Pipeline command"
+          value={candidate}
+          options={safe.map((command) => ({
+            value: command.id,
+            label: `${typeof command.label === 'string' ? command.label : command.id} · ${
+              command.status
+            }`,
+          }))}
+          onValueChange={setCandidate}
+        />
         <button type="button" onClick={() => setSteps((current) => [...current, candidate])}>
           <Plus aria-hidden="true" size={15} /> Add step
         </button>
@@ -143,6 +148,7 @@ export default function AutomationBuilder({
         <button
           type="button"
           disabled={steps.length === 0 || running}
+          aria-describedby="pipeline-step-help"
           onClick={() => void execute(pipeline)}
         >
           <Play aria-hidden="true" size={15} /> {running ? 'Running…' : 'Run pipeline'}
@@ -150,6 +156,7 @@ export default function AutomationBuilder({
         <button
           type="button"
           disabled={steps.length === 0}
+          aria-describedby="pipeline-step-help"
           onClick={() => downloadPipeline(pipeline)}
         >
           <Download aria-hidden="true" size={15} /> Export pipeline
@@ -197,10 +204,10 @@ export default function AutomationBuilder({
         <legend>
           Document JavaScript console <FeatureBadge status="LOCAL" />
         </legend>
-        <p className="scope-note">
+        <p id="javascript-console-help" className="scope-note">
           Run MuJS against a disposable snapshot in this document&apos;s isolated worker.
           Evaluation cannot change the open PDF. Network APIs are absent; external requests are
-          observed and blocked.
+          observed and blocked. Enter JavaScript before running it.
         </p>
         <label>
           <span>JavaScript source</span>
@@ -215,6 +222,7 @@ export default function AutomationBuilder({
           type="button"
           className="primary-action"
           disabled={runningConsole || !consoleSource.trim()}
+          aria-describedby="javascript-console-help"
           onClick={() => {
             setRunningConsole(true);
             void engine

@@ -93,12 +93,18 @@ export default function AccessibilityTools({
           order.
         </p>
         <div className="panel-actions">
-          <button type="button" disabled={speaking} onClick={readCurrentPage}>
+          <button
+            type="button"
+            disabled={speaking}
+            aria-describedby="read-aloud-status"
+            onClick={readCurrentPage}
+          >
             <Play aria-hidden="true" size={16} /> Read current page
           </button>
           <button
             type="button"
             disabled={!speaking}
+            aria-describedby="read-aloud-status"
             onClick={() => {
               window.speechSynthesis.cancel();
               setSpeaking(false);
@@ -107,6 +113,11 @@ export default function AccessibilityTools({
             <Pause aria-hidden="true" size={16} /> Stop
           </button>
         </div>
+        <p id="read-aloud-status" className="scope-note">
+          {speaking
+            ? 'Reading is active; stop it before starting again.'
+            : 'Start reading before the Stop control becomes available.'}
+        </p>
       </article>
 
       <article className="workflow-card">
@@ -168,6 +179,11 @@ export default function AccessibilityTools({
           as WCAG-conformant from a partial structure traversal.
         </p>
       </article>
+      <p className="scope-note">
+        <FeatureBadge status="DEGRADED" /> Inferred reading order for untagged documents needs
+        review. <FeatureBadge status="EXCLUDED" /> Autotagging and reading-order repair are not
+        available; correct the source document or use a dedicated tagging tool.
+      </p>
     </section>
   );
 }

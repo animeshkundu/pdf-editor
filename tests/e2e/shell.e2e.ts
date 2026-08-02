@@ -126,6 +126,7 @@ test('SIGN-018 opens a protected PDF after a wrong-password retry', async ({ pag
 
   await password.fill('reader-secret');
   await dialog.getByRole('button', { name: 'Unlock' }).click();
+  await expect(page.locator('canvas.pdf-tile').first()).toBeVisible({ timeout: 15_000 });
   await expect(dialog).toBeHidden();
   await expect(page.getByText('1 page · LOCAL')).toBeVisible();
   const pages = page.getByLabel('Document pages');
@@ -139,6 +140,7 @@ test('SIGN-018 opens a protected PDF after a wrong-password retry', async ({ pag
 test('SIGN-019 authenticates owner controls for an owner-only PDF', async ({ page }) => {
   await page.goto('/pdf/app/');
   await page.getByLabel('Open PDF').setInputFiles(ownerOnlyFixture);
+  await expect(page.locator('canvas.pdf-tile').first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('1 page · LOCAL')).toBeVisible();
   await page.getByRole('button', { name: 'Protect' }).click();
   await expect(page.getByText('Owner controls are locked')).toBeVisible();
@@ -172,7 +174,7 @@ test('SIGN-024 opens RC4 read-only and offers only an AES-256 replacement', asyn
   await expect(
     page.getByRole('button', { name: 'Replace RC4 with AES-256 copy' }),
   ).toBeVisible();
-  await expect(page.getByLabel('Encryption')).toHaveValue('aes-256');
+  await expect(page.getByLabel('Encryption')).toHaveText('AES-256');
   await expect(page.getByLabel('Encryption')).toBeDisabled();
   expect(consoleErrors).toEqual([]);
 });
@@ -307,7 +309,7 @@ test('opens and renders a PDF through the production worker and WASM build', asy
       .evaluate((element) => element.scrollWidth <= element.clientWidth),
   ).toBe(true);
   const closePanelBox = await page
-    .getByRole('button', { name: 'Close contextual panel' })
+    .getByRole('button', { name: 'Close contextual panels' })
     .boundingBox();
   expect(closePanelBox?.width).toBeGreaterThanOrEqual(44);
   expect((closePanelBox?.x ?? 321) + (closePanelBox?.width ?? 0)).toBeLessThanOrEqual(320);

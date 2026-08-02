@@ -48,6 +48,30 @@ to do next time.
   `$EMSDK/upstream/emscripten/emcc`, add its directories to `PATH`, set `EM_CONFIG` and
   `EMSDK_NODE`, and install only when that exact compiler is genuinely absent.
 
+## 2026-08-01: a UI sweep is evidence, not a capability claim
+
+- **Context.** Recording shell accessibility, responsive behaviour, and document-dependent
+  states across fixtures with uneven engine support.
+- **What happened.** A root-preview observation can establish a visible shell state, but it
+  does not establish that the mounted production artifact can reach that state. Several
+  important PDF states also require fixtures or engine signals that are not presently
+  available.
+- **What to do next time.** Record the reach route, fixture, matrix, and evidence source for
+  every sweep row. Mark a state `ENGINE-BLOCKED` when the fixture or signal is absent; do not
+  turn it into a passing claim. Reserve production-artifact evidence for a run that actually
+  uses that artifact.
+
+## 2026-08-01: visible coverage can still be vacuous
+
+- **Context.** Browser coverage asserted designed controls, keyboard selection, and local print.
+- **What happened.** A native-control query ran only after every panel had closed, an overlay
+  assertion checked an always-present transparent canvas, and `noopener` made `window.open`
+  return no usable print handle. All three looked covered until the assertions exercised the
+  actual rendered state and output navigation.
+- **What to do next time.** Keep assertions inside the mounted surface, inspect painted canvas
+  alpha rather than element presence, operate portalled controls, and wait for the generated
+  blob request. A browser path is covered only when its final side effect is observed.
+
 ## 2026-07-30: verify the dangerous half of a compound mutation before commit
 
 - **Context.** Existing-text replacement removes source glyphs before adding its replacement.

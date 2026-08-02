@@ -94,9 +94,17 @@ export default function CompareTool({
         <FeatureBadge status="DEGRADED" />
       </div>
       <p className="panel-intro">
-        Compare page text, dimensions, labels, additions, and removals without uploading either
-        document.
+        Text, dimensions, labels, additions, and removals are compared locally. Scanned or
+        raster-only pages need raster/OCR review before you rely on the result.
       </p>
+      <input
+        ref={input}
+        className="sr-only"
+        type="file"
+        accept="application/pdf,.pdf"
+        aria-label="PDF to compare"
+        onChange={compare}
+      />
       <button
         type="button"
         className="primary-action"
@@ -106,14 +114,6 @@ export default function CompareTool({
         <FileSearch aria-hidden="true" size={16} />{' '}
         {busy ? 'Comparing…' : 'Choose comparison PDF'}
       </button>
-      <input
-        ref={input}
-        hidden
-        type="file"
-        accept="application/pdf,.pdf"
-        aria-label="PDF to compare"
-        onChange={compare}
-      />
       <p className="scope-note">
         <FeatureBadge status="EXCLUDED" /> Scanned-against-digital comparison is not available.
         This build cannot OCR both documents across the supported browser floor; recognizing the

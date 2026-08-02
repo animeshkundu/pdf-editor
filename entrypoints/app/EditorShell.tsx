@@ -6,11 +6,15 @@ import {
   useState,
   type ChangeEvent,
   type DragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
 } from 'react';
 import {
   BookOpen,
   Accessibility,
   Check,
+  ChevronDown,
+  ChevronUp,
   ChevronsUpDown,
   Command,
   Download,
@@ -33,23 +37,27 @@ import {
   ScanText,
   Sun,
   Undo2,
+  X,
   ZoomIn,
   ZoomOut,
   Workflow,
 } from 'lucide-react';
 import * as Select from '@radix-ui/react-select';
+import * as Dialog from '@radix-ui/react-dialog';
 import engineErrors, { type EngineTypes } from '@/lib/engine/port';
 import commandRegistry, {
   type CommandAction,
   type CommandContext,
   type CommandState,
   type ResolvedCommand,
+  type ShortcutRemapping,
 } from '@/lib/commands/registry';
-import { formatShortcut } from '@/lib/commands/shortcuts';
+import { formatShortcut, isTextEntryTarget, matchesShortcut } from '@/lib/commands/shortcuts';
 import { OpfsSnapshotStore, type RecoveryEntry } from '@/lib/persistence/opfs';
 import { useDocumentStore } from '@/lib/store/document';
+import { useToolStore, type EditorTool } from '@/lib/store/tools';
 import CommandPalette from './CommandPalette';
-import DocumentPanel from './DocumentPanels';
+import DocumentPanel, { CapabilitiesPanel } from './DocumentPanels';
 import DocumentViewport from './DocumentViewport';
 import SelectionActionBar, { type SelectionAction } from './SelectionActionBar';
 import PasswordDialog from './PasswordDialog';
@@ -93,6 +101,9 @@ interface PendingPasswordOpen {
   readonly handle: LocalFileHandle | null;
   readonly recoveredEntry: RecoveryEntry | null;
 }
+interface PendingOpenRequest extends PendingPasswordOpen {
+  readonly password: string | undefined;
+}
 
 const PANEL_TOOLS: readonly {
   readonly kind: PanelKind;
@@ -115,6 +126,39 @@ const PANEL_TOOLS: readonly {
   { kind: 'automation', label: 'Automate', icon: Workflow },
   { kind: 'history', label: 'History', icon: History },
   { kind: 'capabilities', label: 'Scope', icon: Info },
+];
+
+const TOOL_FAMILIES: readonly {
+  readonly commandId: string;
+  readonly shortcut: string;
+  readonly panel: PanelKind | null;
+  readonly tools: readonly EditorTool[];
+}[] = [
+  { commandId: 'default-tool', shortcut: 'V', panel: null, tools: ['default'] },
+  {
+    commandId: 'markup-family',
+    shortcut: 'M',
+    panel: 'markup',
+    tools: ['note', 'highlight', 'free-text'],
+  },
+  {
+    commandId: 'drawing-family',
+    shortcut: 'D',
+    panel: 'markup',
+    tools: ['ink', 'shape'],
+  },
+  {
+    commandId: 'redaction-tool',
+    shortcut: 'R',
+    panel: 'markup',
+    tools: ['redaction-mark'],
+  },
+  {
+    commandId: 'form-field-tool',
+    shortcut: 'F',
+    panel: 'forms',
+    tools: ['form-field'],
+  },
 ];
 
 interface LocalWritable {
@@ -154,19 +198,98 @@ function hasSaveFilePicker(value: Window): value is FilePickerWindow {
   return 'showSaveFilePicker' in value;
 }
 
+function loadShortcutSettings(): {
+  readonly remapping: ShortcutRemapping;
+  readonly error: string;
+} {
+  try {
+    const serialized = window.localStorage.getItem('papertrail:shortcut-remapping');
+    return {
+      remapping: serialized ? commandRegistry.importRemapping(serialized) : {},
+      error: '',
+    };
+  } catch (shortcutError) {
+    const detail =
+      shortcutError instanceof Error ? shortcutError.message : 'Unknown shortcut error.';
+    return { remapping: {}, error: `Loading local shortcut settings failed. ${detail}` };
+  }
+}
+
+function loadPanelLayout(name: string): {
+  readonly key: string;
+  readonly open: readonly PanelKind[];
+  readonly collapsed: readonly PanelKind[];
+  readonly widths: Readonly<Partial<Record<PanelKind, number>>>;
+  readonly error: string;
+} {
+  const key = `papertrail:panels:${name}`;
+  try {
+    const serialized = window.localStorage.getItem(key);
+    if (!serialized) return { key, open: ['pages'], collapsed: [], widths: {}, error: '' };
+    const value: unknown = JSON.parse(serialized);
+    if (!value || typeof value !== 'object') throw new Error('Panel layout is not an object.');
+    const record = value as {
+      readonly open?: unknown;
+      readonly collapsed?: unknown;
+      readonly widths?: unknown;
+    };
+    const validKinds = new Set(PANEL_TOOLS.map(({ kind }) => kind));
+    const open: readonly PanelKind[] = Array.isArray(record.open)
+      ? record.open.filter((kind): kind is PanelKind => validKinds.has(kind as PanelKind))
+      : ['pages'];
+    const collapsed: readonly PanelKind[] = Array.isArray(record.collapsed)
+      ? record.collapsed.filter((kind): kind is PanelKind => validKinds.has(kind as PanelKind))
+      : [];
+    const widths: Partial<Record<PanelKind, number>> = {};
+    if (record.widths && typeof record.widths === 'object') {
+      for (const [kind, width] of Object.entries(record.widths)) {
+        if (validKinds.has(kind as PanelKind) && typeof width === 'number') {
+          widths[kind as PanelKind] = Math.min(480, Math.max(260, width));
+        }
+      }
+    }
+    return {
+      key,
+      open,
+      collapsed,
+      widths,
+      error: '',
+    };
+  } catch (layoutError) {
+    const detail =
+      layoutError instanceof Error ? layoutError.message : 'Unknown panel-layout error.';
+    return {
+      key,
+      open: ['pages'],
+      collapsed: [],
+      widths: {},
+      error: `The saved panel layout could not be restored. ${detail}`,
+    };
+  }
+}
+
 export default function EditorShell({
   engineFactory,
 }: {
   readonly engineFactory: PdfEngineFactory;
 }) {
+  const [initialShortcutSettings] = useState(loadShortcutSettings);
   const [theme, setTheme] = useState<Theme>('light');
   const [density, setDensity] = useState<Density>('comfortable');
   const [engine, setEngine] = useState<PdfEngine | null>(null);
-  const [activePanel, setActivePanel] = useState<PanelKind>('pages');
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [openPanels, setOpenPanels] = useState<readonly PanelKind[]>([]);
+  const [collapsedPanels, setCollapsedPanels] = useState<readonly PanelKind[]>([]);
+  const [findFocusRequest, setFindFocusRequest] = useState(0);
+  const [panelWidths, setPanelWidths] = useState<Readonly<Partial<Record<PanelKind, number>>>>(
+    {},
+  );
+  const [panelLayoutKey, setPanelLayoutKey] = useState('');
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutRemapping, setShortcutRemappingState] = useState<ShortcutRemapping>(
+    initialShortcutSettings.remapping,
+  );
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialShortcutSettings.error);
   const [notice, setNotice] = useState('');
   const [documentEpoch, setDocumentEpoch] = useState(0);
   const [fileHandle, setFileHandle] = useState<LocalFileHandle | null>(null);
@@ -177,10 +300,15 @@ export default function EditorShell({
     null,
   );
   const [passwordError, setPasswordError] = useState('');
-  const commandShortcut = useMemo(() => formatShortcut('Mod+K'), []);
+  const [pendingOpenRequest, setPendingOpenRequest] = useState<PendingOpenRequest | null>(null);
+  const commandShortcut = useMemo(
+    () => formatShortcut(shortcutRemapping.commands ?? 'Mod+K'),
+    [shortcutRemapping],
+  );
   const journal = useDocumentStore((state) => state.journal);
   const outputState = useDocumentStore((state) => state.output);
   const redactionNotice = useDocumentStore((state) => state.redactionNotice);
+  const clearRedactionNotice = useDocumentStore((state) => state.setRedactionNotice);
   const dirty = useDocumentStore((state) => state.dirty);
   const applyStoredMutation = useDocumentStore((state) => state.applyMutation);
   const setStoredEngine = useDocumentStore((state) => state.setEngine);
@@ -197,8 +325,28 @@ export default function EditorShell({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const paletteOriginRef = useRef<HTMLElement | null>(null);
   const openController = useRef<AbortController | null>(null);
+  const unsavedDialogOriginRef = useRef<HTMLElement | null>(null);
+  const pendingPanelRef = useRef<PanelKind | null>(null);
+  const panelButtonRefs = useRef(new Map<PanelKind, HTMLButtonElement>());
+  const toolFamilyIndexRef = useRef<Record<string, number>>({});
   const currentEngineRef = useRef<PdfEngine | null>(null);
   const unsubscribeEngineRef = useRef<(() => void) | null>(null);
+  const activeTool = useToolStore((state) => state.activeTool);
+  const selectTool = useToolStore((state) => state.selectTool);
+  const resetTool = useToolStore((state) => state.resetTool);
+  const setShortcutRemapping = useCallback((nextRemapping: ShortcutRemapping) => {
+    setShortcutRemappingState(nextRemapping);
+    try {
+      window.localStorage.setItem(
+        'papertrail:shortcut-remapping',
+        commandRegistry.exportRemapping(nextRemapping),
+      );
+    } catch (shortcutError) {
+      const detail =
+        shortcutError instanceof Error ? shortcutError.message : 'Unknown shortcut error.';
+      setError(`Saving local shortcut settings failed. ${detail}`);
+    }
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.density = density;
@@ -214,6 +362,32 @@ export default function EditorShell({
   useEffect(() => {
     currentEngineRef.current = engine;
   }, [engine]);
+
+  useEffect(() => {
+    document.title = engine ? `${engine.info.name} — Papertrail` : 'Papertrail';
+    return () => {
+      document.title = 'Papertrail';
+    };
+  }, [engine]);
+
+  useEffect(() => {
+    if (!engine) return;
+    const key = `papertrail:panels:${engine.info.name}`;
+    if (panelLayoutKey !== key) return;
+    try {
+      window.localStorage.setItem(
+        key,
+        JSON.stringify({ open: openPanels, collapsed: collapsedPanels, widths: panelWidths }),
+      );
+    } catch (layoutError) {
+      const detail =
+        layoutError instanceof Error ? layoutError.message : 'Unknown panel-layout error.';
+      window.setTimeout(
+        () => setNotice(`The panel layout could not be saved locally. ${detail}`),
+        0,
+      );
+    }
+  }, [collapsedPanels, engine, openPanels, panelLayoutKey, panelWidths]);
 
   useEffect(() => {
     if (!notice) return;
@@ -265,31 +439,98 @@ export default function EditorShell({
   }, []);
   const openFind = useCallback(() => {
     if (!engine) return;
-    setActivePanel('search');
-    setPanelOpen(true);
-    requestAnimationFrame(() => searchInputRef.current?.focus());
+    setOpenPanels((current) => (current.includes('search') ? current : [...current, 'search']));
+    setCollapsedPanels((current) => current.filter((kind) => kind !== 'search'));
+    setFindFocusRequest((current) => current + 1);
   }, [engine]);
 
   useEffect(() => {
-    if (engine && panelOpen && activePanel === 'search') searchInputRef.current?.focus();
-  }, [activePanel, engine, panelOpen]);
+    if (findFocusRequest === 0) return;
+    searchInputRef.current?.focus();
+  }, [findFocusRequest]);
 
   const choosePanel = useCallback(
     (kind: PanelKind) => {
-      if (activePanel === kind && panelOpen) {
-        setPanelOpen(false);
-      } else {
-        setActivePanel(kind);
-        setPanelOpen(true);
+      if (!engine && kind !== 'capabilities') {
+        if (loading) {
+          pendingPanelRef.current = kind;
+          return;
+        }
+        setNotice(
+          `Open a PDF to use ${PANEL_TOOLS.find((tool) => tool.kind === kind)?.label}.`,
+        );
+        return;
       }
+      setOpenPanels((current) =>
+        current.includes(kind)
+          ? current.filter((candidate) => candidate !== kind)
+          : [...current, kind],
+      );
+      setCollapsedPanels((current) => current.filter((candidate) => candidate !== kind));
     },
-    [activePanel, panelOpen],
+    [engine, loading],
   );
 
   const showPanel = useCallback((kind: PanelKind) => {
-    setActivePanel(kind);
-    setPanelOpen(true);
+    setOpenPanels((current) => (current.includes(kind) ? current : [...current, kind]));
+    setCollapsedPanels((current) => current.filter((candidate) => candidate !== kind));
   }, []);
+
+  const closePanel = useCallback((kind: PanelKind) => {
+    setOpenPanels((current) => current.filter((candidate) => candidate !== kind));
+    setCollapsedPanels((current) => current.filter((candidate) => candidate !== kind));
+    requestAnimationFrame(() => panelButtonRefs.current.get(kind)?.focus());
+  }, []);
+
+  const closeAllPanels = useCallback(() => {
+    setOpenPanels([]);
+    setCollapsedPanels([]);
+    requestAnimationFrame(() => panelButtonRefs.current.get('pages')?.focus());
+  }, []);
+
+  const startPanelResize = useCallback(
+    (kind: PanelKind, event: ReactPointerEvent<HTMLElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = panelWidths[kind] ?? 304;
+      const onMove = (moveEvent: PointerEvent) => {
+        const width = Math.min(480, Math.max(260, startWidth + startX - moveEvent.clientX));
+        setPanelWidths((current) => ({ ...current, [kind]: width }));
+      };
+      const finish = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', finish);
+        window.removeEventListener('pointercancel', finish);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', finish, { once: true });
+      window.addEventListener('pointercancel', finish, { once: true });
+    },
+    [panelWidths],
+  );
+
+  const resizePanelFromKeyboard = useCallback(
+    (kind: PanelKind, event: ReactKeyboardEvent<HTMLElement>) => {
+      const currentWidth = panelWidths[kind] ?? 304;
+      const nextWidth =
+        event.key === 'ArrowLeft'
+          ? currentWidth + 16
+          : event.key === 'ArrowRight'
+            ? currentWidth - 16
+            : event.key === 'Home'
+              ? 260
+              : event.key === 'End'
+                ? 480
+                : null;
+      if (nextWidth === null) return;
+      event.preventDefault();
+      setPanelWidths((current) => ({
+        ...current,
+        [kind]: Math.min(480, Math.max(260, nextWidth)),
+      }));
+    },
+    [panelWidths],
+  );
 
   const openFile = useCallback(
     async (
@@ -299,14 +540,10 @@ export default function EditorShell({
       password?: string,
       discardAlreadyConfirmed = false,
     ) => {
-      if (
-        !discardAlreadyConfirmed &&
-        dirty &&
-        currentEngineRef.current &&
-        !window.confirm(
-          'This document has unsaved changes. Download or save it before opening another file. Select OK only to discard those changes.',
-        )
-      ) {
+      if (!discardAlreadyConfirmed && dirty && currentEngineRef.current) {
+        unsavedDialogOriginRef.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setPendingOpenRequest({ file, handle, recoveredEntry, password });
         return false;
       }
       openController.current?.abort();
@@ -336,8 +573,22 @@ export default function EditorShell({
         setRecoverySource(recoveredEntry);
         setDocumentEpoch((value) => value + 1);
         setSelectionAction(null);
-        setActivePanel('pages');
-        setPanelOpen(true);
+        const panelLayout = loadPanelLayout(nextEngine.info.name);
+        const pendingPanel = pendingPanelRef.current;
+        pendingPanelRef.current = null;
+        setOpenPanels(
+          pendingPanel && !panelLayout.open.includes(pendingPanel)
+            ? [...panelLayout.open, pendingPanel]
+            : panelLayout.open,
+        );
+        setCollapsedPanels(
+          pendingPanel
+            ? panelLayout.collapsed.filter((kind) => kind !== pendingPanel)
+            : panelLayout.collapsed,
+        );
+        setPanelWidths(panelLayout.widths);
+        setPanelLayoutKey(panelLayout.key);
+        if (panelLayout.error) setNotice(panelLayout.error);
         setPendingPasswordOpen(null);
         setPasswordError('');
         void nextEngine
@@ -419,8 +670,8 @@ export default function EditorShell({
   }, []);
 
   const saveOutput = useCallback(
-    async (saveAs: boolean) => {
-      if (!engine) return;
+    async (saveAs: boolean): Promise<boolean> => {
+      if (!engine) return false;
       try {
         let target = saveAs ? null : fileHandle;
         if (saveAs && hasSaveFilePicker(window)) {
@@ -458,12 +709,14 @@ export default function EditorShell({
           await OpfsSnapshotStore.remove(recoverySource);
           setRecoverySource(null);
         }
+        return true;
       } catch (saveError) {
-        if (saveError instanceof DOMException && saveError.name === 'AbortError') return;
+        if (saveError instanceof DOMException && saveError.name === 'AbortError') return false;
         const detail = saveError instanceof Error ? saveError.message : 'Unknown save error.';
         setError(
           `${fileHandle && !saveAs ? 'Saving' : 'Downloading'} the PDF failed. ${detail}`,
         );
+        return false;
       }
     },
     [engine, fileHandle, markSaved, onOutput, recoverySource],
@@ -494,8 +747,8 @@ export default function EditorShell({
     () => ({
       open: openPicker,
       palette: openPalette,
-      save: () => saveOutput(false),
-      saveAs: () => saveOutput(true),
+      save: () => void saveOutput(false),
+      saveAs: () => void saveOutput(true),
       undo: async () => {
         if (engine) onMutation(await engine.undo());
       },
@@ -525,8 +778,35 @@ export default function EditorShell({
         setDensity((value) =>
           value === 'comfortable' ? 'compact' : value === 'compact' ? 'touch' : 'comfortable',
         ),
+      defaultTool: resetTool,
+      markupFamily: () => {
+        selectTool('note');
+        showPanel('markup');
+      },
+      drawingFamily: () => {
+        selectTool('ink');
+        showPanel('markup');
+      },
+      redactionTool: () => {
+        selectTool('redaction-mark');
+        showPanel('markup');
+      },
+      formFieldTool: () => {
+        selectTool('form-field');
+        showPanel('forms');
+      },
     }),
-    [engine, onMutation, openFind, openPalette, openPicker, saveOutput, showPanel],
+    [
+      engine,
+      onMutation,
+      openFind,
+      openPalette,
+      openPicker,
+      resetTool,
+      saveOutput,
+      selectTool,
+      showPanel,
+    ],
   );
 
   const commandState = useMemo<CommandState>(
@@ -545,8 +825,8 @@ export default function EditorShell({
     [actions, commandState],
   );
   const commandMetadata = useMemo(
-    () => commandRegistry.resolveCommandMetadata(commandState),
-    [commandState],
+    () => commandRegistry.resolveCommandMetadata(commandState, shortcutRemapping),
+    [commandState, shortcutRemapping],
   );
   const commands = useMemo<readonly ResolvedCommand[]>(
     () =>
@@ -561,10 +841,54 @@ export default function EditorShell({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing) return;
       if (event.key === 'Escape' && !paletteOpen) {
+        const target = event.target;
+        if (target instanceof Element && target.closest('[role="dialog"]')) return;
+        if (activeTool !== 'default') {
+          event.preventDefault();
+          resetTool();
+          return;
+        }
+        if (
+          target instanceof Element &&
+          target.closest(
+            'input, textarea, select, [contenteditable="true"], [role="combobox"], [role="searchbox"]',
+          )
+        ) {
+          return;
+        }
         viewportRef.current?.focus();
         return;
       }
-      const command = commandRegistry.commandForKeyboardEvent(event, commandContext);
+      if (!paletteOpen && !isTextEntryTarget(event.target) && !event.altKey) {
+        const family = TOOL_FAMILIES.find(({ commandId, shortcut }) => {
+          const binding = shortcutRemapping[commandId] ?? shortcut;
+          const shiftedBinding =
+            event.shiftKey && !binding.split('+').includes('Shift')
+              ? `Shift+${binding}`
+              : binding;
+          return matchesShortcut(event, shiftedBinding);
+        });
+        if (family) {
+          event.preventDefault();
+          if (!engine) {
+            setNotice('Open a PDF to use document tools.');
+            return;
+          }
+          const currentIndex = toolFamilyIndexRef.current[family.commandId] ?? -1;
+          const nextIndex = event.shiftKey ? (currentIndex + 1) % family.tools.length : 0;
+          toolFamilyIndexRef.current[family.commandId] = nextIndex;
+          const nextTool = family.tools[nextIndex];
+          if (nextTool === 'default') resetTool();
+          else if (nextTool) selectTool(nextTool);
+          if (family.panel) showPanel(family.panel);
+          return;
+        }
+      }
+      const command = commandRegistry.commandForKeyboardEvent(
+        event,
+        commandContext,
+        shortcutRemapping,
+      );
       if (!command) return;
       event.preventDefault();
       if (command.disabled) {
@@ -584,9 +908,18 @@ export default function EditorShell({
         setError(`${command.label} failed. ${detail}`);
       }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [commandContext, paletteOpen]);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [
+    activeTool,
+    commandContext,
+    engine,
+    paletteOpen,
+    resetTool,
+    selectTool,
+    shortcutRemapping,
+    showPanel,
+  ]);
 
   const onSearchHit = (hit: SearchHit) => viewportRef.current?.showSearchHit(hit);
 
@@ -608,7 +941,9 @@ export default function EditorShell({
           </span>
         </div>
         <div className="document-title">
-          <strong>{engine?.info.title ?? 'No document open'}</strong>
+          <strong title={engine?.info.name ?? 'No document open'}>
+            {engine?.info.name ?? 'No document open'}
+          </strong>
           <small>
             {engine
               ? `${engine.info.pages.length} ${
@@ -646,6 +981,7 @@ export default function EditorShell({
                     : 'There is no document change to undo.'
                 }
                 disabled={!journal.canUndo}
+                aria-describedby={!journal.canUndo ? 'undo-unavailable' : undefined}
                 onClick={() => {
                   void engine
                     .undo()
@@ -658,6 +994,7 @@ export default function EditorShell({
                 }}
               >
                 <Undo2 aria-hidden="true" size={16} />
+                <span>Undo</span>
               </button>
               <button
                 type="button"
@@ -669,6 +1006,7 @@ export default function EditorShell({
                     : 'There is no document change to redo.'
                 }
                 disabled={!journal.canRedo}
+                aria-describedby={!journal.canRedo ? 'redo-unavailable' : undefined}
                 onClick={() => {
                   void engine
                     .redo()
@@ -681,6 +1019,7 @@ export default function EditorShell({
                 }}
               >
                 <Redo2 aria-hidden="true" size={16} />
+                <span>Redo</span>
               </button>
             </>
           ) : null}
@@ -729,23 +1068,27 @@ export default function EditorShell({
             ) : (
               <Sun aria-hidden="true" size={17} />
             )}
+            <span>{theme === 'light' ? 'Dark' : 'Light'}</span>
           </button>
         </div>
       </header>
 
       <main
-        className={`workspace${panelOpen && engine ? ' panel-visible' : ''}`}
+        className={`workspace${openPanels.length > 0 ? ' panels-visible' : ''}`}
         aria-busy={loading}
       >
         <nav aria-label="Tools" className="tool-rail">
           {PANEL_TOOLS.map(({ kind, label, icon: Icon }) => (
             <button
+              ref={(element) => {
+                if (element) panelButtonRefs.current.set(kind, element);
+                else panelButtonRefs.current.delete(kind);
+              }}
               type="button"
               key={kind}
-              className={activePanel === kind && panelOpen ? 'active' : ''}
-              aria-pressed={activePanel === kind && panelOpen}
+              className={openPanels.includes(kind) ? 'active' : ''}
+              aria-pressed={openPanels.includes(kind)}
               onClick={() => choosePanel(kind)}
-              disabled={!engine && kind !== 'capabilities'}
             >
               <Icon aria-hidden="true" size={18} />
               <span>{label}</span>
@@ -817,20 +1160,85 @@ export default function EditorShell({
           )}
         </section>
 
-        {engine && panelOpen ? (
-          <DocumentPanel
-            key={documentEpoch}
-            kind={activePanel}
-            engine={engine}
-            searchInputRef={searchInputRef}
-            onNavigate={(pageIndex) => viewportRef.current?.goToPage(pageIndex)}
-            onSearchHit={onSearchHit}
-            onMutation={onMutation}
-            onOutput={onOutput}
-            onRotateView={(degrees) => viewportRef.current?.rotateView(degrees)}
-            commands={commands}
-            onError={setError}
-          />
+        {openPanels.length > 0 ? (
+          <aside className="panel-dock" aria-label="Open contextual panels">
+            {openPanels.map((kind) => {
+              const collapsed = collapsedPanels.includes(kind);
+              const label = PANEL_TOOLS.find((tool) => tool.kind === kind)?.label ?? kind;
+              return (
+                <section
+                  className="panel-frame"
+                  data-collapsed={collapsed}
+                  key={`${documentEpoch}-${kind}`}
+                  style={{ width: `${panelWidths[kind] ?? 304}px` }}
+                >
+                  <div
+                    role="separator"
+                    tabIndex={0}
+                    className="panel-resize-handle"
+                    aria-label={`Resize ${label} panel`}
+                    aria-orientation="vertical"
+                    aria-valuemin={260}
+                    aria-valuemax={480}
+                    aria-valuenow={panelWidths[kind] ?? 304}
+                    onPointerDown={(event) => startPanelResize(kind, event)}
+                    onKeyDown={(event) => resizePanelFromKeyboard(kind, event)}
+                  />
+                  <header className="panel-chrome">
+                    <strong>{label}</strong>
+                    <span>
+                      <button
+                        type="button"
+                        aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${label} panel`}
+                        onClick={() =>
+                          setCollapsedPanels((current) =>
+                            current.includes(kind)
+                              ? current.filter((candidate) => candidate !== kind)
+                              : [...current, kind],
+                          )
+                        }
+                      >
+                        {collapsed ? (
+                          <ChevronDown aria-hidden="true" size={16} />
+                        ) : (
+                          <ChevronUp aria-hidden="true" size={16} />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Close ${label} panel`}
+                        onClick={() => closePanel(kind)}
+                      >
+                        <X aria-hidden="true" size={16} />
+                      </button>
+                    </span>
+                  </header>
+                  {!collapsed ? (
+                    engine ? (
+                      <DocumentPanel
+                        kind={kind}
+                        label={label}
+                        engine={engine}
+                        searchInputRef={searchInputRef}
+                        onNavigate={(pageIndex) => viewportRef.current?.goToPage(pageIndex)}
+                        onSearchHit={onSearchHit}
+                        onMutation={onMutation}
+                        onOutput={onOutput}
+                        onRotateView={(degrees) => viewportRef.current?.rotateView(degrees)}
+                        commands={commands}
+                        onError={setError}
+                        onNotice={setNotice}
+                      />
+                    ) : kind === 'capabilities' ? (
+                      <aside className="context-panel" aria-label="capabilities panel">
+                        <CapabilitiesPanel />
+                      </aside>
+                    ) : null
+                  ) : null}
+                </section>
+              );
+            })}
+          </aside>
         ) : null}
       </main>
 
@@ -884,18 +1292,39 @@ export default function EditorShell({
             <output ref={analysisStatusRef} aria-label="Analysis scope">
               Analysis pending
             </output>
-            <button
-              type="button"
-              aria-label="Close contextual panel"
-              onClick={() => setPanelOpen((value) => !value)}
-            >
-              <PanelRightClose aria-hidden="true" size={15} />
-            </button>
+            {openPanels.length > 0 ? (
+              <button
+                type="button"
+                aria-label="Close contextual panels"
+                onClick={closeAllPanels}
+              >
+                <PanelRightClose aria-hidden="true" size={15} />
+              </button>
+            ) : null}
           </div>
         ) : (
           <span>LOCAL processing</span>
         )}
+        <span className="status-tool">
+          Tool:{' '}
+          {activeTool === 'default'
+            ? 'Select and pan'
+            : activeTool
+                .replaceAll('-', ' ')
+                .replace(/^./, (letter) => letter.toUpperCase())}{' '}
+          · Escape returns to select and pan
+        </span>
       </footer>
+      {!journal.canUndo ? (
+        <span id="undo-unavailable" className="sr-only">
+          There is no document change to undo.
+        </span>
+      ) : null}
+      {!journal.canRedo ? (
+        <span id="redo-unavailable" className="sr-only">
+          There is no document change to redo.
+        </span>
+      ) : null}
 
       <input
         ref={fileInputRef}
@@ -909,92 +1338,110 @@ export default function EditorShell({
           if (file) void openFile(file, null);
         }}
       />
-      {recoveries[0] ? (
-        <div className="recovery-toast" role="status" aria-live="polite">
-          <span>
-            Recovered local edits from {new Date(recoveries[0].modified).toLocaleString()} are
-            available
-            {recoveries.length > 1 ? ` for ${recoveries.length} documents` : ''}.
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              const entry = recoveries[0];
-              if (!entry) return;
-              void OpfsSnapshotStore.read(entry)
-                .then(async (data) => {
-                  const opened = await openFile(
-                    new File([data], 'Recovered document.pdf', {
-                      type: 'application/pdf',
-                      lastModified: entry.modified,
-                    }),
-                    null,
-                    entry,
-                  );
-                  if (!opened) return;
-                  setRecoveries((current) =>
-                    current.filter((candidate) => candidate.name !== entry.name),
-                  );
-                })
-                .catch((recoveryError: unknown) => {
-                  const detail =
-                    recoveryError instanceof Error
-                      ? recoveryError.message
-                      : 'Unknown recovery error.';
-                  setError(`Recovering local edits failed. ${detail}`);
-                });
-            }}
-          >
-            Recover
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const entry = recoveries[0];
-              if (!entry) return;
-              void OpfsSnapshotStore.remove(entry)
-                .then(() =>
-                  setRecoveries((current) =>
-                    current.filter((candidate) => candidate.name !== entry.name),
-                  ),
-                )
-                .catch((recoveryError: unknown) => {
-                  const detail =
-                    recoveryError instanceof Error
-                      ? recoveryError.message
-                      : 'Unknown recovery error.';
-                  setError(`Discarding recovered edits failed. ${detail}`);
-                });
-            }}
-          >
-            Discard
-          </button>
-        </div>
-      ) : null}
-      {redactionNotice ? (
-        <div className="loading-toast" role="status">
-          {redactionNotice}
-        </div>
-      ) : null}
-      {notice ? (
-        <div className="loading-toast" role="status">
-          {notice}
-        </div>
-      ) : null}
-      {error ? (
-        <div className="error-toast" role="alert">
-          <span>{error}</span>
-          <button type="button" onClick={() => setError('')}>
-            Dismiss
-          </button>
-        </div>
-      ) : null}
-      {loading ? (
-        <div className="loading-toast" role="status">
-          Opening locally…
-        </div>
-      ) : null}
-      <CommandPalette open={paletteOpen} commands={commands} onClose={closePalette} />
+      <div className="notice-stack" role="region" aria-label="Notifications">
+        {error ? (
+          <div className="notice-item notice-error" role="alert">
+            <span>{error}</span>
+            <div className="notice-actions">
+              <button type="button" onClick={() => setError('')}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : loading ? (
+          <div className="notice-item notice-status" role="status">
+            <span>Opening locally…</span>
+            <div className="notice-actions">
+              <button type="button" onClick={() => openController.current?.abort()}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : recoveries[0] ? (
+          <div className="notice-item notice-status" role="status">
+            <span>
+              Recovered local edits from {new Date(recoveries[0].modified).toLocaleString()} are
+              available{recoveries.length > 1 ? ` for ${recoveries.length} documents` : ''}.
+            </span>
+            <div className="notice-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  const entry = recoveries[0];
+                  if (!entry) return;
+                  void OpfsSnapshotStore.read(entry)
+                    .then(async (data) => {
+                      const opened = await openFile(
+                        new File([data], 'Recovered document.pdf', {
+                          type: 'application/pdf',
+                          lastModified: entry.modified,
+                        }),
+                        null,
+                        entry,
+                      );
+                      if (opened)
+                        setRecoveries((current) =>
+                          current.filter((candidate) => candidate.name !== entry.name),
+                        );
+                    })
+                    .catch((recoveryError: unknown) => {
+                      const detail =
+                        recoveryError instanceof Error
+                          ? recoveryError.message
+                          : 'Unknown recovery error.';
+                      setError(`Recovering local edits failed. ${detail}`);
+                    });
+                }}
+              >
+                Recover
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const entry = recoveries[0];
+                  if (!entry) return;
+                  void OpfsSnapshotStore.remove(entry)
+                    .then(() => setRecoveries((current) => current.slice(1)))
+                    .catch((recoveryError: unknown) => {
+                      const detail =
+                        recoveryError instanceof Error
+                          ? recoveryError.message
+                          : 'Unknown recovery error.';
+                      setError(`Discarding recovered edits failed. ${detail}`);
+                    });
+                }}
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        ) : redactionNotice ? (
+          <div className="notice-item notice-status" role="status">
+            <span>{redactionNotice}</span>
+            <div className="notice-actions">
+              <button type="button" onClick={() => clearRedactionNotice(null)}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : notice ? (
+          <div className="notice-item notice-status" role="status">
+            <span>{notice}</span>
+            <div className="notice-actions">
+              <button type="button" onClick={() => setNotice('')}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <CommandPalette
+        open={paletteOpen}
+        commands={commands}
+        remapping={shortcutRemapping}
+        onRemappingChange={setShortcutRemapping}
+        onClose={closePalette}
+      />
       <PasswordDialog
         open={pendingPasswordOpen !== null}
         filename={pendingPasswordOpen?.file.name ?? ''}
@@ -1015,6 +1462,75 @@ export default function EditorShell({
           );
         }}
       />
+      <Dialog.Root
+        open={pendingOpenRequest !== null}
+        onOpenChange={(open) => {
+          if (open) return;
+          setPendingOpenRequest(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content
+            className="unsaved-dialog"
+            aria-describedby="unsaved-dialog-description"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              requestAnimationFrame(() => unsavedDialogOriginRef.current?.focus());
+            }}
+          >
+            <Dialog.Title>Save changes before opening another PDF?</Dialog.Title>
+            <Dialog.Description id="unsaved-dialog-description">
+              Your current document has unsaved changes. Save or download it, discard the
+              changes, or cancel opening the new document.
+            </Dialog.Description>
+            <div className="dialog-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  const request = pendingOpenRequest;
+                  if (!request) return;
+                  void saveOutput(false).then((saved) => {
+                    if (!saved) return;
+                    setPendingOpenRequest(null);
+                    void openFile(
+                      request.file,
+                      request.handle,
+                      request.recoveredEntry,
+                      request.password,
+                      true,
+                    );
+                  });
+                }}
+              >
+                {fileHandle ? 'Save' : 'Download'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const request = pendingOpenRequest;
+                  if (!request) return;
+                  setPendingOpenRequest(null);
+                  void openFile(
+                    request.file,
+                    request.handle,
+                    request.recoveredEntry,
+                    request.password,
+                    true,
+                  );
+                }}
+              >
+                Discard
+              </button>
+              <Dialog.Close asChild>
+                <button type="button" autoFocus>
+                  Cancel
+                </button>
+              </Dialog.Close>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

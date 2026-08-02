@@ -6,6 +6,7 @@ import formCapabilities from '@/lib/forms/capabilities';
 import { useToolStore } from '@/lib/store/tools';
 import formData, { type FormDataFormat } from '@/lib/text/fdf';
 import ActiveTextEntry from '../ActiveTextEntry';
+import { DesignedCheckbox, DesignedDisclosure, DesignedSelect } from '../DesignedControls';
 import FeatureBadge from '../FeatureBadge';
 import type { ToolPanelProps } from './types';
 
@@ -30,7 +31,8 @@ export default function PrepareForm({
   onMutation,
   onNavigate,
   onError,
-}: Pick<ToolPanelProps, 'engine' | 'onMutation' | 'onNavigate' | 'onError'>) {
+  onNotice,
+}: Pick<ToolPanelProps, 'engine' | 'onMutation' | 'onNavigate' | 'onError' | 'onNotice'>) {
   const [fields, setFields] = useState<readonly FormField[]>([]);
   const [selected, setSelected] = useState('');
   const [layoutSelection, setLayoutSelection] = useState<readonly string[]>([]);
@@ -235,7 +237,12 @@ export default function PrepareForm({
       })
       .catch((error: unknown) => {
         const detail = error instanceof Error ? error.message : 'Unknown form authoring error.';
-        onError(`Creating the form field failed. ${detail}`);
+        const rc4Disclosure = engine.info.encryption?.disclosure;
+        onError(
+          engine.info.encryption?.algorithm === 'rc4' && rc4Disclosure
+            ? `Creating the form field failed. ${rc4Disclosure}`
+            : `Creating the form field failed. ${detail}`,
+        );
       })
       .finally(() => setCreating(false));
   };
@@ -403,25 +410,32 @@ export default function PrepareForm({
         </p>
       ) : null}
 
-      <details className="form-authoring" open={fields.length === 0}>
-        <summary>
-          <Plus aria-hidden="true" size={16} /> Add a field
-        </summary>
+      <DesignedDisclosure
+        className="form-authoring"
+        defaultOpen={fields.length === 0}
+        title={
+          <>
+            <Plus aria-hidden="true" size={16} /> Add a field
+          </>
+        }
+      >
         <div className="property-grid">
           <label>
             <span>Field type</span>
-            <select
+            <DesignedSelect
+              label="Field type"
               value={fieldType}
-              onChange={(event) => setFieldType(event.target.value as FormFieldType)}
-            >
-              <option value="text">Text</option>
-              <option value="checkbox">Check box</option>
-              <option value="radio">Radio button</option>
-              <option value="combo">Dropdown</option>
-              <option value="list">List box</option>
-              <option value="button">Button</option>
-              <option value="signature">Signature field</option>
-            </select>
+              options={[
+                { value: 'text', label: 'Text' },
+                { value: 'checkbox', label: 'Check box' },
+                { value: 'radio', label: 'Radio button' },
+                { value: 'combo', label: 'Dropdown' },
+                { value: 'list', label: 'List box' },
+                { value: 'button', label: 'Button' },
+                { value: 'signature', label: 'Signature field' },
+              ]}
+              onValueChange={setFieldType}
+            />
           </label>
           <label>
             <span>Unique name</span>
@@ -433,16 +447,15 @@ export default function PrepareForm({
           </label>
           <label>
             <span>Page</span>
-            <select
-              value={fieldPage}
-              onChange={(event) => setFieldPage(Number(event.target.value))}
-            >
-              {engine.info.pages.map((page) => (
-                <option key={page.index} value={page.index}>
-                  {page.label}
-                </option>
-              ))}
-            </select>
+            <DesignedSelect
+              label="Field page"
+              value={String(fieldPage)}
+              options={engine.info.pages.map((page) => ({
+                value: String(page.index),
+                label: page.label,
+              }))}
+              onValueChange={(value) => setFieldPage(Number(value))}
+            />
           </label>
           {(fieldType === 'combo' || fieldType === 'list') && (
             <label>
@@ -469,80 +482,55 @@ export default function PrepareForm({
               />
             </label>
           ))}
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={required}
-              onChange={(event) => setRequired(event.target.checked)}
-            />
-            <span>Required</span>
-          </label>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={readOnly}
-              onChange={(event) => setReadOnly(event.target.checked)}
-            />
-            <span>Read-only</span>
-          </label>
+          <DesignedCheckbox label="Required" checked={required} onCheckedChange={setRequired} />
+          <DesignedCheckbox
+            label="Read-only"
+            checked={readOnly}
+            onCheckedChange={setReadOnly}
+          />
           {fieldType === 'text' ? (
             <>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={multiline}
-                  onChange={(event) => setMultiline(event.target.checked)}
-                />
-                <span>Multiline</span>
-              </label>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={password}
-                  onChange={(event) => setPassword(event.target.checked)}
-                />
-                <span>Password</span>
-              </label>
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={comb}
-                  onChange={(event) => setComb(event.target.checked)}
-                />
-                <span>Comb</span>
-              </label>
+              <DesignedCheckbox
+                label="Multiline"
+                checked={multiline}
+                onCheckedChange={setMultiline}
+              />
+              <DesignedCheckbox
+                label="Password"
+                checked={password}
+                onCheckedChange={setPassword}
+              />
+              <DesignedCheckbox label="Comb" checked={comb} onCheckedChange={setComb} />
             </>
           ) : null}
           {fieldType === 'combo' ? (
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={editable}
-                onChange={(event) => setEditable(event.target.checked)}
-              />
-              <span>Editable dropdown</span>
-            </label>
+            <DesignedCheckbox
+              label="Editable dropdown"
+              checked={editable}
+              onCheckedChange={setEditable}
+            />
           ) : null}
           {fieldType === 'list' ? (
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={multiple}
-                onChange={(event) => setMultiple(event.target.checked)}
-              />
-              <span>Multiple selection</span>
-            </label>
+            <DesignedCheckbox
+              label="Multiple selection"
+              checked={multiple}
+              onCheckedChange={setMultiple}
+            />
           ) : null}
         </div>
         <button
           type="button"
           className="primary-action"
           disabled={creating || !fieldName.trim()}
+          aria-describedby="form-create-help"
           onClick={createField}
         >
           {creating ? 'Creating…' : 'Create field'}
         </button>
-      </details>
+        <p id="form-create-help" className="scope-note">
+          Give the field a unique name before creating it.
+        </p>
+      </DesignedDisclosure>
 
       <div className="table-controls">
         <input
@@ -554,12 +542,17 @@ export default function PrepareForm({
         />
         <label>
           <span>Sort</span>
-          <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}>
-            <option value="tab">Tab order</option>
-            <option value="name">Name</option>
-            <option value="type">Type</option>
-            <option value="page">Page</option>
-          </select>
+          <DesignedSelect
+            label="Sort form fields"
+            value={sort}
+            options={[
+              { value: 'tab', label: 'Tab order' },
+              { value: 'name', label: 'Name' },
+              { value: 'type', label: 'Type' },
+              { value: 'page', label: 'Page' },
+            ]}
+            onValueChange={setSort}
+          />
         </label>
       </div>
 
@@ -580,13 +573,12 @@ export default function PrepareForm({
                 {visible.map((field) => (
                   <tr key={`${field.pageIndex}-${field.id}`}>
                     <td>
-                      <input
-                        type="checkbox"
+                      <DesignedCheckbox
+                        label={<span className="sr-only">Select {field.name} for layout</span>}
                         checked={selectedLayoutSet.has(field.name)}
-                        aria-label={`Select ${field.name} for layout`}
-                        onChange={(event) =>
+                        onCheckedChange={(checked) =>
                           setLayoutSelection((current) =>
-                            event.target.checked
+                            checked
                               ? [...new Set([...current, field.name])]
                               : current.filter((name) => name !== field.name),
                           )
@@ -628,7 +620,7 @@ export default function PrepareForm({
           {selectedField ? (
             <div className="field-editor">
               <strong>{selectedField.name}</strong>
-              <span>
+              <span id="selected-field-access">
                 {selectedField.required ? 'Required' : 'Optional'} ·{' '}
                 {selectedField.readOnly ? 'Read-only' : 'Editable'}
               </span>
@@ -636,6 +628,7 @@ export default function PrepareForm({
                 <button
                   type="button"
                   disabled={selectedField.readOnly}
+                  aria-describedby="selected-field-access"
                   onClick={() => applyValue(selectedField, selectedValue === 'Off')}
                 >
                   Toggle field
@@ -680,6 +673,7 @@ export default function PrepareForm({
                 <button
                   type="button"
                   disabled={selectedField.readOnly}
+                  aria-describedby="selected-field-access"
                   onClick={() => setEditingValue(true)}
                 >
                   Edit field value
@@ -705,6 +699,7 @@ export default function PrepareForm({
             <button
               type="button"
               disabled={layoutSelection.length < 2}
+              aria-describedby="form-layout-help"
               onClick={() => arrangeFields('left')}
             >
               Align left
@@ -712,14 +707,20 @@ export default function PrepareForm({
             <button
               type="button"
               disabled={layoutSelection.length < 3}
+              aria-describedby="form-layout-help"
               onClick={() => arrangeFields('vertical')}
             >
               Distribute vertically
             </button>
           </div>
+          <p id="form-layout-help" className="scope-note">
+            Select at least two fields to align them and at least three to distribute them.
+          </p>
 
-          <details className="tab-order-editor">
-            <summary>Numbered tab-order path</summary>
+          <DesignedDisclosure className="tab-order-editor" title="Numbered tab-order path">
+            <p id="tab-order-help" className="scope-note">
+              The first field cannot move earlier and the last field cannot move later.
+            </p>
             <ol>
               {tabOrder.map((name, index) => (
                 <li key={name}>
@@ -728,6 +729,7 @@ export default function PrepareForm({
                     type="button"
                     aria-label={`Move ${name} earlier`}
                     disabled={index === 0}
+                    aria-describedby="tab-order-help"
                     onClick={() =>
                       setTabOrder((current) => {
                         const next = [...current];
@@ -743,6 +745,7 @@ export default function PrepareForm({
                     type="button"
                     aria-label={`Move ${name} later`}
                     disabled={index === tabOrder.length - 1}
+                    aria-describedby="tab-order-help"
                     onClick={() =>
                       setTabOrder((current) => {
                         const next = [...current];
@@ -775,14 +778,14 @@ export default function PrepareForm({
             >
               Apply tab order
             </button>
-          </details>
+          </DesignedDisclosure>
 
           <div className="panel-actions">
             <button
               type="button"
               onClick={() => {
                 if (validateRequired())
-                  onError('Form validation complete. Every required field has a value.');
+                  onNotice('Form validation complete. Every required field has a value.');
               }}
             >
               Validate required fields
@@ -815,15 +818,17 @@ export default function PrepareForm({
             <legend>Form data</legend>
             <label>
               <span>Format</span>
-              <select
+              <DesignedSelect
+                label="Form data format"
                 value={format}
-                onChange={(event) => setFormat(event.target.value as FormDataFormat)}
-              >
-                <option value="fdf">FDF</option>
-                <option value="xfdf">XFDF</option>
-                <option value="xml">XML</option>
-                <option value="csv">CSV</option>
-              </select>
+                options={[
+                  { value: 'fdf', label: 'FDF' },
+                  { value: 'xfdf', label: 'XFDF' },
+                  { value: 'xml', label: 'XML' },
+                  { value: 'csv', label: 'CSV' },
+                ]}
+                onValueChange={setFormat}
+              />
             </label>
             <div className="panel-actions">
               <button
@@ -864,10 +869,14 @@ export default function PrepareForm({
         </p>
       )}
 
-      <details className="workflow-group">
-        <summary>
-          Form and document JavaScript <FeatureBadge status="LOCAL" />
-        </summary>
+      <DesignedDisclosure
+        className="workflow-group"
+        title={
+          <>
+            Form and document JavaScript <FeatureBadge status="LOCAL" />
+          </>
+        }
+      >
         <p className="scope-note">
           Scripts run inside the document worker with MuJS limits. Alerts and requests to open
           URLs, print, submit, email, or invoke menu commands are recorded below and never
@@ -876,47 +885,46 @@ export default function PrepareForm({
         <div className="property-grid">
           <label>
             <span>Script scope</span>
-            <select
+            <DesignedSelect
+              label="Script scope"
               value={scriptScope}
-              onChange={(event) => {
-                const scope = event.target.value as typeof scriptScope;
+              options={[
+                { value: 'field', label: 'Form field event' },
+                { value: 'document', label: 'Document-level script' },
+              ]}
+              onValueChange={(scope) => {
                 setScriptScope(scope);
                 setScriptName(scope === 'field' ? (selectedField?.name ?? '') : '');
               }}
-            >
-              <option value="field">Form field event</option>
-              <option value="document">Document-level script</option>
-            </select>
+            />
           </label>
           {scriptScope === 'field' ? (
             <>
               <label>
                 <span>Field</span>
-                <select
+                <DesignedSelect
+                  label="Script field"
                   value={scriptName}
-                  onChange={(event) => setScriptName(event.target.value)}
-                >
-                  <option value="">Choose field</option>
-                  {uniqueNames(fields).map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: 'Choose field' },
+                    ...uniqueNames(fields).map((name) => ({ value: name, label: name })),
+                  ]}
+                  onValueChange={setScriptName}
+                />
               </label>
               <label>
                 <span>Event</span>
-                <select
+                <DesignedSelect
+                  label="Script event"
                   value={scriptTrigger}
-                  onChange={(event) =>
-                    setScriptTrigger(event.target.value as EngineTypes['JavaScriptTrigger'])
-                  }
-                >
-                  <option value="keystroke">Keystroke</option>
-                  <option value="validate">Validate</option>
-                  <option value="calculate">Calculate</option>
-                  <option value="format">Format</option>
-                </select>
+                  options={[
+                    { value: 'keystroke', label: 'Keystroke' },
+                    { value: 'validate', label: 'Validate' },
+                    { value: 'calculate', label: 'Calculate' },
+                    { value: 'format', label: 'Format' },
+                  ]}
+                  onValueChange={setScriptTrigger}
+                />
               </label>
             </>
           ) : (
@@ -947,10 +955,14 @@ export default function PrepareForm({
             !scriptSource.trim() ||
             !(scriptName || (scriptScope === 'field' && selectedField?.name))
           }
+          aria-describedby="script-save-help"
           onClick={saveScript}
         >
           {savingScript ? 'Saving…' : 'Save JavaScript action'}
         </button>
+        <p id="script-save-help" className="scope-note">
+          Choose a target, provide a name when needed, and enter JavaScript before saving.
+        </p>
         {javaScript?.scripts.length ? (
           <ul className="script-list">
             {javaScript.scripts.map((script) => (
@@ -1008,7 +1020,7 @@ export default function PrepareForm({
             </ul>
           </div>
         ) : null}
-      </details>
+      </DesignedDisclosure>
 
       <p className="scope-note">
         Barcode fields are unavailable: no independently decodable encoder is bundled. Automatic
@@ -1017,6 +1029,11 @@ export default function PrepareForm({
         identity so values cannot cross document boundaries. <FeatureBadge status="LOCAL" />{' '}
         Keystroke, validate, calculate, format, and document-level JavaScript run locally with
         observable blocked side effects.
+      </p>
+      <p className="scope-note">
+        <FeatureBadge status="EXCLUDED" /> Requesting e-signatures and LiveCycle or AEM rights
+        management are hosted workflows and are not available. Signature fields remain ordinary
+        local PDF form fields.
       </p>
     </section>
   );

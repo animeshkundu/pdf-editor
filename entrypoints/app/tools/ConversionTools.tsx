@@ -180,7 +180,7 @@ export default function ConversionTools({
       <article className="workflow-card">
         <div className="panel-heading">
           <h3>PDF to Markdown</h3>
-          <FeatureBadge status="DEGRADED" />
+          <FeatureBadge status="LOCAL" />
         </div>
         <p>
           Exports local structured text by page. Complex reading order remains disclosed as

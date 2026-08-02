@@ -14,7 +14,11 @@ export function formatShortcut(
   nav: PlatformNavigator = typeof navigator === 'undefined' ? {} : navigator,
 ): string {
   const modifier = isMacPlatform(nav) ? '⌘' : 'Ctrl';
-  return shortcut.replace(/\bMod\b/g, modifier).replaceAll('+', ' ');
+  const normalized = shortcut.replace(/\+\+$/, '+Plus');
+  return normalized
+    .replace(/\bMod\b/g, modifier)
+    .replaceAll('+', ' ')
+    .replace(/\bPlus$/, '+');
 }
 
 export function isTextEntryTarget(target: EventTarget | null): boolean {
@@ -22,8 +26,9 @@ export function isTextEntryTarget(target: EventTarget | null): boolean {
   return (
     target.isContentEditable ||
     target instanceof HTMLInputElement ||
+    target instanceof HTMLSelectElement ||
     target instanceof HTMLTextAreaElement ||
-    target.getAttribute('role') === 'textbox'
+    ['textbox', 'combobox', 'searchbox'].includes(target.getAttribute('role') ?? '')
   );
 }
 

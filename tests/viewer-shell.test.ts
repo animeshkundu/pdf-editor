@@ -55,9 +55,10 @@ function makeEngine(
   title = 'Local contract',
   limitations: PageText['limitations'] = [],
   encryption?: EngineTypes['DocumentInfo']['encryption'],
+  name = 'contract.pdf',
 ): PdfEngine {
   const info: EngineTypes['DocumentInfo'] = {
-    name: 'contract.pdf',
+    name,
     title,
     pages: [
       { index: 0, label: 'i', bounds: [0, 0, 100, 120], width: 100, height: 120 },
@@ -313,6 +314,7 @@ describe('Phase 3 viewer acceptance', () => {
   });
 
   beforeEach(() => {
+    window.localStorage.clear();
     useDocumentStore.getState().clear();
     container = document.createElement('div');
     document.body.append(container);
@@ -350,7 +352,7 @@ describe('Phase 3 viewer acceptance', () => {
     });
 
     expect(engineFactory).toHaveBeenCalledWith(file, expect.any(AbortSignal));
-    expect(container.textContent).toContain('Local contract');
+    expect(container.textContent).toContain('contract.pdf');
     expect(container.textContent).toContain('2 pages · LOCAL');
     expect(container.querySelector('[aria-label="Document pages"]')).not.toBeNull();
     expect(container.textContent).toContain('LOCAL · page text analysed');
@@ -366,6 +368,12 @@ describe('Phase 3 viewer acceptance', () => {
       'input[aria-label="Find in document"]',
     );
     expect(document.activeElement).toBe(searchInput);
+
+    const markupButton = buttonNamed(container, 'Markup');
+    markupButton.focus();
+    await act(async () => markupButton.click());
+    expect(document.activeElement).toBe(markupButton);
+    expect(document.activeElement).not.toBe(searchInput);
 
     await act(async () => {
       if (!searchInput) throw new Error('Missing search input.');
@@ -384,6 +392,7 @@ describe('Phase 3 viewer acceptance', () => {
   });
 
   it('SIGN-018 retries a protected document through an accessible password dialog', async () => {
+    engine = makeEngine('Local contract', [], undefined, 'protected.pdf');
     engineFactory = vi
       .fn<PdfEngineFactory>()
       .mockRejectedValueOnce(
@@ -423,7 +432,7 @@ describe('Phase 3 viewer acceptance', () => {
       expect.any(AbortSignal),
       'reader-secret',
     );
-    expect(container.textContent).toContain('Local contract');
+    expect(container.textContent).toContain('protected.pdf');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
@@ -703,8 +712,8 @@ describe('Phase 3 viewer acceptance', () => {
   });
 
   it('VIEW-001 resets mounted document state before closing a replaced engine', async () => {
-    const firstEngine = makeEngine('First document');
-    const secondEngine = makeEngine('Second document');
+    const firstEngine = makeEngine('First document', [], undefined, 'first.pdf');
+    const secondEngine = makeEngine('Second document', [], undefined, 'second.pdf');
     engineFactory = vi
       .fn<PdfEngineFactory>()
       .mockResolvedValueOnce(firstEngine)
@@ -722,7 +731,7 @@ describe('Phase 3 viewer acceptance', () => {
       });
     }
 
-    expect(container.textContent).toContain('Second document');
+    expect(container.textContent).toContain('second.pdf');
     expect(container.querySelector('[aria-label="Current page"]')?.textContent).toBe('1 / 2');
     expect(firstEngine.close).toHaveBeenCalledOnce();
     expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -814,7 +823,6 @@ describe('Phase 3 viewer acceptance', () => {
   });
 
   it('VIEW-037 requires explicit discard before replacing unsaved document state', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     await act(async () => root.render(createElement(App, { engineFactory })));
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
     const first = new File(['%PDF-1.7'], 'first.pdf', { type: 'application/pdf' });
@@ -844,10 +852,99 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
     });
 
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain(
+      'Save changes before opening another PDF?',
+    );
     expect(engineFactory).toHaveBeenCalledOnce();
     expect(engine.close).not.toHaveBeenCalled();
-    confirm.mockRestore();
+
+    await act(async () => buttonNamed(document.body, 'Cancel').click());
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(engineFactory).toHaveBeenCalledOnce();
+
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [second] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      buttonNamed(document.body, 'Discard').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(engineFactory).toHaveBeenCalledTimes(2);
+    expect(engine.close).toHaveBeenCalledOnce();
+  });
+
+  it('VIEW-037 opens the replacement only after output succeeds', async () => {
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:local-output');
+    const revokeObjectURL = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => undefined);
+    await act(async () => root.render(createElement(App, { engineFactory })));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const first = new File(['%PDF-1.7'], 'first.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [first] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+      useDocumentStore.getState().applyMutation({
+        document: engine.info,
+        journal: {
+          position: 1,
+          steps: ['Add sticky note'],
+          canUndo: true,
+          canRedo: false,
+          revision: 1,
+        },
+      });
+    });
+
+    const second = new File(['%PDF-1.7'], 'second.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [second] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+    vi.mocked(engine.save).mockRejectedValueOnce(new Error('Disk unavailable.'));
+    await act(async () => {
+      const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]');
+      if (!dialog) throw new Error('Missing unsaved-changes dialog.');
+      buttonNamed(dialog, 'Download').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(engineFactory).toHaveBeenCalledOnce();
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'Downloading the PDF failed. Disk unavailable.',
+    );
+
+    await act(async () => {
+      buttonNamed(container, 'Dismiss').click();
+      await Promise.resolve();
+      const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]');
+      if (!dialog) throw new Error('Missing unsaved-changes dialog.');
+      buttonNamed(dialog, 'Download').click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
+    expect(engineFactory).toHaveBeenCalledTimes(2);
+    expect(engine.close).toHaveBeenCalledOnce();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+    expect(click).toHaveBeenCalledOnce();
+
+    click.mockRestore();
+    createObjectURL.mockRestore();
+    revokeObjectURL.mockRestore();
   });
 
   it('PAGE-001 through PAGE-020 expose composition workflows behind result previews', async () => {
@@ -868,6 +965,53 @@ describe('Phase 3 viewer acceptance', () => {
     expect(buttonNamed(container, 'Split in half').disabled).toBe(false);
     expect(buttonNamed(container, 'Alternate & mix').disabled).toBe(true);
     expect(container.querySelector('[aria-label="Page order"]')).not.toBeNull();
+  });
+
+  it('SIGN-024 preserves the specific RC4 refusal when form authoring fails generically', async () => {
+    const disclosure =
+      'This PDF uses broken RC4 encryption. It is open for reading only and must be replaced with a full garbage-collecting AES-256 copy before output.';
+    engine = makeEngine(
+      'RC4 contract',
+      [],
+      {
+        protected: true,
+        authenticatedAs: 'user',
+        algorithm: 'rc4',
+        readOnly: true,
+        disclosure,
+      },
+      'rc4.pdf',
+    );
+    vi.mocked(engine.createFormField).mockRejectedValueOnce(
+      new Error('This PDF is password-protected. Enter the document password to continue.'),
+    );
+    engineFactory = vi.fn(async () => engine);
+    await act(async () => root.render(createElement(App, { engineFactory })));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(['%PDF-1.7'], 'rc4.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => buttonNamed(container, 'Forms').click());
+    const name = [...container.querySelectorAll('label')]
+      .find((label) => label.textContent?.includes('Unique name'))
+      ?.querySelector('input');
+    if (!(name instanceof HTMLInputElement)) throw new Error('Missing field name input.');
+    await act(async () => setInputValue(name, 'must-not-write'));
+    await act(async () => {
+      buttonNamed(container, 'Create field').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'broken RC4 encryption',
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).not.toContain(
+      'Enter the document password',
+    );
   });
 
   it('FORM-001 authors a real field path instead of reporting authoring unavailable', async () => {
@@ -893,6 +1037,31 @@ describe('Phase 3 viewer acceptance', () => {
     expect(container.textContent).not.toContain('Authoring controls remain unavailable');
   });
 
+  it('CMPR-004 preserves a Compare request made while the document is opening', async () => {
+    let resolveEngine: ((value: PdfEngine) => void) | undefined;
+    engineFactory = vi.fn(
+      () =>
+        new Promise<PdfEngine>((resolve) => {
+          resolveEngine = resolve;
+        }),
+    );
+    await act(async () => root.render(createElement(App, { engineFactory })));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(['%PDF-1.7'], 'contract.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+    });
+    await act(async () => buttonNamed(container, 'Compare').click());
+    await act(async () => {
+      resolveEngine?.(engine);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('input[aria-label="PDF to compare"]')).not.toBeNull();
+  });
+
   it('CMPR-001 and CONV-024 expose working local comparison and PDF/A reports', async () => {
     await act(async () => root.render(createElement(App, { engineFactory })));
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
@@ -908,6 +1077,8 @@ describe('Phase 3 viewer acceptance', () => {
     const comparison = container.querySelector<HTMLInputElement>(
       'input[aria-label="PDF to compare"]',
     );
+    expect(comparison?.hidden).toBe(false);
+    expect(comparison?.classList.contains('sr-only')).toBe(true);
     const other = new File(['%PDF-1.7'], 'other.pdf', { type: 'application/pdf' });
     Object.defineProperty(comparison, 'files', { configurable: true, value: [other] });
     await act(async () => {

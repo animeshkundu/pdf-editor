@@ -28,6 +28,13 @@ import { useDocumentStore } from '@/lib/store/document';
 import { useToolStore } from '@/lib/store/tools';
 import { viewportStore } from '@/lib/store/viewport';
 import ActiveTextEntry from '../ActiveTextEntry';
+import {
+  DesignedCheckbox,
+  DesignedColorPicker,
+  DesignedDisclosure,
+  DesignedSelect,
+  DesignedSlider,
+} from '../DesignedControls';
 import FeatureBadge from '../FeatureBadge';
 import { describeRedactionOutcome, snapshotRedactionText } from '../redactionOutcome';
 import type { ToolPanelProps } from './types';
@@ -324,6 +331,22 @@ function supportsBorder(type: string): boolean {
   return ['FreeText', 'Line', 'Square', 'Circle', 'Polygon', 'PolyLine', 'Ink'].includes(type);
 }
 
+function editorToolFor(
+  tool: ToolDefinition,
+): ReturnType<typeof useToolStore.getState>['activeTool'] | null {
+  if (tool.id === 'note') return 'note';
+  if (tool.id === 'highlight') return 'highlight';
+  if (tool.id === 'text-box') return 'free-text';
+  if (tool.id === 'pencil') return 'ink';
+  if (
+    ['line', 'arrow', 'rectangle', 'oval', 'polygon', 'polyline', 'cloud'].includes(tool.id)
+  ) {
+    return 'shape';
+  }
+  if (tool.id === 'redaction') return 'redaction-mark';
+  return null;
+}
+
 function downloadJson(name: string, value: unknown): void {
   const url = URL.createObjectURL(
     new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }),
@@ -584,43 +607,34 @@ export default function MarkupTools({
         its appearance is regenerated in the worker.
       </p>
 
-      <details className="property-drawer">
-        <summary>Tool properties</summary>
+      <DesignedDisclosure className="property-drawer" title="Tool properties">
         <div className="property-grid">
           <label>
             <span>Line colour</span>
-            <input
-              type="color"
+            <DesignedColorPicker
+              label="Line colour"
               value={properties.color}
-              onChange={(event) =>
-                setProperties((current) => ({ ...current, color: event.target.value }))
-              }
+              onValueChange={(color) => setProperties((current) => ({ ...current, color }))}
             />
           </label>
           <label>
             <span>Fill colour</span>
-            <input
-              type="color"
+            <DesignedColorPicker
+              label="Fill colour"
               value={properties.fill}
-              onChange={(event) =>
-                setProperties((current) => ({ ...current, fill: event.target.value }))
-              }
+              onValueChange={(fill) => setProperties((current) => ({ ...current, fill }))}
             />
           </label>
           <label>
             <span>Opacity {Math.round(properties.opacity * 100)}%</span>
-            <input
-              type="range"
+            <DesignedSlider
+              label="Opacity"
               min={0}
               max={1}
               step={0.05}
               value={properties.opacity}
-              onChange={(event) =>
-                setProperties((current) => ({
-                  ...current,
-                  opacity: Number(event.target.value),
-                }))
-              }
+              valueText={`${Math.round(properties.opacity * 100)}%`}
+              onValueChange={(opacity) => setProperties((current) => ({ ...current, opacity }))}
             />
           </label>
           <label>
@@ -640,19 +654,16 @@ export default function MarkupTools({
           </label>
           <label>
             <span>Line style</span>
-            <select
+            <DesignedSelect
+              label="Line style"
               value={properties.style}
-              onChange={(event) =>
-                setProperties((current) => ({
-                  ...current,
-                  style: event.target.value as ToolProperties['style'],
-                }))
-              }
-            >
-              <option value="Solid">Solid</option>
-              <option value="Dashed">Dashed</option>
-              <option value="Underline">Underline</option>
-            </select>
+              options={[
+                { value: 'Solid', label: 'Solid' },
+                { value: 'Dashed', label: 'Dashed' },
+                { value: 'Underline', label: 'Underline' },
+              ]}
+              onValueChange={(style) => setProperties((current) => ({ ...current, style }))}
+            />
           </label>
           <label>
             <span>Author</span>
@@ -691,41 +702,30 @@ export default function MarkupTools({
           </label>
           <label>
             <span>Units</span>
-            <select
+            <DesignedSelect
+              label="Measurement units"
               value={properties.units}
-              onChange={(event) =>
-                setProperties((current) => ({
-                  ...current,
-                  units: event.target.value as ToolProperties['units'],
-                }))
-              }
-            >
-              <option value="pt">Points</option>
-              <option value="in">Inches</option>
-              <option value="mm">Millimetres</option>
-              <option value="cm">Centimetres</option>
-            </select>
-          </label>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={properties.locked}
-              onChange={(event) =>
-                setProperties((current) => ({ ...current, locked: event.target.checked }))
-              }
+              options={[
+                { value: 'pt', label: 'Points' },
+                { value: 'in', label: 'Inches' },
+                { value: 'mm', label: 'Millimetres' },
+                { value: 'cm', label: 'Centimetres' },
+              ]}
+              onValueChange={(units) => setProperties((current) => ({ ...current, units }))}
             />
-            <span>Locked</span>
           </label>
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={properties.readOnly}
-              onChange={(event) =>
-                setProperties((current) => ({ ...current, readOnly: event.target.checked }))
-              }
-            />
-            <span>Read-only</span>
-          </label>
+          <DesignedCheckbox
+            label="Locked"
+            checked={properties.locked}
+            onCheckedChange={(locked) => setProperties((current) => ({ ...current, locked }))}
+          />
+          <DesignedCheckbox
+            label="Read-only"
+            checked={properties.readOnly}
+            onCheckedChange={(readOnly) =>
+              setProperties((current) => ({ ...current, readOnly }))
+            }
+          />
         </div>
         <div className="preset-controls">
           <input
@@ -738,6 +738,7 @@ export default function MarkupTools({
           <button
             type="button"
             disabled={!presetName.trim()}
+            aria-describedby="tool-set-help"
             onClick={() => {
               setPresets((current) => [
                 ...current.filter((preset) => preset.name !== presetName.trim()),
@@ -751,11 +752,15 @@ export default function MarkupTools({
           <button
             type="button"
             disabled={presets.length === 0}
+            aria-describedby="tool-set-help"
             onClick={() => downloadJson('papertrail-tool-sets.json', { version: 1, presets })}
           >
             <Download aria-hidden="true" size={15} /> Export sets
           </button>
         </div>
+        <p id="tool-set-help" className="scope-note">
+          Name and save a tool set before exporting it.
+        </p>
         <div className="preset-list">
           {presets.map((preset) => (
             <button
@@ -767,7 +772,7 @@ export default function MarkupTools({
             </button>
           ))}
         </div>
-      </details>
+      </DesignedDisclosure>
 
       {outputState?.unappliedRedactions ? (
         <div className="warning-card" role="alert">
@@ -782,17 +787,16 @@ export default function MarkupTools({
             perturbs rendering on some documents.
           </p>
           {outputState.signatures > 0 ? (
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={confirmSignatureInvalidation}
-                onChange={(event) => setConfirmSignatureInvalidation(event.target.checked)}
-              />
-              <span>
-                I understand that applying redactions invalidates {outputState.signatures}{' '}
-                existing {outputState.signatures === 1 ? 'signature' : 'signatures'}.
-              </span>
-            </label>
+            <DesignedCheckbox
+              checked={confirmSignatureInvalidation}
+              onCheckedChange={setConfirmSignatureInvalidation}
+              label={
+                <>
+                  I understand that applying redactions invalidates {outputState.signatures}{' '}
+                  existing {outputState.signatures === 1 ? 'signature' : 'signatures'}.
+                </>
+              }
+            />
           ) : null}
           <button
             type="button"
@@ -843,7 +847,7 @@ export default function MarkupTools({
                   key={tool.id}
                   disabled={busy}
                   aria-pressed={
-                    tool.id === 'redaction' ? activeEditorTool === 'redaction-mark' : undefined
+                    editorToolFor(tool) ? activeEditorTool === editorToolFor(tool) : undefined
                   }
                   aria-describedby={tool.disclosure ? `disclosure-${tool.id}` : undefined}
                   onClick={() => {
@@ -906,11 +910,15 @@ export default function MarkupTools({
         document
       </p>
       {annotations.length > 0 ? (
-        <details className="annotation-inspector">
-          <summary>
-            {annotations.length} {annotations.length === 1 ? 'annotation' : 'annotations'} ·
-            edit existing
-          </summary>
+        <DesignedDisclosure
+          className="annotation-inspector"
+          title={
+            <>
+              {annotations.length} {annotations.length === 1 ? 'annotation' : 'annotations'} ·
+              edit existing
+            </>
+          }
+        >
           <div className="annotation-picker">
             {annotations.map((annotation) => (
               <button
@@ -952,7 +960,7 @@ export default function MarkupTools({
               </button>
             </div>
           ) : null}
-        </details>
+        </DesignedDisclosure>
       ) : (
         <p className="empty-message">Choose a markup tool to add the first annotation.</p>
       )}
@@ -960,6 +968,12 @@ export default function MarkupTools({
       <p className="scope-note">
         <Upload aria-hidden="true" size={14} /> Image and attachment bytes are read locally and
         sent only to this document&apos;s worker.
+      </p>
+      <p className="scope-note">
+        <FeatureBadge status="EXCLUDED" /> Audio comments are not created because deprecated
+        Sound annotations are poorly supported; attach the audio file instead. Existing images
+        and objects are not editable, and existing text does not reflow. Add an annotation or
+        update the source document.
       </p>
     </section>
   );
