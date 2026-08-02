@@ -237,7 +237,12 @@ export default function PrepareForm({
       })
       .catch((error: unknown) => {
         const detail = error instanceof Error ? error.message : 'Unknown form authoring error.';
-        onError(`Creating the form field failed. ${detail}`);
+        const rc4Disclosure = engine.info.encryption?.disclosure;
+        onError(
+          engine.info.encryption?.algorithm === 'rc4' && rc4Disclosure
+            ? `Creating the form field failed. ${rc4Disclosure}`
+            : `Creating the form field failed. ${detail}`,
+        );
       })
       .finally(() => setCreating(false));
   };

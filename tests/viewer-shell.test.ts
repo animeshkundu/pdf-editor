@@ -967,6 +967,53 @@ describe('Phase 3 viewer acceptance', () => {
     expect(container.querySelector('[aria-label="Page order"]')).not.toBeNull();
   });
 
+  it('SIGN-024 preserves the specific RC4 refusal when form authoring fails generically', async () => {
+    const disclosure =
+      'This PDF uses broken RC4 encryption. It is open for reading only and must be replaced with a full garbage-collecting AES-256 copy before output.';
+    engine = makeEngine(
+      'RC4 contract',
+      [],
+      {
+        protected: true,
+        authenticatedAs: 'user',
+        algorithm: 'rc4',
+        readOnly: true,
+        disclosure,
+      },
+      'rc4.pdf',
+    );
+    vi.mocked(engine.createFormField).mockRejectedValueOnce(
+      new Error('This PDF is password-protected. Enter the document password to continue.'),
+    );
+    engineFactory = vi.fn(async () => engine);
+    await act(async () => root.render(createElement(App, { engineFactory })));
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File(['%PDF-1.7'], 'rc4.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] });
+    await act(async () => {
+      fileInput?.dispatchEvent(new Event('change', { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await act(async () => buttonNamed(container, 'Forms').click());
+    const name = [...container.querySelectorAll('label')]
+      .find((label) => label.textContent?.includes('Unique name'))
+      ?.querySelector('input');
+    if (!(name instanceof HTMLInputElement)) throw new Error('Missing field name input.');
+    await act(async () => setInputValue(name, 'must-not-write'));
+    await act(async () => {
+      buttonNamed(container, 'Create field').click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'broken RC4 encryption',
+    );
+    expect(container.querySelector('[role="alert"]')?.textContent).not.toContain(
+      'Enter the document password',
+    );
+  });
+
   it('FORM-001 authors a real field path instead of reporting authoring unavailable', async () => {
     await act(async () => root.render(createElement(App, { engineFactory })));
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
@@ -1005,6 +1052,8 @@ describe('Phase 3 viewer acceptance', () => {
     const comparison = container.querySelector<HTMLInputElement>(
       'input[aria-label="PDF to compare"]',
     );
+    expect(comparison?.hidden).toBe(false);
+    expect(comparison?.classList.contains('sr-only')).toBe(true);
     const other = new File(['%PDF-1.7'], 'other.pdf', { type: 'application/pdf' });
     Object.defineProperty(comparison, 'files', { configurable: true, value: [other] });
     await act(async () => {
