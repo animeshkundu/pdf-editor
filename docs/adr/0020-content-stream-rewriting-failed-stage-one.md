@@ -50,6 +50,15 @@ Content-stream rewriting is withdrawn as a product editing path.
 Stage 2 is not run. Stage 1 red is conclusive by the precommitted rule; changing words after
 a semantic-null rewrite already failed would add risk without changing the decision.
 
+The follow-up token-level measurement is
+[`2026-08-02-null-filter-token-diff.md`](../research/2026-08-02-null-filter-token-diff.md).
+It excludes balanced q/Q insertion as the direct cause and identifies text-position
+reserialization as the live lead: the only passing pdfTeX page rewrites 29 `Td` operators,
+whereas every failing page rewrites 49 to 321 into `TD`/`T*`. LibreOffice couples its
+three-to-one stream consolidation with the same `Td` to `TD` transformation. This evidence
+does not reopen the filter path; it defines Spike A-2's next causal control without changing
+C8.
+
 ## Consequences
 
 The forked engine still lands because resolved operator access is independently useful and

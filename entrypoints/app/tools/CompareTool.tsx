@@ -115,10 +115,9 @@ export default function CompareTool({
         {busy ? 'Comparing…' : 'Choose comparison PDF'}
       </button>
       <p className="scope-note">
-        <FeatureBadge status="EXCLUDED" /> Scanned-against-digital comparison is not available.
-        This build cannot OCR both documents across the supported browser floor; recognizing the
-        current page in Chromium is inspection only and is never reported as a comparison
-        result.
+        <FeatureBadge status="OPEN" /> Scanned-against-digital comparison needs a two-document
+        OCR workflow. Bundled OCR can inspect the current page across the supported browser
+        floor, but that result is not yet compared with the incoming page.
       </p>
       {result ? (
         <>
@@ -181,13 +180,10 @@ export default function CompareTool({
                           </small>
                         ) : page.rasterReviewRecommended ? (
                           enrichment?.ocr ? (
-                            enrichment.ocr.available ? (
-                              <span title={enrichment.ocr.text.slice(0, 200)}>
-                                OCR: {enrichment.ocr.text.length} chars
-                              </span>
-                            ) : (
-                              <small>{enrichment.ocr.reason}</small>
-                            )
+                            <span title={enrichment.ocr.text.slice(0, 200)}>
+                              OCR: {enrichment.ocr.text.length} chars ·{' '}
+                              {Math.round(enrichment.ocr.confidence)}%
+                            </span>
                           ) : page.currentPageIndex !== undefined ? (
                             <button
                               type="button"
@@ -214,10 +210,9 @@ export default function CompareTool({
             </table>
           </div>
           <p className="scope-note">
-            <FeatureBadge status="EXCLUDED" /> Scanned pages with no extractable text are
-            identified for review. The OCR button can inspect only the current page through the
-            browser&apos;s on-device TextDetector in Chromium; it does not compare that result
-            with the incoming page.
+            <FeatureBadge status="OPEN" /> Scanned pages with no extractable text are identified
+            for review. Bundled cross-browser OCR can inspect the current page, but comparing
+            both documents still needs an explicit two-document OCR workflow.
           </p>
           <p className="scope-note">
             Page moves use measured text similarity. Image and graphic differences use a

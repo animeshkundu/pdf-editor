@@ -1,79 +1,129 @@
+import { budgetFor } from '../core/limits';
 import type { EngineTypes } from '../engine/port';
 
 export interface OcrResult {
-  readonly available: boolean;
+  readonly available: true;
   readonly text: string;
+  readonly confidence: number;
   readonly blocks: readonly {
     readonly text: string;
-    readonly bounds?: readonly [number, number, number, number];
+    readonly confidence: number;
+    readonly bounds: readonly [number, number, number, number];
   }[];
-  readonly reason?: string;
+  readonly words: readonly {
+    readonly text: string;
+    readonly confidence: number;
+    readonly bounds: readonly [number, number, number, number];
+  }[];
+  readonly searchablePdf?: ArrayBuffer;
 }
 
-type OcrResponse =
-  | { readonly id: number; readonly ok: true; readonly value: OcrResult }
-  | { readonly id: number; readonly ok: false; readonly error: string };
+export interface OcrRecognitionData {
+  readonly text: string;
+  readonly confidence: number;
+  readonly pdf: readonly number[] | null;
+  readonly blocks:
+    | readonly {
+        readonly text: string;
+        readonly confidence: number;
+        readonly bbox: {
+          readonly x0: number;
+          readonly y0: number;
+          readonly x1: number;
+          readonly y1: number;
+        };
+        readonly paragraphs: readonly {
+          readonly lines: readonly {
+            readonly words: readonly {
+              readonly text: string;
+              readonly confidence: number;
+              readonly bbox: {
+                readonly x0: number;
+                readonly y0: number;
+                readonly x1: number;
+                readonly y1: number;
+              };
+            }[];
+          }[];
+        }[];
+      }[]
+    | null;
+}
 
-/**
- * Describes on-device OCR availability in the current browser environment.
- *
- * TextDetector is a Chromium-origin API (Shape Detection API). As of the
- * supported browser floor (Chrome 95, Firefox 131, Safari 15.2):
- *   - Chrome/Chromium/Edge: TextDetector is available when the platform
- *     provides an on-device text recognition engine (typically desktop and
- *     mobile Chrome on supported OS versions).
- *   - Firefox 131+: TextDetector is not available. The API was never shipped
- *     in Firefox's release channel.
- *   - Safari 15.2+: TextDetector is not available. Safari does not implement
- *     the Shape Detection API.
- *
- * The authoritative availability check happens inside the OCR worker, where
- * `typeof TextDetector !== 'undefined'` is the only reliable test. This
- * function provides a synchronous pre-flight description for UI rendering.
- *
- * No OCR model is downloaded and no data leaves the device. The application
- * has zero egress (ADR 0002). If TextDetector is absent, no fallback model
- * is available because loading one would require adding a dependency or a
- * remote asset, neither of which is permitted.
- */
+const OCR_WORKER = `ocr/tesseract-${__TESSERACT_VERSION__}/worker.min.js`;
+const OCR_CORE = `ocr/tesseract-${__TESSERACT_CORE_VERSION__}`;
+const OCR_LANGUAGE = `ocr/eng-${__TESSERACT_LANGUAGE_VERSION__}`;
+
+function ownOriginAsset(path: string): string {
+  return new URL(`${import.meta.env.BASE_URL}${path}`, window.location.origin).href;
+}
+
+function bounds(bbox: {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}): readonly [number, number, number, number] {
+  return [bbox.x0, bbox.y0, bbox.x1, bbox.y1];
+}
+
+export function projectOcrRenderSize(
+  page: { readonly width: number; readonly height: number },
+  maxRenderPixels: number,
+): { readonly scale: number; readonly width: number; readonly height: number } {
+  const pixelBudget = Math.max(1, Math.floor(maxRenderPixels * 0.9));
+  const scale = Math.min(3, Math.sqrt(pixelBudget / (page.width * page.height)));
+  return {
+    scale,
+    width: Math.max(1, Math.floor(page.width * scale)),
+    height: Math.max(1, Math.floor(page.height * scale)),
+  };
+}
+
+export function projectOcrResult(data: OcrRecognitionData): OcrResult {
+  const blocks = (data.blocks ?? [])
+    .filter((block) => block.text.trim())
+    .map((block) => ({
+      text: block.text,
+      confidence: block.confidence,
+      bounds: bounds(block.bbox),
+    }));
+  const words = (data.blocks ?? []).flatMap((block) =>
+    block.paragraphs.flatMap((paragraph) =>
+      paragraph.lines.flatMap((line) =>
+        line.words
+          .filter((word) => word.text.trim())
+          .map((word) => ({
+            text: word.text,
+            confidence: word.confidence,
+            bounds: bounds(word.bbox),
+          })),
+      ),
+    ),
+  );
+  return {
+    available: true,
+    text: data.text,
+    confidence: data.confidence,
+    blocks,
+    words,
+    ...(data.pdf ? { searchablePdf: Uint8Array.from(data.pdf).buffer } : {}),
+  };
+}
+
 export function browserOcrDescription(): {
-  /** Heuristic: likely available based on user-agent string parsing. */
   readonly likelyAvailable: boolean;
-  /** Human-readable description for display in the conversion panel. */
   readonly description: string;
 } {
-  const detector = (globalThis as { TextDetector?: unknown }).TextDetector;
-  if (typeof detector === 'function') {
-    return {
-      likelyAvailable: true,
-      description:
-        'On-device text recognition is available in this browser. ' +
-        'It uses the installed platform model; no data leaves the device.',
-    };
-  }
-  if (typeof navigator === 'undefined') {
-    return {
-      likelyAvailable: false,
-      description: 'OCR availability unknown (no navigator context).',
-    };
-  }
-  const ua = navigator.userAgent;
-  const isChromiumFamily =
-    /Chrome\/|Chromium\/|Edg\/|EdgA\/|EdgHTML\//.test(ua) && !/Firefox\//.test(ua);
-  if (isChromiumFamily) {
-    return {
-      likelyAvailable: false,
-      description:
-        'This Chromium runtime does not provide an installed TextDetector model. ' +
-        'No OCR model is downloaded because the application has zero egress (ADR 0002).',
-    };
-  }
+  const likelyAvailable =
+    typeof window !== 'undefined' &&
+    typeof Worker === 'function' &&
+    typeof WebAssembly === 'object';
   return {
-    likelyAvailable: false,
-    description:
-      'On-device text recognition is unavailable in this browser. ' +
-      'TextDetector is a Chromium-only API not implemented in Firefox or Safari. ' +
-      'No OCR model is downloaded because the application has zero egress (ADR 0002).',
+    likelyAvailable,
+    description: likelyAvailable
+      ? 'Cross-browser English OCR runs locally with a bundled Tesseract LSTM engine. The engine and model load from this origin only when you start recognition; document pixels never leave the browser.'
+      : 'OCR needs a browser with Web Workers and WebAssembly. The bundled engine is not loaded until recognition starts.',
   };
 }
 
@@ -83,53 +133,62 @@ export async function recognizePage(
 ): Promise<OcrResult> {
   const page = engine.info.pages[pageIndex];
   if (!page) throw new Error(`Page ${pageIndex + 1} is outside this document.`);
-  const scale = Math.min(1, 512 / Math.max(page.width, page.height));
-  const width = Math.max(1, Math.ceil(page.width * scale));
-  const height = Math.max(1, Math.ceil(page.height * scale));
-  const tile = await engine.renderTile({
-    pageIndex,
-    scale,
-    x: 0,
-    y: 0,
-    width,
-    height,
-    priority: 0,
+
+  const { scale, width, height } = projectOcrRenderSize(
+    page,
+    budgetFor(navigator).maxRenderPixels,
+  );
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('This browser could not create the local OCR canvas.');
+  for (let y = 0; y < height; y += 512) {
+    for (let x = 0; x < width; x += 512) {
+      const tileWidth = Math.min(512, width - x);
+      const tileHeight = Math.min(512, height - y);
+      const tile = await engine.renderTile({
+        pageIndex,
+        scale,
+        x,
+        y,
+        width: tileWidth,
+        height: tileHeight,
+        priority: Number.MAX_SAFE_INTEGER,
+      });
+      context.putImageData(
+        new ImageData(new Uint8ClampedArray(tile.pixels), tile.width, tile.height),
+        x,
+        y,
+      );
+    }
+  }
+
+  const { createWorker, OEM } = (await import('tesseract.js/dist/tesseract.esm.min.js'))
+    .default;
+  const worker = await createWorker('eng', OEM.LSTM_ONLY, {
+    workerPath: ownOriginAsset(OCR_WORKER),
+    corePath: ownOriginAsset(OCR_CORE),
+    langPath: ownOriginAsset(OCR_LANGUAGE),
+    workerBlobURL: false,
+    cacheMethod: 'none',
+    gzip: true,
+    legacyCore: false,
+    legacyLang: false,
   });
-  const worker = new Worker(new URL('./ocr.worker.ts', import.meta.url), { type: 'module' });
   try {
-    return await new Promise<OcrResult>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        reject(new Error('The local OCR worker did not respond in time.'));
-      }, 30_000);
-      worker.addEventListener(
-        'message',
-        (event: MessageEvent<OcrResponse>) => {
-          window.clearTimeout(timeout);
-          if (event.data.ok) resolve(event.data.value);
-          else reject(new Error(event.data.error));
-        },
-        { once: true },
-      );
-      worker.addEventListener(
-        'error',
-        () => {
-          window.clearTimeout(timeout);
-          reject(new Error('The local OCR worker stopped unexpectedly.'));
-        },
-        { once: true },
-      );
-      worker.postMessage(
-        {
-          id: 1,
-          pixels: tile.pixels,
-          width: tile.width,
-          height: tile.height,
-        },
-        [tile.pixels],
-      );
-    });
+    const recognized = await worker.recognize(
+      canvas,
+      {
+        pdfTitle: `${engine.info.title || engine.info.name} — page ${pageIndex + 1}`,
+        pdfTextOnly: false,
+      },
+      { text: true, blocks: true, pdf: true },
+    );
+    return projectOcrResult(recognized.data);
   } finally {
-    worker.terminate();
+    await worker.terminate();
   }
 }
 

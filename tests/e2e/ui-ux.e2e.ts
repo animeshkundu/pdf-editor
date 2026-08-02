@@ -436,9 +436,11 @@ test('honours ADR 0016 tokens, motion, focus, themes, and narrow zoomed layouts'
     ).toBe(true);
     await expect(page.getByRole('combobox', { name: 'Interface density' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Open document' })).toContainText('Open');
-    await expect(page.getByRole('button', { name: 'Commands' })).toContainText('Commands');
-    await expect(page.getByRole('button', { name: 'Commands' })).toBeVisible();
-    await page.getByRole('button', { name: 'Commands' }).focus();
+    const overflow = page.getByRole('button', { name: 'More editor actions' });
+    await expect(overflow).toBeVisible();
+    await overflow.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('menuitem', { name: 'Commands' })).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.keyboard.press('Escape');
@@ -954,6 +956,13 @@ test('validates every reachable file-producing UI path with independent readers'
   await expectValidPdf(await protectedDownload, 'reader-secret');
 
   const sanitizedDownload = page.waitForEvent('download');
+  const confirmSanitize = protect.getByRole('checkbox', {
+    name: /sanitizing permanently removes/,
+  });
+  await expect(
+    protect.getByRole('button', { name: 'Sanitize document and download' }),
+  ).toBeDisabled();
+  await confirmSanitize.click();
   await protect.getByRole('button', { name: 'Sanitize document and download' }).click();
   await expectValidPdf(await sanitizedDownload);
 
@@ -1069,8 +1078,15 @@ test('drives the public landing surface at wide and narrow viewports', async ({
   ] as const) {
     await page.setViewportSize(size);
     await page.goto('/pdf/');
-    await expect(page.getByRole('heading', { name: /Serious PDF work/ })).toBeVisible();
-    await expect(page.getByText('No upload. No account. No telemetry.')).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Edit PDFs without uploading them.' }),
+    ).toBeVisible();
+    await expect(page.getByText('Document-upload endpoints')).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
     if (browserName === 'chromium') {
       await page.screenshot({ path: join(screenshotDirectory, `landing-${viewport}.png`) });
     }

@@ -202,8 +202,9 @@ planning had not. What is left genuinely depends on results.
 
 ## Phase 5: beyond
 
-- [x] OCR in the lazy worker through an installed browser `TextDetector`, with explicit
-      unavailable disclosure and no downloaded model (`CONV-017`, `DEGRADED`).
+- [x] Cross-browser English OCR through lazily loaded, own-origin Tesseract LSTM cores and
+      trained data, with word confidence and independently accepted searchable-image PDF output
+      (`CONV-017`, `CONV-018`, `CONV-019`; quality remains `DEGRADED`).
 - [ ] Accessibility repair: tag an untagged document. Blocked on Spike A, and it is the
       repair for `A11Y-003`, the rule that fires on every untagged document.
 - [ ] PDF/A conversion (`CONV-023`). It is not approximated without a conforming output

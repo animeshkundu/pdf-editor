@@ -271,6 +271,50 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-100);
+}
+
+.validation-summary {
+  color: var(--text-secondary);
+}
+
+.ocr-confidence {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-raised);
+}
+
+.ocr-confidence summary {
+  min-height: var(--target-min);
+  padding: var(--space-100);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.ocr-confidence ul {
+  display: grid;
+  max-height: 15rem;
+  gap: var(--space-50);
+  margin: 0;
+  padding: 0 var(--space-100) var(--space-100);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.ocr-confidence li {
+  display: flex;
+  min-height: var(--target-min);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-100);
+  padding-inline: var(--space-100);
+  border-radius: calc(var(--control-radius) - var(--space-50));
+  background: var(--surface-chrome);
+}
+
 .editor-shell {
   display: grid;
   grid-template-rows: var(--header-height, var(--row-height)) minmax(0, 1fr) var(
@@ -428,6 +472,63 @@ button:disabled {
   box-shadow: var(--popover-shadow);
 }
 
+.toolbar-overflow {
+  padding-inline: var(--space-100);
+}
+
+.toolbar-overflow-menu,
+.designed-tooltip {
+  z-index: 110;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--control-radius);
+  background: var(--popover-surface);
+  color: var(--text-primary);
+  box-shadow: var(--popover-shadow);
+}
+
+.toolbar-overflow-menu {
+  min-width: 13rem;
+  padding: var(--space-50);
+}
+
+.toolbar-overflow-menu [role='menuitem'] {
+  display: flex;
+  min-height: var(--target-min);
+  align-items: center;
+  gap: var(--space-100);
+  padding-inline: var(--space-100);
+  border-radius: calc(var(--control-radius) - var(--space-50));
+  outline: none;
+  cursor: pointer;
+}
+
+.toolbar-overflow-menu [role='menuitem'][data-highlighted] {
+  background: var(--surface-selected);
+  color: var(--accent-text);
+}
+
+.toolbar-overflow-menu [role='menuitem'][data-disabled] {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.toolbar-overflow-menu [role='separator'] {
+  height: 1px;
+  margin-block: var(--space-50);
+  background: var(--border-subtle);
+}
+
+.designed-tooltip {
+  max-width: 18rem;
+  padding: var(--space-50) var(--space-100);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.designed-tooltip-arrow {
+  fill: var(--popover-surface);
+}
+
 .density-option {
   display: flex;
   min-height: var(--target-min);
@@ -507,6 +608,17 @@ button:disabled {
   align-items: center;
   gap: var(--space-100);
   color: var(--text-secondary);
+}
+
+.sanitize-card .designed-checkbox,
+.warning-card .designed-checkbox {
+  width: 100%;
+  align-items: flex-start;
+}
+
+.sanitize-card .designed-checkbox > span,
+.warning-card .designed-checkbox > span {
+  padding-block-start: var(--space-50);
 }
 
 .designed-checkbox > button {
@@ -2405,6 +2517,10 @@ button:disabled {
   .toolbar-actions button {
     width: 100%;
     min-width: var(--control-height);
+  }
+
+  .toolbar-collapsible {
+    display: none !important;
   }
 
   .density-control,

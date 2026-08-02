@@ -102,9 +102,10 @@ Chromium and Firefox. Save, Organize extract, both split outputs, Protect encryp
 Sanitize output are checked by qpdf; protected output is checked with its reader password.
 Comment XFDF and form XFDF are parsed as XML, Markdown is checked for its document heading and
 all nine page sections, and tool-set, shortcut, and automation-pipeline JSON are parsed and
-checked through real browser download events. Attachment output remains fixture-blocked and OCR
-text output remains platform-blocked when `TextDetector` is absent. MuPDF is never the acceptance
-reader.
+checked through real browser download events. Bundled OCR now runs against the CamScanner corpus
+fixture in Chromium and Firefox; its searchable-image PDF is accepted by qpdf and pdf.js and all
+OCR asset requests are asserted same-origin. Attachment output remains fixture-blocked. MuPDF is
+never the acceptance reader.
 
 ## Engine-blocked states
 

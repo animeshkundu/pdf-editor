@@ -14,10 +14,15 @@
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const inventoryPath = join(root, 'docs', 'spec', 'parity-inventory.md');
+const configuredInventory = process.env.PDF_EDITOR_INVENTORY_PATH;
+const inventoryPath = configuredInventory
+  ? isAbsolute(configuredInventory)
+    ? configuredInventory
+    : resolve(root, configuredInventory)
+  : join(root, 'docs', 'spec', 'parity-inventory.md');
 
 if (!existsSync(inventoryPath)) {
   console.log('[check-spec] docs/spec/parity-inventory.md not present; skipping.');
@@ -135,9 +140,64 @@ for (const item of items) {
         'Say what is weaker than Acrobat, so the disclosure can be written.',
     );
   }
+  if (label === 'DEGRADED' && !item.checked) {
+    errors.push(
+      `${inventoryPath}:${item.line}  ${item.id} is DEGRADED but is not verified as shipped. ` +
+        'DEGRADED is a present-tense capability claim; move unshipped work to an OPEN spike.',
+    );
+  }
 }
 
 const total = Object.values(counts).reduce((a, b) => a + b, 0);
+
+// The coverage table lives in the authoritative inventory, so compare that table with
+// the items parsed from the same file. The previous gate searched PRODUCT-SPEC.md for
+// count-like prose and never inspected this table; a stale summary therefore passed.
+const summaryStart = lines.findIndex((line) => line.trim() === '## Coverage summary');
+const summaryEnd =
+  summaryStart < 0
+    ? -1
+    : lines.findIndex((line, index) => index > summaryStart && /^##\s/.test(line));
+if (summaryStart < 0) {
+  errors.push(`${inventoryPath}  has no "Coverage summary" section.`);
+} else {
+  const summaryLines = lines.slice(
+    summaryStart + 1,
+    summaryEnd < 0 ? lines.length : summaryEnd,
+  );
+  const totalLine = summaryLines.find((line) => /^\s*\d+\s+items in total\.\s*$/.test(line));
+  const claimedTotal = totalLine ? Number(totalLine.match(/\d+/)?.[0]) : null;
+  if (claimedTotal === null) {
+    errors.push(`${inventoryPath}  coverage summary has no total item count.`);
+  } else if (claimedTotal !== total) {
+    errors.push(
+      `${inventoryPath}  coverage summary claims ${claimedTotal} items, but the inventory contains ${total}.`,
+    );
+  }
+
+  const summaryCounts = new Map();
+  for (const line of summaryLines) {
+    const match = line.match(
+      /^\|\s*`?(LOCAL|EQUIV|DEGRADED|EXCLUDED|OPEN)`?\s*\|\s*(\d+)\s*\|/,
+    );
+    if (!match) continue;
+    if (summaryCounts.has(match[1])) {
+      errors.push(`${inventoryPath}  coverage summary repeats ${match[1]}.`);
+      continue;
+    }
+    summaryCounts.set(match[1], Number(match[2]));
+  }
+  for (const [label, count] of Object.entries(counts)) {
+    const claimed = summaryCounts.get(label);
+    if (claimed === undefined) {
+      errors.push(`${inventoryPath}  coverage summary has no ${label} row.`);
+    } else if (claimed !== count) {
+      errors.push(
+        `${inventoryPath}  coverage summary claims ${label} = ${claimed}, but the inventory contains ${count}.`,
+      );
+    }
+  }
+}
 
 // Refuse to pass vacuously.
 //
@@ -237,25 +297,6 @@ console.log(
   `[check-spec] ${citations} identifier citations across docs/, all resolving. ` +
     'Wrong-but-valid citations are not detectable here and remain a review item.',
 );
-
-const specPath = join(root, 'docs', 'PRODUCT-SPEC.md');
-if (existsSync(specPath)) {
-  const spec = readFileSync(specPath, 'utf8');
-  for (const [label, n] of Object.entries(counts)) {
-    // Match "LOCAL 264" or "| `LOCAL` | 264 |" style assertions.
-    const re = new RegExp('`?' + label + '`?[^0-9\\n]{0,24}(\\d{1,4})', 'g');
-    for (const m of spec.matchAll(re)) {
-      const claimed = Number(m[1]);
-      // Only treat plausible count-like numbers as claims.
-      if (claimed > 0 && claimed <= 1000 && claimed !== n && Math.abs(claimed - n) < 200) {
-        errors.push(
-          `docs/PRODUCT-SPEC.md  claims ${label} = ${claimed}, but the inventory contains ${n}. ` +
-            'The items are authoritative; update the summary.',
-        );
-      }
-    }
-  }
-}
 
 if (errors.length > 0) {
   console.error(`\n[check-spec] ${errors.length} problem(s):\n`);

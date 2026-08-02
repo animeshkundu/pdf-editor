@@ -2,7 +2,9 @@
 
 **Date**: 2026-08-01  
 **Track**: Conversion (CONV) and Compare (CMPR)  
-**Status**: Comparison integration complete; unsupported conversion/OCR write paths excluded.
+**Status**: Superseded for OCR by
+[`2026-08-02-ocr-engine-selection.md`](2026-08-02-ocr-engine-selection.md). Comparison
+integration remains current.
 
 ---
 
@@ -52,8 +54,9 @@ Adding a bundled WASM OCR model (Tesseract.js, etc.) would require:
 3. A dependency or bundle change (outside this bounded track).
 
 The zero-egress posture (ADR 0002) forbids downloading any model at runtime.
-Therefore, if TextDetector is absent, there is no fallback. The UI says so
-explicitly.
+That conclusion was wrong. ADR 0002 forbids runtime third-party provisioning, not shipping a
+model in the static artifact. The current build bundles its OCR engine and English trained data
+and loads both lazily from the same origin.
 
 ### CONV-020: editable-text output
 
@@ -280,7 +283,8 @@ asserted before allocation and every pixmap/device is arena-owned and closed.
 - `CMPR-009` is `EXCLUDED`: the product can identify an OCR requirement and inspect the
   current page in Chromium, but it cannot OCR both compared documents across the browser floor.
 - `CONV-015` is checked at `DEGRADED`.
-- `CONV-017` is checked at `DEGRADED` because Chromium's installed `TextDetector` is functional
+- At the time of this superseded finding, `CONV-017` was checked at `DEGRADED` because
+  Chromium's installed `TextDetector` was functional
   and Firefox/Safari unavailability is disclosed before use.
 - `CONV-003`, `CONV-005`, and `CONV-020` are `EXCLUDED` because no accepted output writer ships.
 

@@ -10,8 +10,18 @@ const REQUIRED = [
   'index.html',
   'styles.css',
   'favicon.svg',
+  'images/editor-markup-light.webp',
+  'images/editor-markup-dark.webp',
+  'images/editor-protect-light.webp',
+  'images/editor-protect-dark.webp',
   'docs/index.html',
   'app/index.html',
+  'app/sw.js',
+  'app/ocr/tesseract-7.0.0/worker.min.js',
+  'app/ocr/tesseract-7.0.0/tesseract-core-lstm.wasm.js',
+  'app/ocr/tesseract-7.0.0/tesseract-core-simd-lstm.wasm.js',
+  'app/ocr/tesseract-7.0.0/tesseract-core-relaxedsimd-lstm.wasm.js',
+  'app/ocr/eng-1.0.0/eng.traineddata.gz',
   '.well-known/security.txt',
   'robots.txt',
   'sitemap.xml',
@@ -33,9 +43,6 @@ const SECURITY_HEADERS = {
   'Content-Security-Policy': "frame-ancestors 'none'",
   'Permissions-Policy': PERMISSIONS_POLICY,
 };
-const PAGE_CSP =
-  "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; " +
-  "form-action 'none'; frame-src 'none'; frame-ancestors 'none'";
 const CACHE_REVALIDATE = 'public, max-age=0, must-revalidate';
 const CACHE_IMMUTABLE = 'public, max-age=31536000, immutable';
 
@@ -44,7 +51,7 @@ function fail(message) {
   process.exit(1);
 }
 
-function appPolicy(indexPath) {
+function responsePolicy(indexPath) {
   const html = readFileSync(indexPath, 'utf8');
   const tag = html.match(/<meta\b[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/i);
   if (!tag) fail(`no meta Content-Security-Policy found in ${indexPath}.`);
@@ -68,7 +75,9 @@ for (const file of REQUIRED) {
   if (!stats.isFile()) fail(`required publication path is not a file: ${target}.`);
 }
 
-const appCsp = appPolicy(path.join(STATIC, MOUNT, 'app', 'index.html'));
+const appCsp = responsePolicy(path.join(STATIC, MOUNT, 'app', 'index.html'));
+const landingCsp = responsePolicy(path.join(STATIC, MOUNT, 'index.html'));
+const docsCsp = responsePolicy(path.join(STATIC, MOUNT, 'docs', 'index.html'));
 const SPACE = `(?:${MOUNT}|${PUBLIC})`;
 const routes = [
   { src: '^/.*$', headers: SECURITY_HEADERS, continue: true },
@@ -76,6 +85,11 @@ const routes = [
   {
     src: `^/${SPACE}/app/assets/.*$`,
     headers: { 'Cache-Control': CACHE_IMMUTABLE },
+    continue: true,
+  },
+  {
+    src: `^/${SPACE}/app/sw\\.js$`,
+    headers: { 'Cache-Control': CACHE_REVALIDATE },
     continue: true,
   },
   {
@@ -93,12 +107,12 @@ const routes = [
   },
   {
     src: `^/${SPACE}/(?:index\\.html)?$`,
-    headers: { 'Content-Security-Policy': PAGE_CSP },
+    headers: { 'Content-Security-Policy': landingCsp },
     continue: true,
   },
   {
     src: `^/${SPACE}/docs/(?:index\\.html)?$`,
-    headers: { 'Content-Security-Policy': PAGE_CSP },
+    headers: { 'Content-Security-Policy': docsCsp },
     continue: true,
   },
   { src: '^/$', status: 308, headers: { Location: `/${PUBLIC}/` } },

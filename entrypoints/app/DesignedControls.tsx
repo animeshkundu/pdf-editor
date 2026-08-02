@@ -4,16 +4,38 @@ import {
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
+  type ReactElement,
   type ReactNode,
 } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import * as Select from '@radix-ui/react-select';
+import * as Tooltip from '@radix-ui/react-tooltip';
 import { Check, ChevronDown, ChevronsUpDown } from 'lucide-react';
 
 export interface SelectOption<T extends string> {
   readonly value: T;
   readonly label: string;
   readonly disabled?: boolean;
+}
+
+export function DesignedTooltip({
+  label,
+  children,
+}: {
+  readonly label: string;
+  readonly children: ReactElement;
+}) {
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content className="designed-tooltip" sideOffset={7}>
+          {label}
+          <Tooltip.Arrow className="designed-tooltip-arrow" />
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
 }
 
 export function DesignedSelect<T extends string>({

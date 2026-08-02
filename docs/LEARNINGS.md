@@ -18,6 +18,37 @@ to do next time.
 - Development happens on Windows; CI runs on Linux. `.gitattributes` normalises line
   endings to LF because the WASM freshness gate compares bytes.
 
+## 2026-08-02: a controlled page does not put an out-of-scope worker offline
+
+- **Context.** The first service worker controlled `/pdf/app/` while Vite emitted document
+  workers and WASM under `/pdf-editor/app/assets/`.
+- **What happened.** The shell reloaded offline, but the dedicated document worker's WASM request
+  bypassed the cache and stalled. A controller assertion alone passed while the feature failed.
+- **What to do next time.** Keep worker scripts and their dependencies under the controlled public
+  app scope, even when publication rewrites them into a different internal mount. Prove offline
+  behavior by opening and rendering a real document, not by inspecting registration state.
+
+## 2026-08-02: zero egress does not forbid shipping a model
+
+- **Context.** OCR was limited to Chromium's `TextDetector` because the code said a fallback model
+  would violate zero egress.
+- **What happened.** Runtime third-party provisioning and a static own-origin asset were treated
+  as the same thing. They are not; MuPDF already demonstrates the permitted path.
+- **What to do next time.** Separate origin policy from bundle budget. Ship reviewed models under
+  versioned same-origin paths, load them lazily, scan their emitted loaders for foreign defaults,
+  and keep their size in a dedicated bucket.
+
+## 2026-08-02: token kinds can expose a renderer lead that operator balance cannot
+
+- **Context.** q/Q counts did not explain why pdfTeX page 1 passed C8 while pages 2 through 28
+  failed after the same null filter.
+- **What happened.** The filter rewrote 29 `Td` operators on the passing page and 49 to 321 on
+  every failing page, replacing them with `TD`/`T*`. LibreOffice coupled stream consolidation
+  with the same transformation.
+- **What to do next time.** Diff exact decoded token sequences before guessing from operator
+  counts. State the causal control in advance and leave C8 unchanged until an independent reader
+  proves it.
+
 ## 2026-08-01: preserve bytes instead of improving a semantic reserializer
 
 - **Context.** The sanitize filter perturbed rendering even when asked to change nothing.

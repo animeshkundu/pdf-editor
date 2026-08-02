@@ -1,5 +1,7 @@
 # 0008. One worker per document, plus shared search and OCR workers
 
+Superseded in part by [ADR 0034](0034-bundle-own-origin-ocr.md) for the OCR worker owner.
+
 ## Status
 
 Accepted
@@ -58,10 +60,12 @@ editing in the document worker, and a crash while searching a damaged page does 
 the editable document with it. Because it holds only a read-only view, it is cheap to
 respawn and re-seed.
 
-### `ocr.worker`, lazy
+### OCR worker, lazy
 
-Instantiated only when OCR is invoked, and torn down when idle. It is by far the largest
-memory consumer and the least frequently used, so it must not be resident by default.
+Tesseract's direct worker is instantiated from the main thread only when OCR is invoked and is
+terminated after recognition. The former wrapper worker was removed because Safari 15.2 cannot
+spawn Tesseract's worker from inside another worker. OCR image preparation still reads the
+document only through background-priority 512 px requests on the `PdfEngine` port.
 
 ### Main thread
 
@@ -75,7 +79,7 @@ everything else goes through the `PdfEngine` port in `lib/engine/port.ts`.
 
 - A malformed document kills one tab-local worker, not the session.
 - No cross-origin isolation, so no COOP/COEP headers and no `SharedArrayBuffer`.
-- Search and OCR cannot starve editing.
+- Search and OCR cannot starve visible rendering; OCR tile extraction sits behind viewport work.
 - The port boundary makes the engine mockable in tests without a WASM instance.
 
 ### Negative

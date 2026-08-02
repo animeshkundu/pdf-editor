@@ -7,13 +7,13 @@ import { viewportStore } from '@/lib/store/viewport';
 import FeatureBadge from '../FeatureBadge';
 import type { ToolPanelProps } from './types';
 
-function download(name: string, type: string, value: string): void {
+function download(name: string, type: string, value: BlobPart): void {
   const url = URL.createObjectURL(new Blob([value], { type }));
   const link = document.createElement('a');
   link.href = url;
   link.download = name;
   link.click();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export default function ConversionTools({
@@ -108,18 +108,29 @@ export default function ConversionTools({
           {busy === 'ocr' ? 'Recognizing…' : 'Recognize current page'}
         </button>
         <p className="scope-note" role="note">
-          <FeatureBadge status="EXCLUDED" /> <strong>CONV-020</strong>: Editable-text PDF output
-          is not offered here. Substituting recognized text for a scan silently corrupts
-          documents; it is never the default. The searchable-image overlay (invisible text over
-          the original image) is the correct output, but this build has no independently
-          accepted writer for it.
+          <FeatureBadge status="OPEN" /> <strong>CONV-020</strong>: Searchable-image PDF output
+          is available after recognition. Reconstructing the scan as editable layout remains
+          open because OCR does not recover the source document model.
         </p>
         {ocr ? (
-          ocr.available ? (
-            <>
-              <textarea readOnly aria-label="Recognized page text" value={ocr.text} />
-              {/* CONV-019: Plain-text download of recognized text (searchable-image output
-                  requires engine integration; this is the degraded text-only variant). */}
+          <>
+            <p className="validation-summary" role="status">
+              Overall confidence: <strong>{Math.round(ocr.confidence)}%</strong> ·{' '}
+              {ocr.words.length} recognized words
+            </p>
+            <textarea readOnly aria-label="Recognized page text" value={ocr.text} />
+            <details className="ocr-confidence">
+              <summary>Review word confidence</summary>
+              <ul>
+                {ocr.words.map((word, index) => (
+                  <li key={`${word.bounds.join('-')}-${index}`}>
+                    <span>{word.text}</span>
+                    <strong>{Math.round(word.confidence)}%</strong>
+                  </li>
+                ))}
+              </ul>
+            </details>
+            <div className="button-row">
               <button
                 type="button"
                 onClick={() =>
@@ -132,12 +143,24 @@ export default function ConversionTools({
               >
                 <Download aria-hidden="true" size={15} /> Download recognized text
               </button>
-            </>
-          ) : (
-            <p className="warning-card" role="status">
-              {ocr.reason}
-            </p>
-          )
+              {ocr.searchablePdf ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    download(
+                      `${engine.info.name.replace(/\.pdf$/i, '')}-searchable-page-${
+                        viewportStore.getState().currentPage + 1
+                      }.pdf`,
+                      'application/pdf',
+                      ocr.searchablePdf!,
+                    )
+                  }
+                >
+                  <Download aria-hidden="true" size={15} /> Download searchable PDF
+                </button>
+              ) : null}
+            </div>
+          </>
         ) : null}
       </article>
 

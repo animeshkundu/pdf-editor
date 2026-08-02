@@ -26,6 +26,7 @@ import {
   History,
   Info,
   MessageSquareText,
+  MoreHorizontal,
   Moon,
   NotebookTabs,
   PanelTop,
@@ -44,6 +45,7 @@ import {
 } from 'lucide-react';
 import * as Select from '@radix-ui/react-select';
 import * as Dialog from '@radix-ui/react-dialog';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import engineErrors, { type EngineTypes } from '@/lib/engine/port';
 import commandRegistry, {
   type CommandAction,
@@ -54,6 +56,7 @@ import commandRegistry, {
 } from '@/lib/commands/registry';
 import { formatShortcut, isTextEntryTarget, matchesShortcut } from '@/lib/commands/shortcuts';
 import { OpfsSnapshotStore, type RecoveryEntry } from '@/lib/persistence/opfs';
+import { registerOfflineApp, subscribeOfflineStatus } from '@/lib/persistence/service-worker';
 import { useDocumentStore } from '@/lib/store/document';
 import { useToolStore, type EditorTool } from '@/lib/store/tools';
 import CommandPalette from './CommandPalette';
@@ -61,6 +64,7 @@ import DocumentPanel, { CapabilitiesPanel } from './DocumentPanels';
 import DocumentViewport from './DocumentViewport';
 import SelectionActionBar, { type SelectionAction } from './SelectionActionBar';
 import PasswordDialog from './PasswordDialog';
+import { DesignedTooltip } from './DesignedControls';
 
 type Theme = 'light' | 'dark';
 type Density = 'compact' | 'comfortable' | 'touch';
@@ -291,6 +295,7 @@ export default function EditorShell({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(initialShortcutSettings.error);
   const [notice, setNotice] = useState('');
+  const [offlineReady, setOfflineReady] = useState(false);
   const [documentEpoch, setDocumentEpoch] = useState(0);
   const [fileHandle, setFileHandle] = useState<LocalFileHandle | null>(null);
   const [recoveries, setRecoveries] = useState<readonly RecoveryEntry[]>([]);
@@ -358,6 +363,17 @@ export default function EditorShell({
       delete document.documentElement.dataset.theme;
     };
   }, [theme]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeOfflineStatus((status) => {
+      setOfflineReady(status.state === 'ready');
+      if (status.state === 'error') setError(status.message);
+    });
+    void registerOfflineApp().catch(() => {
+      // The subscriber above owns the visible, actionable error.
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     currentEngineRef.current = engine;
@@ -666,7 +682,7 @@ export default function EditorShell({
     link.href = url;
     link.download = name;
     link.click();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }, []);
 
   const saveOutput = useCallback(
@@ -1023,7 +1039,12 @@ export default function EditorShell({
               </button>
             </>
           ) : null}
-          <button type="button" aria-label="Commands" onClick={openPalette}>
+          <button
+            type="button"
+            className="toolbar-collapsible"
+            aria-label="Commands"
+            onClick={openPalette}
+          >
             <Command aria-hidden="true" size={16} />
             <span>Commands</span>
             <kbd>{commandShortcut}</kbd>
@@ -1059,7 +1080,7 @@ export default function EditorShell({
           </div>
           <button
             type="button"
-            className="icon-control"
+            className="icon-control toolbar-collapsible"
             aria-label={theme === 'light' ? 'Use dark theme' : 'Use light theme'}
             onClick={() => setTheme((value) => (value === 'light' ? 'dark' : 'light'))}
           >
@@ -1070,6 +1091,78 @@ export default function EditorShell({
             )}
             <span>{theme === 'light' ? 'Dark' : 'Light'}</span>
           </button>
+          <DropdownMenu.Root>
+            <DropdownMenu.Trigger asChild>
+              <button
+                type="button"
+                className="toolbar-overflow"
+                aria-label="More editor actions"
+              >
+                <MoreHorizontal aria-hidden="true" size={18} />
+              </button>
+            </DropdownMenu.Trigger>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                className="toolbar-overflow-menu"
+                side="bottom"
+                align="end"
+                sideOffset={6}
+              >
+                <DropdownMenu.Item onSelect={openPalette}>
+                  <Command aria-hidden="true" size={15} /> Commands
+                </DropdownMenu.Item>
+                {engine ? (
+                  <>
+                    <DropdownMenu.Item
+                      disabled={!journal.canUndo}
+                      onSelect={() => {
+                        void engine
+                          .undo()
+                          .then(onMutation)
+                          .catch((undoError: unknown) => {
+                            const detail =
+                              undoError instanceof Error
+                                ? undoError.message
+                                : 'Unknown undo error.';
+                            setError(`Undo failed. ${detail}`);
+                          });
+                      }}
+                    >
+                      <Undo2 aria-hidden="true" size={15} /> Undo document change
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      disabled={!journal.canRedo}
+                      onSelect={() => {
+                        void engine
+                          .redo()
+                          .then(onMutation)
+                          .catch((redoError: unknown) => {
+                            const detail =
+                              redoError instanceof Error
+                                ? redoError.message
+                                : 'Unknown redo error.';
+                            setError(`Redo failed. ${detail}`);
+                          });
+                      }}
+                    >
+                      <Redo2 aria-hidden="true" size={15} /> Redo document change
+                    </DropdownMenu.Item>
+                  </>
+                ) : null}
+                <DropdownMenu.Separator />
+                <DropdownMenu.Item
+                  onSelect={() => setTheme((value) => (value === 'light' ? 'dark' : 'light'))}
+                >
+                  {theme === 'light' ? (
+                    <Moon aria-hidden="true" size={15} />
+                  ) : (
+                    <Sun aria-hidden="true" size={15} />
+                  )}
+                  Use {theme === 'light' ? 'dark' : 'light'} theme
+                </DropdownMenu.Item>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu.Root>
         </div>
       </header>
 
@@ -1187,30 +1280,36 @@ export default function EditorShell({
                   <header className="panel-chrome">
                     <strong>{label}</strong>
                     <span>
-                      <button
-                        type="button"
-                        aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${label} panel`}
-                        onClick={() =>
-                          setCollapsedPanels((current) =>
-                            current.includes(kind)
-                              ? current.filter((candidate) => candidate !== kind)
-                              : [...current, kind],
-                          )
-                        }
+                      <DesignedTooltip
+                        label={`${collapsed ? 'Expand' : 'Collapse'} ${label} panel`}
                       >
-                        {collapsed ? (
-                          <ChevronDown aria-hidden="true" size={16} />
-                        ) : (
-                          <ChevronUp aria-hidden="true" size={16} />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Close ${label} panel`}
-                        onClick={() => closePanel(kind)}
-                      >
-                        <X aria-hidden="true" size={16} />
-                      </button>
+                        <button
+                          type="button"
+                          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${label} panel`}
+                          onClick={() =>
+                            setCollapsedPanels((current) =>
+                              current.includes(kind)
+                                ? current.filter((candidate) => candidate !== kind)
+                                : [...current, kind],
+                            )
+                          }
+                        >
+                          {collapsed ? (
+                            <ChevronDown aria-hidden="true" size={16} />
+                          ) : (
+                            <ChevronUp aria-hidden="true" size={16} />
+                          )}
+                        </button>
+                      </DesignedTooltip>
+                      <DesignedTooltip label={`Close ${label} panel`}>
+                        <button
+                          type="button"
+                          aria-label={`Close ${label} panel`}
+                          onClick={() => closePanel(kind)}
+                        >
+                          <X aria-hidden="true" size={16} />
+                        </button>
+                      </DesignedTooltip>
                     </span>
                   </header>
                   {!collapsed ? (
@@ -1269,23 +1368,27 @@ export default function EditorShell({
         )}
         {engine ? (
           <div className="view-status">
-            <button
-              type="button"
-              aria-label="Zoom out"
-              onClick={() => viewportRef.current?.zoomBy(1 / 1.2)}
-            >
-              <ZoomOut aria-hidden="true" size={15} />
-            </button>
+            <DesignedTooltip label="Zoom out">
+              <button
+                type="button"
+                aria-label="Zoom out"
+                onClick={() => viewportRef.current?.zoomBy(1 / 1.2)}
+              >
+                <ZoomOut aria-hidden="true" size={15} />
+              </button>
+            </DesignedTooltip>
             <output ref={zoomRef} aria-label="Zoom level">
               100%
             </output>
-            <button
-              type="button"
-              aria-label="Zoom in"
-              onClick={() => viewportRef.current?.zoomBy(1.2)}
-            >
-              <ZoomIn aria-hidden="true" size={15} />
-            </button>
+            <DesignedTooltip label="Zoom in">
+              <button
+                type="button"
+                aria-label="Zoom in"
+                onClick={() => viewportRef.current?.zoomBy(1.2)}
+              >
+                <ZoomIn aria-hidden="true" size={15} />
+              </button>
+            </DesignedTooltip>
             <output ref={currentPageRef} aria-label="Current page">
               1 / {engine.info.pages.length}
             </output>
@@ -1293,17 +1396,19 @@ export default function EditorShell({
               Analysis pending
             </output>
             {openPanels.length > 0 ? (
-              <button
-                type="button"
-                aria-label="Close contextual panels"
-                onClick={closeAllPanels}
-              >
-                <PanelRightClose aria-hidden="true" size={15} />
-              </button>
+              <DesignedTooltip label="Close contextual panels">
+                <button
+                  type="button"
+                  aria-label="Close contextual panels"
+                  onClick={closeAllPanels}
+                >
+                  <PanelRightClose aria-hidden="true" size={15} />
+                </button>
+              </DesignedTooltip>
             ) : null}
           </div>
         ) : (
-          <span>LOCAL processing</span>
+          <span>{offlineReady ? 'LOCAL · Offline ready' : 'LOCAL processing'}</span>
         )}
         <span className="status-tool">
           Tool:{' '}
@@ -1312,7 +1417,7 @@ export default function EditorShell({
             : activeTool
                 .replaceAll('-', ' ')
                 .replace(/^./, (letter) => letter.toUpperCase())}{' '}
-          · Escape returns to select and pan
+          · Escape returns to select and pan{offlineReady ? ' · Offline ready' : ''}
         </span>
       </footer>
       {!journal.canUndo ? (

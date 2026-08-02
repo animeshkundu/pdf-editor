@@ -28,3 +28,9 @@ export {
   type FormInstancing,
 } from './form-xobjects';
 export { findSingleAsciiShowTextRun, type ShowTextRun } from './text-run';
+export {
+  diffContentStreams,
+  summarizeContentTokens,
+  type ContentStreamTokenDiff,
+  type ContentTokenSummary,
+} from './token-diff';

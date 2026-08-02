@@ -78,9 +78,9 @@ in-product disclosure at the point of use, not a footnote in a help page. Two ca
   server-side. Ours will be worse, and the export dialog says what is likely to be lost
   before the user commits.
 - **OCR quality.** Adobe's OCR runs on their infrastructure with models we cannot match in
-  a browser. Ours runs in the lazy `ocr.worker`
-  ([ADR 0008](adr/0008-worker-topology-and-crash-isolation.md)) and will be worse on poor
-  scans, unusual fonts, and non-Latin scripts. Confidence is surfaced rather than hidden,
+  a browser. Ours runs in a lazy direct Tesseract worker
+  ([ADR 0034](adr/0034-bundle-own-origin-ocr.md)) and will be worse on poor scans, unusual
+  fonts, non-English text, and non-Latin scripts. Confidence is surfaced rather than hidden,
   and OCR output is never silently substituted for real text.
 
 A `DEGRADED` feature that cannot carry an honest disclosure does not ship.

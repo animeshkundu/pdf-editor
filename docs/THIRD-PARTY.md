@@ -44,11 +44,11 @@ Present in `package.json` today.
 | Radix Dialog             |  1.1.19 | npm `@radix-ui/react-dialog`        | MIT               | Accessible modal primitives                                            |
 | Radix Dropdown Menu      |  2.1.20 | npm `@radix-ui/react-dropdown-menu` | MIT               | Accessible menu primitives                                             |
 | Radix Popover            |  1.1.19 | npm `@radix-ui/react-popover`       | MIT               | Accessible popover primitives                                          |
-| Radix Scroll Area        |  1.2.14 | npm `@radix-ui/react-scroll-area`   | MIT               | Custom scroll containers                                               |
 | Radix Select             |   2.3.3 | npm `@radix-ui/react-select`        | MIT               | Accessible select primitives                                           |
-| Radix Slot               |   1.3.0 | npm `@radix-ui/react-slot`          | MIT               | Composition primitive for shadcn-style components                      |
-| Radix Tabs               |  1.1.17 | npm `@radix-ui/react-tabs`          | MIT               | Accessible tab primitives                                              |
 | Radix Tooltip            |  1.2.12 | npm `@radix-ui/react-tooltip`       | MIT               | Accessible tooltip primitives                                          |
+| Tesseract.js             |   7.0.0 | npm `tesseract.js`                  | Apache-2.0        | Lazy browser OCR worker API                                            |
+| Tesseract.js core        |   7.0.0 | npm `tesseract.js-core`             | Apache-2.0        | LSTM WebAssembly cores for baseline, SIMD, and relaxed SIMD            |
+| English trained data     |   1.0.0 | npm `@tesseract.js-data/eng`        | MIT               | Bundled English `best_int` recognition model                           |
 | class-variance-authority |   0.7.1 | npm `class-variance-authority`      | Apache-2.0        | Component variant definitions                                          |
 | clsx                     |   2.1.1 | npm `clsx`                          | MIT               | Conditional class composition                                          |
 | tailwind-merge           |   3.6.0 | npm `tailwind-merge`                | MIT               | Tailwind class conflict resolution                                     |

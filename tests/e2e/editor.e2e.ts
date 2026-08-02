@@ -72,6 +72,12 @@ test('SIGN-028 redaction marks block ordinary output and never claim removal', a
   expect(downloads).toEqual([]);
   await page.getByRole('button', { name: 'Dismiss' }).click();
 
+  const confirmRemoval = page.getByRole('checkbox', {
+    name: /permanently removes their content/,
+  });
+  await expect(confirmRemoval).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Apply redaction marks' })).toBeDisabled();
+  await confirmRemoval.click();
   await page.getByRole('button', { name: 'Apply redaction marks' }).click();
   const redactionOutcome = page.getByRole('status').filter({
     hasText: 'No extractable characters were removed',

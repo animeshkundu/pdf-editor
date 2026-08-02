@@ -23,6 +23,14 @@ navigation inside the editor remains application state
 ([ADR 0007](adr/0007-vite-over-a-meta-framework.md),
 [ADR 0027](adr/0027-prebuilt-mounted-vercel-deployment.md)).
 
+The landing page intentionally ships no JavaScript
+([ADR 0032](adr/0032-zero-javascript-landing-surface.md)). The app registers an unhashed,
+revalidating service worker at `/pdf/app/sw.js`; its cache name derives from the committed WASM
+manifest digest, exact app-shell bytes, public base, and worker build logic, and it precaches only
+the same-origin app shell and engine
+([ADR 0033](adr/0033-manifest-versioned-offline-app-shell.md)). Public asset URLs remain under
+the worker scope and publication rewrites them into the internal static mount.
+
 The main thread owns the UI and never owns a MuPDF handle. All engine work happens in
 workers ([ADR 0008](adr/0008-worker-topology-and-crash-isolation.md)):
 
@@ -30,7 +38,9 @@ workers ([ADR 0008](adr/0008-worker-topology-and-crash-isolation.md)):
   queue, and handle arena. Respawnable, because a malformed PDF can trap the WASM
   instance unrecoverably.
 - **`search.worker`**, one shared read-only instance for full-document search.
-- **`ocr.worker`**, lazily created and torn down when idle.
+- **OCR worker**, created lazily by Tesseract.js and terminated after recognition. Versioned
+  own-origin LSTM cores and English trained data load only on invocation
+  ([ADR 0034](adr/0034-bundle-own-origin-ocr.md)).
 
 The engine is single-threaded, so there is no `SharedArrayBuffer` and no COOP/COEP
 requirement.
@@ -156,7 +166,7 @@ Built WASM artifacts are committed so Vercel can deploy without Emscripten or Ru
 
 `scripts/check-supply-chain.mjs` denies `rustybuzz`, `ttf-parser`, and `rsa` by name and
 runs `cargo audit` and `npm audit`. `scripts/check-bundle-size.mjs` budgets the initial
-bundle separately from lazily loaded WASM.
+bundle separately from lazily loaded MuPDF WASM, OCR cores, and OCR trained data.
 
 ## Tests
 
