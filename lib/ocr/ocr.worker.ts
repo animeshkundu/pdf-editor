@@ -39,7 +39,10 @@ scope.addEventListener('message', (event: MessageEvent<OcrRequest>) => {
             text: '',
             blocks: [],
             reason:
-              'This browser does not provide its on-device TextDetector. No OCR model is downloaded because the app has zero egress.',
+              'This browser does not provide on-device text recognition. ' +
+              'TextDetector is a Chromium-only API: it is absent in Firefox and Safari. ' +
+              'No OCR model is downloaded because the application has zero egress (ADR 0002). ' +
+              'For OCR in this browser, use a Chromium-based browser such as Chrome or Edge.',
           },
         });
         return;

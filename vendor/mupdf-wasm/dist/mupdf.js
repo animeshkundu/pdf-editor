@@ -2269,6 +2269,37 @@ export class PDFDocument extends Document {
 	validateChangeHistory() {
 		return libmupdf._wasm_pdf_validate_change_history(this.pointer);
 	}
+	countSignatures() {
+		return libmupdf._wasm_pdf_count_signatures(this.pointer);
+	}
+	signatureIsSigned(field) {
+		return this._withPDFObject(field, pointer => !!libmupdf._wasm_pdf_signature_is_signed(this.pointer, pointer));
+	}
+	signatureChangedSinceSigning(field) {
+		return this._withPDFObject(field, pointer => !!libmupdf._wasm_pdf_signature_incremental_change_since_signing(this.pointer, pointer));
+	}
+	signatureByteRange(field) {
+		return this._withPDFObject(field, pointer => {
+			const count = libmupdf._wasm_pdf_signature_byte_range(this.pointer, pointer, 0);
+			if (count <= 0)
+				return [];
+			const ranges = Malloc(count * 16);
+			try {
+				const actual = libmupdf._wasm_pdf_signature_byte_range(this.pointer, pointer, ranges);
+				const view = new DataView(libmupdf.HEAPU8.buffer);
+				return Array.from({ length: actual }, (_, index) => {
+					const offset = Number(view.getBigInt64(ranges + index * 16, true));
+					const length = Number(view.getBigUint64(ranges + index * 16 + 8, true));
+					if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length))
+						throw new RangeError("signature byte range exceeds JavaScript's safe integer range");
+					return { offset, length };
+				});
+			}
+			finally {
+				Free(ranges);
+			}
+		});
+	}
 	canBeSavedIncrementally() {
 		return !!libmupdf._wasm_pdf_can_be_saved_incrementally(this.pointer);
 	}
@@ -3477,6 +3508,9 @@ export class PDFWidget extends PDFAnnotation {
 	}
 	toggle() {
 		return libmupdf._wasm_pdf_toggle_widget(this.pointer);
+	}
+	isSigned() {
+		return !!libmupdf._wasm_pdf_widget_is_signed(this.pointer);
 	}
 }
 /* IMPORTANT: Keep in sync with mupdf/pdf/widget.h and PDFWidget.java */

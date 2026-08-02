@@ -16,6 +16,9 @@ const TRIGGER_KEYS: Readonly<Record<JavaScriptTrigger, string>> = {
   calculate: 'C',
 };
 const MAX_JAVASCRIPT_SOURCE_BYTES = 4 * 1024 * 1024;
+const FORM_FONT_PREFIX = 'FormHelv';
+const FORM_FONT_SIZE = 12;
+const COMB_DEFAULT_MAX_LENGTH = 20;
 
 function existingAcroForm(arena: Arena, document: mupdf.PDFDocument): mupdf.PDFObject {
   const trailer = arena.keep(document.getTrailer());
@@ -76,6 +79,21 @@ function widgetString(arena: Arena, widget: mupdf.PDFWidget, key: string): strin
 
 function widgetName(arena: Arena, widget: mupdf.PDFWidget): string {
   return widget.getName() || widgetString(arena, widget, 'T');
+}
+
+function objectName(arena: Arena, object: mupdf.PDFObject): string {
+  return qualifiedFieldName(arena, canonicalField(arena, object));
+}
+
+function appearanceStates(arena: Arena, object: mupdf.PDFObject): string[] {
+  const normal = arena.keep(object.get('AP', 'N'));
+  if (!normal.isDictionary()) return [];
+  const states: string[] = [];
+  normal.forEach((value, key) => {
+    arena.keep(value);
+    if (typeof key === 'string' && key !== 'Off') states.push(key);
+  });
+  return states;
 }
 
 function canonicalField(arena: Arena, object: mupdf.PDFObject): mupdf.PDFObject {
@@ -449,6 +467,7 @@ export function listFields(document: mupdf.PDFDocument): FormFieldInfo[] {
     for (let pageIndex = 0; pageIndex < document.countPages(); pageIndex += 1) {
       const page = arena.keep(document.loadPage(pageIndex));
       keepWidgets(arena, page).forEach((widget, ordinal) => {
+        const object = arena.keep(widget.getObject());
         result.push({
           id: fieldId(arena, widget, ordinal),
           pageIndex,
@@ -460,7 +479,11 @@ export function listFields(document: mupdf.PDFDocument): FormFieldInfo[] {
           required: Boolean(widget.getFieldFlags() & mupdf.PDFWidget.FIELD_IS_REQUIRED),
           multiline: widget.isText() && widget.isMultiline(),
           password: widget.isText() && widget.isPassword(),
-          options: widget.isChoice() ? widget.getOptions() : [],
+          options: widget.isChoice()
+            ? widget.getOptions()
+            : widget.isRadioButton()
+              ? appearanceStates(arena, object)
+              : [],
           rect: widget.getRect(),
         });
       });
@@ -476,35 +499,73 @@ export function setFieldValue(
   value: string | boolean,
 ): number {
   if (!name) throw new Error('Choose a named form field.');
-  let changed = 0;
+  const matches: { readonly page: mupdf.PDFPage; readonly widget: mupdf.PDFWidget }[] = [];
   for (let pageIndex = 0; pageIndex < document.countPages(); pageIndex += 1) {
     const page = arena.keep(document.loadPage(pageIndex));
     for (const widget of keepWidgets(arena, page)) {
-      if (widgetName(arena, widget) !== name) continue;
-      if (widget.isReadOnly()) throw new Error(`The form field "${name}" is read-only.`);
-      if (typeof value === 'boolean') {
-        if (!widget.isCheckbox() && !widget.isRadioButton()) {
-          throw new Error(`The form field "${name}" does not accept an on/off value.`);
-        }
-        const isOn = widget.getValue() !== 'Off';
-        if (isOn !== value) widget.toggle();
-      } else if (widget.isText()) {
-        if (!widget.setTextValue(value)) {
-          throw new Error(`The form field "${name}" rejected the supplied text.`);
-        }
-      } else if (widget.isChoice()) {
-        if (!widget.setChoiceValue(value)) {
-          throw new Error(`The form field "${name}" rejected the selected option.`);
-        }
-      } else {
-        throw new Error(`The form field "${name}" cannot be filled with text.`);
-      }
-      widget.update();
-      changed += 1;
+      if (widgetName(arena, widget) === name) matches.push({ page, widget });
     }
-    if (changed > 0) page.update();
   }
-  if (changed === 0) throw new Error(`The form field "${name}" no longer exists.`);
+  if (matches.length === 0) throw new Error(`The form field "${name}" no longer exists.`);
+  if (matches.some(({ widget }) => widget.isReadOnly())) {
+    throw new Error(`The form field "${name}" is read-only.`);
+  }
+
+  const representativeMatch = matches[0];
+  const representative = representativeMatch?.widget;
+  if (!representative || !representativeMatch) {
+    throw new Error(`The form field "${name}" no longer exists.`);
+  }
+  if (
+    representative.isChoice() &&
+    Boolean(representative.getFieldFlags() & mupdf.PDFWidget.CH_FIELD_IS_MULTI_SELECT)
+  ) {
+    throw new Error(
+      `The multi-select field "${name}" cannot be filled because the current value binding represents one value only.`,
+    );
+  }
+
+  let changed = 0;
+  if (typeof value === 'boolean' && representative.isRadioButton() && matches.length > 1) {
+    // A boolean protocol value does not identify a member of a radio group. Selecting the
+    // first widget is deterministic; callers that need a particular member pass its export
+    // value (which listFields exposes in options).
+    if (value && representative.getValue() === 'Off') representative.toggle();
+    if (!value && representative.getValue() !== 'Off') representative.toggle();
+    representative.update();
+    representativeMatch.page.update();
+    return 1;
+  }
+
+  for (const { page, widget } of matches) {
+    if (typeof value === 'boolean') {
+      if (!widget.isCheckbox() && !widget.isRadioButton()) {
+        throw new Error(`The form field "${name}" does not accept an on/off value.`);
+      }
+      const isOn = widget.getValue() !== 'Off';
+      if (isOn !== value) widget.toggle();
+    } else if (widget.isRadioButton()) {
+      const object = arena.keep(widget.getObject());
+      if (!appearanceStates(arena, object).includes(value)) continue;
+      if (widget.getValue() !== value) widget.toggle();
+    } else if (widget.isText()) {
+      if (!widget.setTextValue(value)) {
+        throw new Error(`The form field "${name}" rejected the supplied text.`);
+      }
+    } else if (widget.isChoice()) {
+      if (!widget.setChoiceValue(value)) {
+        throw new Error(`The form field "${name}" rejected the selected option.`);
+      }
+    } else {
+      throw new Error(`The form field "${name}" cannot be filled with text.`);
+    }
+    widget.update();
+    page.update();
+    changed += 1;
+  }
+  if (typeof value === 'string' && representative.isRadioButton() && changed === 0) {
+    throw new Error(`"${value}" is not an export value for the radio field "${name}".`);
+  }
   return changed;
 }
 
@@ -532,7 +593,48 @@ function assertRect(rect: EngineTypes['PdfRect']): void {
   }
 }
 
-function acroForm(arena: Arena, document: mupdf.PDFDocument): mupdf.PDFObject {
+function isHelvetica(arena: Arena, font: mupdf.PDFObject): boolean {
+  if (!font.isDictionary()) return false;
+  const type = arena.keep(font.get('Type'));
+  const subtype = arena.keep(font.get('Subtype'));
+  const baseFont = arena.keep(font.get('BaseFont'));
+  return (
+    type.isName() &&
+    type.asName() === 'Font' &&
+    subtype.isName() &&
+    subtype.asName() === 'Type1' &&
+    baseFont.isName() &&
+    baseFont.asName() === 'Helvetica'
+  );
+}
+
+function formFontName(
+  arena: Arena,
+  document: mupdf.PDFDocument,
+  fonts: mupdf.PDFObject,
+): string {
+  for (let suffix = 0; suffix < 128; suffix += 1) {
+    const name = `${FORM_FONT_PREFIX}${suffix || ''}`;
+    const existing = arena.keep(fonts.get(name));
+    if (isHelvetica(arena, existing)) return name;
+    if (existing.isNull()) {
+      const helvetica = arena.keep(document.newDictionary());
+      arena.keep(helvetica.put('Type', arena.keep(document.newName('Font'))));
+      arena.keep(helvetica.put('Subtype', arena.keep(document.newName('Type1'))));
+      arena.keep(helvetica.put('BaseFont', arena.keep(document.newName('Helvetica'))));
+      arena.keep(helvetica.put('Encoding', arena.keep(document.newName('WinAnsiEncoding'))));
+      const reference = arena.keep(document.addObject(helvetica));
+      arena.keep(fonts.put(name, reference));
+      return name;
+    }
+  }
+  throw new Error('Unable to reserve a form-level Helvetica resource name.');
+}
+
+function acroForm(
+  arena: Arena,
+  document: mupdf.PDFDocument,
+): { readonly form: mupdf.PDFObject; readonly fontName: string } {
   const trailer = arena.keep(document.getTrailer());
   const root = arena.keep(trailer.get('Root'));
   const existing = arena.keep(root.get('AcroForm'));
@@ -543,8 +645,6 @@ function acroForm(arena: Arena, document: mupdf.PDFDocument): mupdf.PDFObject {
     const fields = arena.keep(document.newArray());
     arena.keep(form.put('Fields', fields));
   }
-  const needAppearances = arena.keep(form.get('NeedAppearances'));
-  if (!needAppearances.isBoolean()) arena.keep(form.put('NeedAppearances', true));
   const existingResources = arena.keep(form.get('DR'));
   const resources = existingResources.isDictionary()
     ? existingResources
@@ -555,22 +655,16 @@ function acroForm(arena: Arena, document: mupdf.PDFDocument): mupdf.PDFObject {
     ? existingFonts
     : arena.keep(document.newDictionary());
   if (!existingFonts.isDictionary()) arena.keep(resources.put('Font', fonts));
-  const existingHelvetica = arena.keep(fonts.get('Helv'));
-  if (!existingHelvetica.isDictionary()) {
-    const helvetica = arena.keep(document.newDictionary());
-    arena.keep(helvetica.put('Type', arena.keep(document.newName('Font'))));
-    arena.keep(helvetica.put('Subtype', arena.keep(document.newName('Type1'))));
-    arena.keep(helvetica.put('BaseFont', arena.keep(document.newName('Helvetica'))));
-    arena.keep(helvetica.put('Encoding', arena.keep(document.newName('WinAnsiEncoding'))));
-    const reference = arena.keep(document.addObject(helvetica));
-    arena.keep(fonts.put('Helv', reference));
-  }
+  const fontName = formFontName(arena, document, fonts);
   const defaultAppearance = arena.keep(form.get('DA'));
   if (!defaultAppearance.isString()) {
-    const appearance = arena.keep(document.newString('/Helv 12 Tf 0 g'));
+    const appearance = arena.keep(document.newString(`/${fontName} ${FORM_FONT_SIZE} Tf 0 g`));
     arena.keep(form.put('DA', appearance));
   }
-  return form;
+  // We generate each widget appearance below. Asking readers to regenerate them would make
+  // the written output depend on reader-specific form support.
+  arena.keep(form.put('NeedAppearances', false));
+  return { form, fontName };
 }
 
 function fieldFlags(input: EngineTypes['FormFieldInput']): number {
@@ -578,6 +672,9 @@ function fieldFlags(input: EngineTypes['FormFieldInput']): number {
   if (input.readOnly) flags |= mupdf.PDFWidget.FIELD_IS_READ_ONLY;
   if (input.required) flags |= mupdf.PDFWidget.FIELD_IS_REQUIRED;
   if (input.type === 'text') {
+    if (input.comb && (input.multiline || input.password)) {
+      throw new Error('A comb text field cannot also be multiline or password-protected.');
+    }
     if (input.multiline) flags |= mupdf.PDFWidget.TX_FIELD_IS_MULTILINE;
     if (input.password) flags |= mupdf.PDFWidget.TX_FIELD_IS_PASSWORD;
     if (input.comb) flags |= mupdf.PDFWidget.TX_FIELD_IS_COMB;
@@ -595,8 +692,7 @@ function fieldFlags(input: EngineTypes['FormFieldInput']): number {
 }
 
 function fieldName(arena: Arena, object: mupdf.PDFObject): string {
-  const name = arena.keep(object.get('T'));
-  return name.isString() ? name.asString() : '';
+  return objectName(arena, object);
 }
 
 function assertUniqueFieldName(document: mupdf.PDFDocument, name: string): void {
@@ -616,6 +712,7 @@ export function createFormField(
 ): void {
   assertRect(input.rect);
   assertUniqueFieldName(document, input.name);
+  const flags = fieldFlags(input);
   if (
     !Number.isInteger(input.pageIndex) ||
     input.pageIndex < 0 ||
@@ -647,7 +744,7 @@ export function createFormField(
   arena.keep(object.put('FT', typeName));
   arena.keep(object.put('T', name));
   arena.keep(object.put('TU', label));
-  arena.keep(object.put('Ff', fieldFlags(input)));
+  arena.keep(object.put('Ff', flags));
   arena.keep(object.put('F', mupdf.PDFAnnotation.IS_PRINT));
   if (fieldType === 'Tx' || fieldType === 'Ch') {
     const emptyValue = arena.keep(document.newString(''));
@@ -667,11 +764,14 @@ export function createFormField(
     }
     arena.keep(object.put('Opt', options));
   }
-  const form = acroForm(arena, document);
-  const defaultAppearance = arena.keep(document.newString('/Helv 12 Tf 0 g'));
-  arena.keep(object.put('DA', defaultAppearance));
+  const { form, fontName } = acroForm(arena, document);
+  // This is deliberately the only field-level /DA write. setDefaultAppearance writes the
+  // syntax MuPDF uses to generate /AP, while the form-level /DR above supplies its resource.
+  widget.setDefaultAppearance(fontName, FORM_FONT_SIZE, [0, 0, 0]);
+  if (input.comb) {
+    arena.keep(object.put('MaxLen', COMB_DEFAULT_MAX_LENGTH));
+  }
   widget.setRect([...input.rect]);
-  widget.setDefaultAppearance('Helv', 12, [0, 0, 0]);
   widget.update();
   page.update();
 
@@ -750,23 +850,27 @@ export function reorderFormFields(
   if (names.length === 0 || new Set(names).size !== names.length) {
     throw new Error('Tab order must contain each named field exactly once.');
   }
-  const form = acroForm(arena, document);
+  const { form } = acroForm(arena, document);
   const fields = arena.keep(form.get('Fields'));
   const objects = Array.from({ length: fields.length }, (_, index) =>
     arena.keep(fields.get(index)),
   );
   const byName = new Map(objects.map((object) => [fieldName(arena, object), object]));
-  if (names.some((name) => !byName.has(name))) {
-    throw new Error('Tab order contains a field that no longer exists.');
+  const authoredNames = [...byName.keys()].filter(Boolean);
+  if (
+    names.length !== authoredNames.length ||
+    names.some((name) => !byName.has(name)) ||
+    authoredNames.some((name) => !names.includes(name))
+  ) {
+    throw new Error('Tab order must contain every named field exactly once.');
   }
-  const named = new Set(names);
   const reordered = arena.keep(document.newArray());
   for (const name of names) {
     const object = byName.get(name);
     if (object) arena.keep(reordered.push(object));
   }
   for (const object of objects) {
-    if (!named.has(fieldName(arena, object))) arena.keep(reordered.push(object));
+    if (!fieldName(arena, object)) arena.keep(reordered.push(object));
   }
   arena.keep(form.put('Fields', reordered));
 
@@ -780,8 +884,8 @@ export function reorderFormFields(
       object: arena.keep(annotations.get(index)),
     }));
     items.sort((left, right) => {
-      const leftRank = rank.get(fieldName(arena, left.object));
-      const rightRank = rank.get(fieldName(arena, right.object));
+      const leftRank = rank.get(objectName(arena, left.object));
+      const rightRank = rank.get(objectName(arena, right.object));
       if (leftRank === undefined && rightRank === undefined) return left.index - right.index;
       if (leftRank === undefined) return 1;
       if (rightRank === undefined) return -1;
@@ -792,6 +896,8 @@ export function reorderFormFields(
     arena.keep(pageObject.put('Annots', orderedAnnotations));
     const annotationOrder = arena.keep(document.newName('A'));
     arena.keep(pageObject.put('Tabs', annotationOrder));
+    const page = arena.keep(document.loadPage(pageIndex));
+    page.update();
   }
 }
 

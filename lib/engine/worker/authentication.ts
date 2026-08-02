@@ -1,7 +1,12 @@
 import * as mupdf from '../../../vendor/mupdf-wasm/dist/mupdf.js';
 import { withArenaSync } from './arena';
+import { inspectDocumentEncryption, type DocumentEncryptionSecurity } from './security';
 
 export type AuthenticationRole = 'user' | 'owner';
+export interface DocumentAuthentication {
+  readonly role: AuthenticationRole | null;
+  readonly encryption: DocumentEncryptionSecurity;
+}
 
 export class DocumentAuthenticationError extends Error {
   constructor(
@@ -70,9 +75,30 @@ export function authenticateDocument(
   return permissions & 4 ? 'owner' : 'user';
 }
 
+export function authenticateDocumentWithSecurity(
+  document: mupdf.Document,
+  password: string | undefined,
+): DocumentAuthentication {
+  const role = authenticateDocument(document, password);
+  if (!(document instanceof mupdf.PDFDocument)) {
+    return {
+      role,
+      encryption: {
+        protected: false,
+        algorithm: 'none',
+        version: null,
+        revision: null,
+        readOnly: false,
+      },
+    };
+  }
+  return { role, encryption: inspectDocumentEncryption(document) };
+}
+
 export default {
   assertEncryptionChangeAllowed,
   assertDocumentPermission,
   authenticateDocument,
+  authenticateDocumentWithSecurity,
   DocumentAuthenticationError,
 };

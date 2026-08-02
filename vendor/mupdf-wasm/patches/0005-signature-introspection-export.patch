@@ -1,0 +1,51 @@
+diff --git a/platform/wasm/lib/mupdf-js-processor.c b/platform/wasm/lib/mupdf-js-processor.c
+index bb354ba..0de0e46 100644
+--- a/platform/wasm/lib/mupdf-js-processor.c
++++ b/platform/wasm/lib/mupdf-js-processor.c
+@@ -899,6 +899,46 @@ void wasm_pdf_filter_page_contents(pdf_page *page, unsigned int flags)
+ 	})
+ }
+ 
++EXPORT
++int wasm_pdf_count_signatures(pdf_document *doc)
++{
++	INTEGER(pdf_count_signatures, doc)
++}
++
++EXPORT
++int wasm_pdf_signature_byte_range(pdf_document *doc, pdf_obj *signature, fz_range *byte_range)
++{
++	INTEGER(pdf_signature_byte_range, doc, signature, byte_range)
++}
++
++EXPORT
++int wasm_pdf_widget_is_signed(pdf_annot *widget)
++{
++	INTEGER(pdf_widget_is_signed, widget)
++}
++
++EXPORT
++int wasm_pdf_signature_is_signed(pdf_document *doc, pdf_obj *field)
++{
++	INTEGER(pdf_signature_is_signed, doc, field)
++}
++
++EXPORT
++char *wasm_pdf_signature_info(char *name, pdf_pkcs7_distinguished_name *dn, char *reason, char *location, double date, int include_labels)
++{
++	char *result;
++	TRY({
++		result = pdf_signature_info(ctx, name, dn, reason, location, (int64_t)date, include_labels);
++	})
++	return result;
++}
++
++EXPORT
++int wasm_pdf_signature_incremental_change_since_signing(pdf_document *doc, pdf_obj *signature)
++{
++	INTEGER(pdf_signature_incremental_change_since_signing, doc, signature)
++}
++
+ #undef RECORD0
+ #undef RECORD_FLOAT1
+ #undef RECORD_INT1

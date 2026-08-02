@@ -1,0 +1,72 @@
+diff --git a/platform/wasm/lib/mupdf.ts b/platform/wasm/lib/mupdf.ts
+index b3451ab..f77ce10 100644
+--- a/platform/wasm/lib/mupdf.ts
++++ b/platform/wasm/lib/mupdf.ts
+@@ -3063,6 +3063,48 @@ export class PDFDocument extends Document {
+ 		return libmupdf._wasm_pdf_validate_change_history(this.pointer)
+ 	}
+ 
++	countSignatures() {
++		return libmupdf._wasm_pdf_count_signatures(this.pointer)
++	}
++
++	signatureIsSigned(field: PDFObject) {
++		return this._withPDFObject(field, pointer =>
++			!!libmupdf._wasm_pdf_signature_is_signed(this.pointer, pointer)
++		)
++	}
++
++	signatureChangedSinceSigning(field: PDFObject) {
++		return this._withPDFObject(field, pointer =>
++			!!libmupdf._wasm_pdf_signature_incremental_change_since_signing(this.pointer, pointer)
++		)
++	}
++
++	signatureByteRange(field: PDFObject) {
++		return this._withPDFObject(field, pointer => {
++			const count = libmupdf._wasm_pdf_signature_byte_range(
++				this.pointer,
++				pointer,
++				0 as Pointer<"fz_range">,
++			)
++			if (count <= 0)
++				return []
++			const ranges = Malloc<"fz_range">(count * 16)
++			try {
++				const actual = libmupdf._wasm_pdf_signature_byte_range(this.pointer, pointer, ranges)
++				const view = new DataView(libmupdf.HEAPU8.buffer)
++				return Array.from({ length: actual }, (_, index) => {
++					const offset = Number(view.getBigInt64(ranges + index * 16, true))
++					const length = Number(view.getBigUint64(ranges + index * 16 + 8, true))
++					if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(length))
++						throw new RangeError("signature byte range exceeds JavaScript's safe integer range")
++					return { offset, length }
++				})
++			} finally {
++				Free(ranges)
++			}
++		})
++	}
++
+ 	canBeSavedIncrementally() {
+ 		return !!libmupdf._wasm_pdf_can_be_saved_incrementally(this.pointer)
+ 	}
+@@ -4708,6 +4750,10 @@ export class PDFWidget extends PDFAnnotation {
+ 		return libmupdf._wasm_pdf_toggle_widget(this.pointer)
+ 	}
+ 
++	isSigned() {
++		return !!libmupdf._wasm_pdf_widget_is_signed(this.pointer)
++	}
++
+ 	// Interactive Text Widget editing in a GUI.
+ 	// TODO: getEditingState()
+ 	// TODO: setEditingState()
+@@ -4725,7 +4771,6 @@ export class PDFWidget extends PDFAnnotation {
+ 	// TODO: eventBlur()
+ 
+ 	// NOTE: No OpenSSL support in WASM build.
+-	// TODO: isSigned()
+ 	// TODO: validateSignature()
+ 	// TODO: checkCertificate()
+ 	// TODO: checkDigest()

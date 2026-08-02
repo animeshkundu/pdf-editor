@@ -1,0 +1,29 @@
+%PDF-1.7
+%inline-image-framing
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 20 20] /Resources << >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 50 >>
+stream
+q BI /W 12 /H 1 /BPC 8 /CS /G ID  EI  EI Q
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f 
+0000000031 00000 n 
+0000000080 00000 n 
+0000000137 00000 n 
+0000000239 00000 n 
+trailer
+<< /Size 5 /Root 1 0 R >>
+startxref
+339
+%%EOF

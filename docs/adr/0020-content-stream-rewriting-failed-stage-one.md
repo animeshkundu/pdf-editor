@@ -3,7 +3,8 @@
 ## Status
 
 Superseded in part by
-[ADR 0028](0028-guarded-content-removal-and-existing-text-replacement.md)
+[ADR 0028](0028-guarded-content-removal-and-existing-text-replacement.md) and
+[ADR 0029](0029-byte-span-content-splicing.md)
 
 ## Date
 

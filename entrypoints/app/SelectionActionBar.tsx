@@ -113,7 +113,9 @@ export default function SelectionActionBar({
               .then((result) => {
                 onMutation(result);
                 onNotice(
-                  'Replaced the selected ASCII text through the verified Helvetica overlay path. The original glyphs were removed and the replacement appearance was checked before commit.',
+                  result.mechanism === 'content-splice'
+                    ? 'Replaced the selected text in its content stream. Every byte outside the verified text span was preserved.'
+                    : 'Replaced the selected ASCII text through the verified Helvetica overlay path. The original glyphs were removed and the replacement appearance was checked before commit.',
                 );
                 onClose();
               })

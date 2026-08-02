@@ -161,6 +161,8 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
     const analysisRef = useRef<HTMLParagraphElement>(null);
     const apiRef = useRef<DocumentViewportHandle | null>(null);
     const activeTool = useToolStore((state) => state.activeTool);
+    const formFields = useToolStore((state) => state.formFields);
+    const formFieldsHighlighted = useToolStore((state) => state.formFieldsHighlighted);
     const resetTool = useToolStore((state) => state.resetTool);
 
     useImperativeHandle(ref, () => ({
@@ -283,6 +285,24 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
                 selectionColor,
               );
             }
+            if (formFieldsHighlighted) {
+              context.fillStyle = searchColor;
+              for (const field of formFields) {
+                if (field.pageIndex !== pageIndex) continue;
+                const x = (field.rect[0] - page.bounds[0]) * deviceScale - renderedTile.tile.x;
+                const y = (field.rect[1] - page.bounds[1]) * deviceScale - renderedTile.tile.y;
+                const width = (field.rect[2] - field.rect[0]) * deviceScale;
+                const height = (field.rect[3] - field.rect[1]) * deviceScale;
+                if (
+                  x + width >= 0 &&
+                  y + height >= 0 &&
+                  x <= renderedTile.tile.width &&
+                  y <= renderedTile.tile.height
+                ) {
+                  context.fillRect(x, y, width, height);
+                }
+              }
+            }
           }
         }
       };
@@ -371,6 +391,27 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
           const start = dragStart.point;
           const end = pointFromEvent(event, pageIndex);
           dragStart = null;
+          if (Math.hypot(end[0] - start[0], end[1] - start[1]) < 1) {
+            const hit = [...formFields]
+              .reverse()
+              .find(
+                (field) =>
+                  field.pageIndex === pageIndex &&
+                  end[0] >= field.rect[0] &&
+                  end[0] <= field.rect[2] &&
+                  end[1] >= field.rect[1] &&
+                  end[1] <= field.rect[3],
+              );
+            if (hit) {
+              scroller.dispatchEvent(
+                new CustomEvent('pdf-form-field-click', {
+                  bubbles: true,
+                  detail: { name: hit.name, pageIndex },
+                }),
+              );
+              return;
+            }
+          }
           if (activeTool === 'redaction-mark') {
             const rect: EngineTypes['PdfRect'] = [
               Math.min(start[0], end[0]),
@@ -731,6 +772,8 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
       analysisStatusRef,
       currentPageRef,
       engine,
+      formFields,
+      formFieldsHighlighted,
       onError,
       onFind,
       onMutation,

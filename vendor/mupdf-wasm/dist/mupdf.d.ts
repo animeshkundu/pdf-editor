@@ -583,6 +583,13 @@ export declare class PDFDocument extends Document {
     countVersions(): number;
     countUnsavedVersions(): number;
     validateChangeHistory(): number;
+    countSignatures(): number;
+    signatureIsSigned(field: PDFObject): boolean;
+    signatureChangedSinceSigning(field: PDFObject): boolean;
+    signatureByteRange(field: PDFObject): {
+        offset: number;
+        length: number;
+    }[];
     canBeSavedIncrementally(): boolean;
     enableJournal(): void;
     getJournal(): {
@@ -923,6 +930,7 @@ export declare class PDFWidget extends PDFAnnotation {
     setChoiceValue(value: string): number;
     getOptions(isExport?: boolean): string[];
     toggle(): number;
+    isSigned(): boolean;
 }
 declare global {
     function $libmupdf_stm_close(ptr: number): void;

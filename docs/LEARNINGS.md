@@ -18,6 +18,36 @@ to do next time.
 - Development happens on Windows; CI runs on Linux. `.gitattributes` normalises line
   endings to LF because the WASM freshness gate compares bytes.
 
+## 2026-08-01: preserve bytes instead of improving a semantic reserializer
+
+- **Context.** The sanitize filter perturbed rendering even when asked to change nothing.
+- **What happened.** A tokenizer and byte splicer can prove a different property: every byte
+  outside explicit ranges is copied unchanged. A forced null write, a real replacement, and a
+  deliberately corrupted span distinguish a working path from a vacuous pass.
+- **What to do next time.** When fidelity depends on untouched syntax, retain token spans and
+  splice only verified ranges. Require a failing negative control, reread the written object,
+  keep the write inside one journal operation, and grade saved output with pdf.js and qpdf.
+
+## 2026-08-01: test the complete patched tree before replaying individual patches
+
+- **Context.** `vendor-mupdf.mjs` used reverse-apply checks to make patch replay idempotent.
+- **What happened.** A later patch can alter context used by an earlier patch, causing the
+  reverse check to fail even though every patch is already present. The script then tries to
+  apply the earlier patch and fails.
+- **What to do next time.** First compare all expected patched-file digests in one pass. If the
+  complete tree matches, skip replay and regenerate the source stamp. Use per-patch reverse
+  checks only to resume a genuinely partial patch sequence.
+
+## 2026-08-01: an installed emsdk need not be an activated emsdk
+
+- **Context.** The exact Emscripten 4.0.8 compiler existed under `/tmp/emsdk`, but
+  `emsdk_env.sh` did not add it to `PATH`; reinstalling failed while chmod-ing Node symlinks.
+- **What happened.** Probing only `emcc` after sourcing treated the installed compiler as
+  absent. The build repeatedly entered a broken installer despite a working compiler.
+- **What to do next time.** Probe the pinned compiler at
+  `$EMSDK/upstream/emscripten/emcc`, add its directories to `PATH`, set `EM_CONFIG` and
+  `EMSDK_NODE`, and install only when that exact compiler is genuinely absent.
+
 ## 2026-07-30: verify the dangerous half of a compound mutation before commit
 
 - **Context.** Existing-text replacement removes source glyphs before adding its replacement.

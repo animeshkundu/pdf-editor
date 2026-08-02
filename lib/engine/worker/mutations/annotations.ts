@@ -3,6 +3,14 @@ import type { EngineTypes } from '../../port';
 import { selectionBounds } from '../../../text/overlay';
 import { withArenaSync, type Arena } from '../arena';
 import redactionMutations from './redaction';
+import {
+  resolveEditableContentStream,
+  readDecodedStreamBytes,
+  forceWriteContentStream,
+  scanContentTokens,
+  findSingleAsciiShowTextRun,
+  spliceBytes,
+} from '../content';
 
 type AnnotationInfo = EngineTypes['AnnotationInfo'];
 type AnnotationInput = EngineTypes['AnnotationInput'];
@@ -293,6 +301,22 @@ export function listAnnotations(
   });
 }
 
+/**
+ * Byte-span splice coordinates for the narrow, provable in-place text replacement path (see
+ * `lib/engine/worker/content/`, ADR 0029). Populated only when every existing geometric/text
+ * correlation check below has already passed *and* the additional byte-splice-only conditions
+ * hold: the replacement is byte-length-preserving ASCII with no PDF-reserved characters, the
+ * page's `/Contents` resolves to exactly one physical stream, and the content stream contains
+ * exactly one unescaped `(originalText) Tj` operand. Absent whenever any of that cannot be
+ * proven; the caller then falls back to the guarded redact+overlay path unchanged.
+ */
+interface ByteSplicePreflight {
+  readonly streamObjectNumber: number;
+  readonly innerStart: number;
+  readonly innerEnd: number;
+  readonly replacementBytes: Uint8Array;
+}
+
 interface ExistingTextEditPreflight {
   readonly pageIndex: number;
   readonly rect: EngineTypes['PdfRect'];
@@ -302,6 +326,7 @@ interface ExistingTextEditPreflight {
   readonly beforeText: string;
   readonly originalOffset: number;
   readonly annotations: readonly string[];
+  readonly byteSplice?: ByteSplicePreflight;
 }
 
 function quadBounds(quad: EngineTypes['PdfQuad']): EngineTypes['PdfRect'] {
@@ -400,6 +425,48 @@ function pageCharacters(arena: Arena, page: mupdf.PDFPage): string {
     },
   });
   return characters.join('');
+}
+
+const RESERVED_STRING_CHARACTERS = /[()\\]/u;
+
+/**
+ * Attempts to compute byte-splice coordinates for a same-length ASCII replacement.
+ *
+ * This must never throw: it is called after every existing refusal in
+ * `inspectExistingTextEdit` has already passed, as a strictly additive narrowing. Any failure
+ * to resolve a single content stream, tokenize it, or find exactly one unescaped
+ * `(originalText) Tj` operand simply means the byte-splice path is unavailable for this
+ * document, and `undefined` is returned so the caller falls back to the guarded
+ * redact+overlay path unchanged.
+ */
+function computeByteSplicePreflight(
+  arena: Arena,
+  page: mupdf.PDFPage,
+  input: EngineTypes['ExistingTextEditInput'],
+): ByteSplicePreflight | undefined {
+  if (input.replacementText.length !== input.originalText.length) return undefined;
+  if (
+    RESERVED_STRING_CHARACTERS.test(input.originalText) ||
+    RESERVED_STRING_CHARACTERS.test(input.replacementText)
+  ) {
+    return undefined;
+  }
+  try {
+    const editable = resolveEditableContentStream(arena, page);
+    if (!editable.object.isIndirect()) return undefined;
+    const bytes = readDecodedStreamBytes(arena, editable.object);
+    const tokens = scanContentTokens(bytes);
+    const run = findSingleAsciiShowTextRun(tokens, bytes, input.originalText);
+    if (!run) return undefined;
+    return {
+      streamObjectNumber: editable.object.asIndirect(),
+      innerStart: run.innerStart,
+      innerEnd: run.innerEnd,
+      replacementBytes: new TextEncoder().encode(input.replacementText),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export function inspectExistingTextEdit(
@@ -513,6 +580,7 @@ export function inspectExistingTextEdit(
         'Existing-text edit refused because the extracted page text does not contain one unambiguous selected occurrence.',
       );
     }
+    const byteSplice = computeByteSplicePreflight(arena, page, input);
     return {
       pageIndex: input.pageIndex,
       rect,
@@ -522,6 +590,7 @@ export function inspectExistingTextEdit(
       beforeText,
       originalOffset,
       annotations: annotationFingerprints(arena, page),
+      ...(byteSplice ? { byteSplice } : {}),
     };
   });
 }
@@ -596,6 +665,91 @@ export function editExistingText(
     );
   }
   return annotationInfo(arena, replacement, preflight.pageIndex, ordinal);
+}
+
+/**
+ * Result of {@link spliceExistingText}. `applied: false` means the preflight found no provable
+ * byte-splice opportunity for this edit (see {@link computeByteSplicePreflight}), and the
+ * caller must fall back to {@link editExistingText}'s guarded redact+overlay path, unchanged.
+ */
+export interface ByteSpliceEditReport {
+  readonly applied: boolean;
+  readonly streamObjectNumber?: number;
+}
+
+/**
+ * Performs the narrow, provable in-place byte-splice text replacement (ADR 0029) instead of
+ * the redact+FreeText-overlay path, when and only when `preflight.byteSplice` proved it safe.
+ *
+ * This is deliberately a *separate* function from {@link editExistingText} rather than a
+ * change to that function's signature: `editExistingText` is called across the worker/port
+ * boundary (`lib/engine/worker/doc-runtime.ts`, out of scope for this change) with a return
+ * type of `AnnotationInfo` that the shared protocol (`lib/engine/port.ts`, also out of scope)
+ * currently expects unconditionally. A byte-splice edit creates no new annotation to report,
+ * so this function is exposed alongside `editExistingText` for direct use (as the existing
+ * `editExistingText` already is in `tests/existing-text-edit.test.ts`) until the shared
+ * protocol surface is extended to expose an annotation-less mutation result.
+ *
+ * Re-derives the splice from `preflight.byteSplice`'s recorded coordinates against a freshly
+ * read copy of the stream (rather than trusting the preflight's snapshot blindly), then applies
+ * the exact same postcondition-or-rollback discipline `editExistingText` uses: after the
+ * forced write, the page is reloaded fresh and its extracted text and annotation set are
+ * re-verified against what the preflight predicted, throwing (which the caller's
+ * `journalOperation` rolls back) on any mismatch.
+ */
+export function spliceExistingText(
+  arena: Arena,
+  document: mupdf.PDFDocument,
+  input: EngineTypes['ExistingTextEditInput'],
+  preflight: ExistingTextEditPreflight,
+): ByteSpliceEditReport {
+  const byteSplice = preflight.byteSplice;
+  if (!byteSplice) return { applied: false };
+
+  const streamObject = arena.keep(document.newIndirect(byteSplice.streamObjectNumber));
+  if (!streamObject.isStream()) {
+    throw new Error(
+      'Existing-text edit byte splice was rolled back because the recorded content stream is no longer a stream.',
+    );
+  }
+  const bytes = readDecodedStreamBytes(arena, streamObject);
+  const tokens = scanContentTokens(bytes);
+  const run = findSingleAsciiShowTextRun(tokens, bytes, input.originalText);
+  if (
+    !run ||
+    run.innerStart !== byteSplice.innerStart ||
+    run.innerEnd !== byteSplice.innerEnd
+  ) {
+    throw new Error(
+      'Existing-text edit byte splice was rolled back because the selected run could not be re-verified against the content stream immediately before writing.',
+    );
+  }
+
+  const newBytes = spliceBytes(bytes, [
+    { start: run.innerStart, end: run.innerEnd, replacement: byteSplice.replacementBytes },
+  ]);
+  forceWriteContentStream(arena, document, streamObject, newBytes);
+
+  const reloadedPage = arena.keep(document.loadPage(preflight.pageIndex));
+  const afterSplice = pageCharacters(arena, reloadedPage);
+  const expected =
+    preflight.beforeText.slice(0, preflight.originalOffset) +
+    input.replacementText +
+    preflight.beforeText.slice(preflight.originalOffset + input.originalText.length);
+  if (afterSplice !== expected) {
+    throw new Error(
+      'Existing-text edit byte splice was rolled back because the page text read back after the write did not match the predicted replacement.',
+    );
+  }
+  if (
+    JSON.stringify(annotationFingerprints(arena, reloadedPage)) !==
+    JSON.stringify(preflight.annotations)
+  ) {
+    throw new Error(
+      'Existing-text edit byte splice was rolled back because the write changed an annotation it should not have touched.',
+    );
+  }
+  return { applied: true, streamObjectNumber: byteSplice.streamObjectNumber };
 }
 
 export function projectedExistingTextEditBytes(
@@ -683,5 +837,6 @@ export default {
   listAnnotations,
   projectedAnnotationBytes,
   projectedExistingTextEditBytes,
+  spliceExistingText,
   updateAnnotation,
 };

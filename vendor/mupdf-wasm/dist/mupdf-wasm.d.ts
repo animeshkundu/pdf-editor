@@ -585,4 +585,10 @@ interface Libmupdf {
 	_wasm_pdf_font_is_embedded(font: Pointer<"pdf_font_desc">): number,
 	_wasm_pdf_font_wmode(font: Pointer<"pdf_font_desc">): number,
 	_wasm_pdf_filter_page_contents(page: Pointer<"any_page">, flags: number): void,
+	_wasm_pdf_count_signatures(doc: Pointer<"any_document">): number,
+	_wasm_pdf_signature_byte_range(doc: Pointer<"any_document">, signature: Pointer<"pdf_obj">, byte_range: Pointer<"fz_range">): number,
+	_wasm_pdf_widget_is_signed(widget: Pointer<"pdf_annot">): number,
+	_wasm_pdf_signature_is_signed(doc: Pointer<"any_document">, field: Pointer<"pdf_obj">): number,
+	_wasm_pdf_signature_info(name: Pointer<"char">, dn: Pointer<"pdf_pkcs7_distinguished_name">, reason: Pointer<"char">, location: Pointer<"char">, date: number, include_labels: number): Pointer<"char">,
+	_wasm_pdf_signature_incremental_change_since_signing(doc: Pointer<"any_document">, signature: Pointer<"pdf_obj">): number,
 }

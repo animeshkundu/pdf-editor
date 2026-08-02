@@ -12,6 +12,13 @@ Nothing has been released yet. The repository is at `0.0.0`.
 
 ### Added
 
+- Byte-span content-stream editing for provable same-length ASCII `Tj` runs, with exact
+  unspliced-byte preservation, forced-write reread proof, journal rollback, and path disclosure.
+- Signature coverage inspection backed by new MuPDF WASM exports, including byte ranges,
+  later-revision evidence, and explicit separation from cryptographic validation.
+- Classified document comparison with word insertions/deletions, page moves, and arena-owned
+  128 px raster RMSE metrics.
+- Text-only RTF export and explicit browser-floor OCR availability.
 - Password-protected PDF opening with an accessible retry dialog, user/owner authentication,
   encrypted search seeding, and AES-128/AES-256 preservation across full saves.
 - Search next/previous controls, active match position, Enter/Shift+Enter and F3 traversal.
@@ -79,6 +86,10 @@ Nothing has been released yet. The repository is at `0.0.0`.
 
 ### Changed
 
+- RC4-encrypted documents are mutation-disabled and can only produce a full,
+  garbage-collecting AES-256 replacement.
+- Form authoring emits one field default appearance, writes deterministic PDF tab order, and
+  blocks form-data export when required fields are empty.
 - Content-stream editing, true redaction, existing object rewrites, and marked-content
   tagging were withdrawn after the null filter produced diffuse render perturbations.
 - Save writes back only when the user opened through a Chromium File System Access handle;
@@ -92,6 +103,9 @@ Nothing has been released yet. The repository is at `0.0.0`.
 
 ### Fixed
 
+- Re-running MuPDF vendoring now recognizes the complete patched source state before attempting
+  individual reverse-apply checks, and a locally installed exact Emscripten 4.0.8 toolchain no
+  longer reinstalls its Node archive.
 - Newly authored AcroForm fields now resolve `/Helv` through `/AcroForm/DR/Font` in
   independent readers instead of emitting a dangling default-appearance font name.
 - Redaction character counts now use structured-text character callbacks rather than block

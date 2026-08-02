@@ -242,8 +242,11 @@ fallbacks and the capabilities withdrawn with that path.
 
 ### Text
 
-- [ ] `EDIT-001` **Edit existing text in place** `DEGRADED`. One deliberately narrow path
-      ships: a unique, axis-aligned, single-font line can be replaced with printable ASCII
+- [x] `EDIT-001` **Edit existing text in place** `DEGRADED`. A byte-length-preserving,
+      uniquely occurring printable-ASCII `Tj` run is replaced directly through the byte-span
+      splicer in ADR 0029, preserving every byte outside the verified span. Other supported
+      inputs use the earlier guarded overlay path: a unique, axis-aligned, single-font line
+      can be replaced with printable ASCII
       when no Form XObject, marked-content dictionary, metadata copy, redaction mark, or
       overlapping annotation makes the operation ambiguous. MuPDF's redaction filter removes
       the selected glyphs and a standard Helvetica `FreeText` appearance carries the
@@ -378,28 +381,30 @@ unambiguous parity in the product.
 - [ ] `FORM-005` **List box**, single and multiple selection `LOCAL`
 - [ ] `FORM-006` **Button**, with icon and label layouts `LOCAL`
 - [ ] `FORM-007` **Digital signature field** `LOCAL`
-- [ ] `FORM-008` **Barcode field** `DEGRADED`. Reading a barcode field's declared parameters and
-      rendering the symbology is achievable; matching Acrobat's exact encoding across every
-      supported symbology is not something we can claim without verification. It ships only
-      once verified per symbology, and unverified symbologies are refused rather than
-      rendered approximately.
+- [ ] `FORM-008` **Barcode field** `EXCLUDED`. The built engine exposes no verified barcode
+      authoring surface and no independently decodable encoder is bundled. A field that only
+      this writer could interpret would not be interoperable
+      ([finding](../research/2026-08-01-form-capabilities.md)).
 
 ### Filling
 
-- [ ] `FORM-009` **Fill every field type** `DEGRADED`. Saved values can be entered from the field
+- [x] `FORM-009` **Fill every field type** `DEGRADED`. Saved scalar values for text, checkbox,
+      radio, combo, and single-select list fields can be entered from the field
       list, but page-widget click targeting is not wired to the editor.
-- [ ] `FORM-010` **Tab between fields in tab order** `OPEN`, **Spike F (interactive widget
-      surface)**. Tab order can be authored; the spike must prove keyboard focus, value editing, and
-      page-coordinate hit testing without positioned DOM text.
-- [ ] `FORM-011` **Highlight fields**, with a toggle `DEGRADED`. The toggle highlights rows in the
+- [x] `FORM-010` **Tab between fields in tab order** `DEGRADED`. The authored PDF tab order and
+      keyboard-accessible field list follow the same sequence, but page-coordinate hit testing
+      is not wired and no positioned DOM inputs are introduced.
+- [x] `FORM-011` **Highlight fields**, with a toggle `DEGRADED`. The toggle highlights rows in the
       field list; page-widget highlighting is not available.
-- [ ] `FORM-012` **Required-field indication and validation on submit** `DEGRADED`. Required fields
+- [x] `FORM-012` **Required-field indication and validation on submit** `DEGRADED`. Required fields
       are indicated and list-entered values can be checked, but there is no interactive page submit
       flow.
-- [ ] `FORM-013` **Auto-complete from previous entries** `OPEN`, **Spike G (consented local form
-      history)**. The spike must prove opt-in, clearable OPFS storage that cannot cross document
-      boundaries accidentally. Acrobat's equivalent is on by default; storing what someone typed
-      into a form without asking is not a default we are willing to ship.
+- [ ] `FORM-013` **Auto-complete from previous entries** `OPEN`. The opt-in, clearable,
+      document-scoped history kernel exists, but the current port exposes no stable document
+      identity and the product stores no entries rather than risk crossing document boundaries.
+      Spike: add an opaque content fingerprint to `DocumentInfo`, then prove history remains
+      isolated across two same-named PDFs. This is ordinary client-side work, not permanently
+      excluded ([finding](../research/2026-08-01-form-capabilities.md)).
 - [ ] `FORM-014` **Reset form** `LOCAL`
 - [ ] `FORM-015` **Save a partially filled form and resume** `LOCAL`
 
@@ -416,9 +421,12 @@ unambiguous parity in the product.
       Real-world government and enterprise forms depend on these, and a form that silently
       does not calculate is worse than one that refuses to open.
 - [ ] `FORM-022` **Set and edit tab order**, including a visual order view `LOCAL`
-- [ ] `FORM-023` **Auto-detect fields on an unstructured document** `DEGRADED`. Field detection is a
-      heuristic in every tool that offers it, including Acrobat. Ours will differ; results
-      are presented as a proposal to review, never applied silently.
+- [ ] `FORM-023` **Auto-detect fields on an unstructured document** `OPEN`. A proposal-only
+      heuristic has a labelled kernel fixture, but the engine port does not expose page text
+      geometry needed to scan a real unstructured document. No detection result is claimed or
+      applied. Spike: expose bounded text-line geometry through the engine port and measure the
+      existing proposal kernel against labelled real-page fixtures. This is ordinary client-side
+      work, not permanently excluded ([finding](../research/2026-08-01-form-capabilities.md)).
 - [ ] `FORM-024` **Duplicate a field across pages** `LOCAL`
 
 ### Data
@@ -489,13 +497,14 @@ unambiguous parity in the product.
       later revision; and revocation, which is reported as `unknown` unless the document
       itself carries the evidence (see `SIGN-015`). A signature is never summarised as
       simply "valid".
-- [ ] `SIGN-011` **Signature panel** `DEGRADED`. Showing which byte ranges each signature
+- [x] `SIGN-011` **Signature panel** `DEGRADED`. Showing which byte ranges each signature
       covers is `LOCAL` work, readable from the ByteRange array alone. Showing **what
       changed after it** is not: that needs parsing each later incremental revision and
       classifying the changes semantically against DocMDP and field locks. We report the
       revisions that exist after each signature and which objects they touch; we do not
       claim to characterise every change the way Acrobat does. The panel says which of the
-      two it is showing.
+      two it is showing
+      ([finding](../research/2026-08-01-signature-and-rc4.md)).
 - [ ] `SIGN-012` **Import certificates and build a trust list** `LOCAL`
 - [ ] `SIGN-013` **Private keys never leave the device** `LOCAL`, stronger than most desktop tools.
 - [ ] `SIGN-014` **RFC 3161 timestamping** `EXCLUDED`, requires a network call to a TSA.
@@ -523,10 +532,10 @@ unambiguous parity in the product.
       extraction, and assembly `LOCAL`
 - [ ] `SIGN-022` **AES-256 encryption** `LOCAL`
 - [ ] `SIGN-023` **AES-128 encryption** `LOCAL`, for compatibility.
-- [ ] `SIGN-024` **RC4 encryption**, read-only `DEGRADED`. It is broken, so a document
+- [x] `SIGN-024` **RC4 encryption**, read-only `DEGRADED`. It is broken, so a document
       using it opens and can be re-saved with AES-256, but a new document is never written
       with it. The document's weak encryption is stated on open rather than silently
-      accepted.
+      accepted ([finding](../research/2026-08-01-signature-and-rc4.md)).
 - [ ] `SIGN-025` **Honour permission flags in the UI** `LOCAL`, with the restriction stated rather
       than the control silently failing.
 - [ ] `SIGN-026` **Certificate-based encryption (recipient lists)** `OPEN`, **Spike E
@@ -610,13 +619,16 @@ unambiguous parity in the product.
 
 - [ ] `CONV-001` **From images**: PNG, JPEG, WebP, and GIF `LOCAL`
 - [ ] `CONV-002` **From plain text and Markdown** `LOCAL`
-- [ ] `CONV-003` **From HTML** `DEGRADED`. Rendering arbitrary HTML to PDF faithfully is a browser
-      engine's job, and we cannot drive the browser's own print pipeline over untrusted
-      third-party content without fetching it, which is forbidden. Restricted to local
-      files, and disclosed.
+- [ ] `CONV-003` **From HTML** `EXCLUDED`. The browser print pipeline is the only faithful local
+      renderer and cannot be scripted to produce a file; rasterizing HTML would not preserve
+      document semantics. URL capture remains forbidden by zero egress
+      ([finding](../research/2026-08-01-conversion-and-compare.md)).
 - [ ] `CONV-004` **From a scanner** `EXCLUDED`. No browser API reaches a document scanner. Camera
       capture on a mobile device is the substitute, and is named as such.
-- [ ] `CONV-005` **From Office formats** `DEGRADED`, see below.
+- [ ] `CONV-005` **From Office formats** `EXCLUDED`. No Office document-model renderer is
+      bundled, and the measured LibreOffice-WASM alternative exceeds the current bundle budget
+      without providing an accepted browser write path
+      ([finding](../research/2026-08-01-conversion-and-compare.md)).
 - [ ] `CONV-006` **From the clipboard** `LOCAL`
 - [ ] `CONV-007` **From a web page by URL** `EXCLUDED`, requires fetching a third-party origin.
 
@@ -635,7 +647,7 @@ unambiguous parity in the product.
 - [ ] `CONV-014` **To PowerPoint (`.pptx`)** `DEGRADED`. PDF has no slide model, no speaker
       notes and no shape grouping, so each page becomes a slide of positioned text boxes and
       images. Editable, but not the deck it came from.
-- [ ] `CONV-015` **To RTF** `DEGRADED`. A largely linear format: columns, floats, and precise
+- [x] `CONV-015` **To RTF** `DEGRADED`. A largely linear format: columns, floats, and precise
       positioning flatten into reading order. Useful when the text matters and the layout
       does not.
 - [ ] `CONV-016` **To CSV from a detected table** `LOCAL` for tagged tables, `DEGRADED` for inferred
@@ -643,14 +655,17 @@ unambiguous parity in the product.
 
 ### OCR
 
-- [ ] `CONV-017` **Recognize text in a scanned document** `DEGRADED`. Runs in the lazy `ocr.worker`.
-      Adobe's runs on their infrastructure with models we cannot match in a browser; ours
-      is worse on poor scans, unusual fonts, and non-Latin scripts.
+- [x] `CONV-017` **Recognize text in a scanned document** `DEGRADED`. Runs in the lazy
+      `ocr.worker` through the installed on-device `TextDetector` in Chromium. Firefox 131 and
+      Safari 15.2 do not implement that API and no model is downloaded; the unavailable state is
+      shown before use. Quality is worse on poor scans, unusual fonts, and non-Latin scripts.
 - [ ] `CONV-018` **Per-word confidence surfaced, not hidden** `LOCAL`
 - [ ] `CONV-019` **Searchable-image output** (invisible text layer over the original image) `LOCAL`,
       the default, because it never alters what the user sees.
-- [ ] `CONV-020` **Editable-text output** `DEGRADED`, and never the default. Substituting recognised
-      text for a scan silently is how OCR corrupts documents.
+- [ ] `CONV-020` **Editable-text output** `EXCLUDED`. Recognised text can be downloaded, but the
+      build has no independently accepted searchable/editable PDF text-layer writer. Substituting
+      recognised text for a scan is not offered
+      ([finding](../research/2026-08-01-conversion-and-compare.md)).
 - [ ] `CONV-021` **Language selection** `LOCAL`
 - [ ] `CONV-022` **Deskew, despeckle, and background removal on scans** `LOCAL`
 
@@ -674,12 +689,12 @@ unambiguous parity in the product.
       it needs nothing the engine cannot supply, not that the engine supplies it.
 - [ ] `CMPR-002` **Side-by-side view with synchronised scrolling** `LOCAL`
 - [ ] `CMPR-003` **Text differences at word granularity** `LOCAL`
-- [ ] `CMPR-004` **Image and graphic differences** `DEGRADED`. Detected by comparing
+- [x] `CMPR-004` **Image and graphic differences** `DEGRADED`. Detected by comparing
       rendered tiles, so it reports that a region changed, not which object changed or
       how. Anti-aliasing and resampling differences have to be tolerated, which means a
       threshold, which means both false positives and missed subtle changes. The report
       says it is raster-based rather than implying object-level understanding.
-- [ ] `CMPR-005` **Page insertions, deletions, and moves detected as such** `DEGRADED`,
+- [x] `CMPR-005` **Page insertions, deletions, and moves detected as such** `DEGRADED`,
       by content similarity rather than identity, since a moved page is rarely
       byte-identical after a round trip through another producer. Still far better than
       reporting "everything after page 4 changed", but similarity needs a threshold, and a
@@ -687,8 +702,10 @@ unambiguous parity in the product.
 - [ ] `CMPR-006` **A navigable difference list** `LOCAL`
 - [ ] `CMPR-007` **Filter by change type** `LOCAL`
 - [ ] `CMPR-008` **Compare report as a document** `LOCAL`
-- [ ] `CMPR-009` **Compare a scanned document against a digital one** `DEGRADED`, since it depends on
-      OCR quality, and says so.
+- [ ] `CMPR-009` **Compare a scanned document against a digital one** `EXCLUDED`. The comparison
+      reports that OCR is required and can inspect the current page in Chromium, but it cannot
+      OCR both documents across the supported browser floor. It does not call that a comparison
+      result ([finding](../research/2026-08-01-conversion-and-compare.md)).
 
 ---
 
@@ -885,13 +902,13 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 
 312 items in total.
 
-| Label      | Count | Where it concentrates                                                                                                                                                                                                |
-| ---------- | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LOCAL`    |   251 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                                      |
-| `DEGRADED` |    24 | Guarded text replacement, Office export, OCR, signature revocation status, field auto-detection, HTML conversion, barcode fields, RC4, scan comparison                                                               |
-| `EXCLUDED` |    25 | Existing content/object rewrites, text reflow, marked-content tagging, cloud workflows, XFA, scanner input, web capture, timestamping, online revocation checking, LTV, prepress, sound, Action Wizard compatibility |
-| `OPEN`     |     7 | Interactive form surfaces and local form history (Spikes F and G), signing (Spike C), signature validation (Spike D), and certificate encryption (Spike E)                                                           |
-| `EQUIV`    |     5 | Find, clipboard, save and save as, print, Read Out Loud                                                                                                                                                              |
+| Label      | Count | Where it concentrates                                                                                                                                                                                         |
+| ---------- | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LOCAL`    |   251 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                               |
+| `DEGRADED` |    19 | Guarded text replacement, scalar form filling, Chromium-only OCR, signature revocation status, raster comparison, RC4                                                                                         |
+| `EXCLUDED` |    32 | Existing content/object rewrites, text reflow, unavailable conversion/OCR output, marked-content tagging, cloud workflows, XFA, scanner input, timestamping, online revocation checking, LTV, prepress, sound |
+| `OPEN`     |     5 | Signing (Spike C), signature validation (Spike D), and certificate encryption (Spike E)                                                                                                                       |
+| `EQUIV`    |     5 | Find, clipboard, save and save as, print, Read Out Loud                                                                                                                                                       |
 
 By section:
 
@@ -922,8 +939,7 @@ promotion. The red result withdrew general rewrite-dependent features
 ([ADR 0020](../adr/0020-content-stream-rewriting-failed-stage-one.md)); ADR 0028 later
 restored only a guarded ASCII replacement path with transactional self-consistency checks
 and independent saved-output acceptance. The remaining open items have no demonstrated
-engine path or complete browser interaction surface: forms depend on Spikes F and G, signing
-depends on bridging a synchronous C callback to asynchronous WebCrypto (Spike C), signature
+engine path: signing depends on bridging a synchronous C callback to asynchronous WebCrypto (Spike C), signature
 validation needs a verifier the shim does not export (Spike D), and certificate-based
 encryption needs PDF's public-key security handler (Spike E).
 

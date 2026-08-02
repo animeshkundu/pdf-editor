@@ -260,6 +260,88 @@ describe('existing-text edit safety', () => {
     }
   });
 
+  it('splices verified byte-length-preserving ASCII text directly, with no overlay annotation', async () => {
+    const document = editableDocument();
+    try {
+      // Presence-first: confirm the original text is there before any edit is attempted.
+      expect(await pdfJsText(saveDocument(document, SAFE_FULL_SAVE))).toBe(
+        'Prefix Original Suffix',
+      );
+
+      const input = selectedInput(document, 'Original', 'REVISED!');
+      const preflight = annotationMutations.inspectExistingTextEdit(document, input);
+      expect(preflight.byteSplice).toBeDefined();
+
+      const report = journalOperation(
+        document,
+        'Splice existing text',
+        () => undefined,
+        (arena) => annotationMutations.spliceExistingText(arena, document, input, preflight),
+      );
+      expect(report).toMatchObject({ applied: true });
+      expect(journalState(document)).toMatchObject({
+        position: 1,
+        steps: ['Splice existing text'],
+        canUndo: true,
+      });
+
+      const output = saveDocument(document, SAFE_FULL_SAVE);
+      expect(await pdfJsText(output)).toBe('Prefix REVISED! Suffix');
+
+      // Unlike `editExistingText`, the byte-splice path never creates a FreeText overlay: the
+      // replacement text is now part of the original content stream itself, not a separate
+      // annotation drawn on top of a redacted hole.
+      const annotations = await pdfJsAnnotations(output);
+      expect(annotations).toEqual([]);
+
+      const path = join(workDir, 'byte-splice-edit.pdf');
+      writeFileSync(path, new Uint8Array(output));
+      const check = spawnSync(qpdf, ['--check', path], { encoding: 'utf8', shell: false });
+      expect(check.status, check.stderr || check.stdout).toBe(0);
+    } finally {
+      document.destroy();
+    }
+  });
+
+  it('rolls back a verified byte splice when its post-write text check fails', async () => {
+    const document = editableDocument();
+    try {
+      const input = selectedInput(document, 'Original', 'REVISED!');
+      const preflight = annotationMutations.inspectExistingTextEdit(document, input);
+      expect(preflight.byteSplice).toBeDefined();
+
+      const invalidPostcondition = {
+        ...preflight,
+        beforeText: `Unexpected ${preflight.beforeText}`,
+      };
+      expect(() =>
+        journalOperation(
+          document,
+          'Injected failed byte splice',
+          () => undefined,
+          (arena) =>
+            annotationMutations.spliceExistingText(
+              arena,
+              document,
+              input,
+              invalidPostcondition,
+            ),
+        ),
+      ).toThrow('page text read back after the write did not match');
+      expect(journalState(document)).toMatchObject({ position: 0, steps: [], canUndo: false });
+
+      const output = saveDocument(document, SAFE_FULL_SAVE);
+      expect(await pdfJsText(output)).toBe('Prefix Original Suffix');
+      expect(await pdfJsAnnotations(output)).toEqual([]);
+      const path = join(workDir, 'rolled-back-byte-splice.pdf');
+      writeFileSync(path, new Uint8Array(output));
+      const check = spawnSync(qpdf, ['--check', path], { encoding: 'utf8', shell: false });
+      expect(check.status, check.stderr || check.stdout).toBe(0);
+    } finally {
+      document.destroy();
+    }
+  });
+
   it('ties a single-font line to its selected run instead of all fonts on the page', () => {
     const document = mupdf.Document.openDocument(
       fixture('latex-pdftex.pdf'),

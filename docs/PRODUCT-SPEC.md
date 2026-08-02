@@ -1,9 +1,9 @@
 # PDF Editor product specification
 
-> **Status: living parity contract.** General content-stream rewriting remains withdrawn
-> after Spike A, while ADR 0028 restores one guarded, transactionally verified ASCII
-> existing-text replacement path. The parity inventory remains the source of truth for what
-> actually ships.
+> **Status: living parity contract.** General filter-based content-stream reserialization
+> remains withdrawn after Spike A. ADR 0028 restores a guarded overlay path, and ADR 0029 adds
+> direct byte-span replacement for the narrow runs it can prove without touching surrounding
+> bytes. The parity inventory remains the source of truth for what actually ships.
 
 This specification is the parity contract. It is what review is measured against and what
 the build pipeline consumes. It is long on purpose: an undifferentiated "Acrobat parity"
@@ -215,8 +215,14 @@ replacement, `/ToUnicode` inversion, embedded-font reuse, and reflow. It does no
 native content-removal operation whose unsafe structures can be detected and whose compound
 mutation can be abandoned before commit.
 
-`EDIT-001` therefore ships as `DEGRADED` only for a unique, axis-aligned, single-font,
-single-line selection with printable ASCII replacement text that fits in the original bounds.
+ADR 0029 later established a distinct mechanism: exact byte-span splicing that never
+reserializes surrounding syntax. A same-length, uniquely occurring, unescaped printable-ASCII
+`Tj` run is replaced directly, reread, and checked before the journal commits. Every other
+accepted `EDIT-001` input uses the guarded overlay below.
+
+`EDIT-001` therefore remains `DEGRADED`: beyond the direct span case it supports only a unique,
+axis-aligned, single-font, single-line selection with printable ASCII replacement text that fits
+in the original bounds.
 Form XObjects, Type 3 fonts, metadata copies, marked-content property dictionaries, existing
 redaction marks, overlapping annotations, repeated text, unsupported scripts, rotation,
 skew, multiline input, and non-fitting output refuse before mutation. Inside the journal

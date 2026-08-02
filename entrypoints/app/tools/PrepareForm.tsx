@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { ArrowDown, ArrowUp, Download, Plus, TestTube2, Upload } from 'lucide-react';
 import { assertFileSize, budgetFor } from '@/lib/core/limits';
 import type { EngineTypes } from '@/lib/engine/port';
+import formCapabilities from '@/lib/forms/capabilities';
+import { useToolStore } from '@/lib/store/tools';
 import formData, { type FormDataFormat } from '@/lib/text/fdf';
 import ActiveTextEntry from '../ActiveTextEntry';
 import FeatureBadge from '../FeatureBadge';
@@ -62,6 +64,7 @@ export default function PrepareForm({
   const [scriptSource, setScriptSource] = useState('event.rc = event.value.length > 0;');
   const [savingScript, setSavingScript] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
+  const setFormOverlay = useToolStore((state) => state.setFormOverlay);
 
   const load = useCallback(() => {
     void engine
@@ -97,12 +100,36 @@ export default function PrepareForm({
     loadJavaScript();
   }, [load, loadJavaScript]);
 
+  useEffect(() => {
+    setFormOverlay(fields, highlightFields);
+    return () => setFormOverlay([], false);
+  }, [fields, highlightFields, setFormOverlay]);
+
+  useEffect(() => {
+    const selectClickedField = (event: Event) => {
+      const detail = (event as CustomEvent<{ readonly name?: string }>).detail;
+      if (detail?.name && fields.some((field) => field.name === detail.name)) {
+        setSelected(detail.name);
+      }
+    };
+    document.addEventListener('pdf-form-field-click', selectClickedField);
+    return () => document.removeEventListener('pdf-form-field-click', selectClickedField);
+  }, [fields]);
+
   const selectedField = fields.find((field) => field.name === selected);
+  const selectedOptions = useMemo(
+    () => formCapabilities.fieldOptions(fields, selected),
+    [fields, selected],
+  );
   const selectedValue =
     selectedField && selectedField.name in testValues
       ? String(testValues[selectedField.name])
       : (selectedField?.value ?? '');
   const selectedLayoutSet = useMemo(() => new Set(layoutSelection), [layoutSelection]);
+  const widgetHighlights = useMemo(
+    () => formCapabilities.formWidgetHighlights(fields),
+    [fields],
+  );
 
   const visible = useMemo(() => {
     const rank = new Map(tabOrder.map((name, index) => [name, index]));
@@ -317,23 +344,25 @@ export default function PrepareForm({
       });
   };
 
-  const validateRequired = () => {
-    const failing = fields.find((field) => {
-      const value =
-        field.name in testValues ? String(testValues[field.name]) : String(field.value);
-      return field.required && !value.trim();
-    });
-    if (!failing) {
-      onError('Form validation complete. Every required field has a value.');
-      return;
-    }
-    setSelected(failing.name);
-    onNavigate(failing.pageIndex);
-    onError(`Required field "${failing.name}" needs a value.`);
+  const validateRequired = (): boolean => {
+    const failures = formCapabilities.requiredFieldFailures(fields, testValues);
+    const first = failures[0];
+    if (!first) return true;
+    const named = failures.map((failure) => `"${failure.label}"`).join(', ');
+    setSelected(first.name);
+    onNavigate(first.pageIndex);
+    onError(
+      `Required-field validation blocked this action. Complete ${named} before continuing.`,
+    );
+    return false;
   };
 
   return (
-    <section className="tool-panel" aria-label="Prepare form">
+    <section
+      className="tool-panel"
+      aria-label="Prepare form"
+      data-form-widget-highlights={JSON.stringify(widgetHighlights)}
+    >
       <div className="panel-heading">
         <div>
           <span className="eyebrow">AcroForm</span>
@@ -603,9 +632,7 @@ export default function PrepareForm({
                 {selectedField.required ? 'Required' : 'Optional'} ·{' '}
                 {selectedField.readOnly ? 'Read-only' : 'Editable'}
               </span>
-              {['check-box', 'radio-button', 'checkbox', 'radiobutton'].includes(
-                selectedField.type.toLocaleLowerCase(),
-              ) ? (
+              {['check-box', 'checkbox'].includes(selectedField.type.toLocaleLowerCase()) ? (
                 <button
                   type="button"
                   disabled={selectedField.readOnly}
@@ -613,10 +640,42 @@ export default function PrepareForm({
                 >
                   Toggle field
                 </button>
+              ) : ['radio-button', 'radiobutton'].includes(
+                  selectedField.type.toLocaleLowerCase(),
+                ) ? (
+                selectedOptions.length > 0 ? (
+                  <label>
+                    <span>Selected option</span>
+                    <select
+                      value={selectedValue}
+                      disabled={selectedField.readOnly}
+                      onChange={(event) => applyValue(selectedField, event.target.value)}
+                    >
+                      <option value="Off">No selection</option>
+                      {selectedOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={selectedField.readOnly}
+                    onClick={() => applyValue(selectedField, selectedValue === 'Off')}
+                  >
+                    Toggle radio field
+                  </button>
+                )
               ) : ['push-button', 'pushbutton', 'signature'].includes(
                   selectedField.type.toLocaleLowerCase(),
                 ) ? (
-                <p className="scope-note">This field type does not accept a text value.</p>
+                <p className="scope-note">
+                  {selectedField.type.toLocaleLowerCase() === 'signature'
+                    ? 'Unsigned signature field. Signing is not performed from form filling.'
+                    : 'This button has no action authored here and does not submit anything.'}
+                </p>
               ) : (
                 <button
                   type="button"
@@ -719,7 +778,13 @@ export default function PrepareForm({
           </details>
 
           <div className="panel-actions">
-            <button type="button" onClick={validateRequired}>
+            <button
+              type="button"
+              onClick={() => {
+                if (validateRequired())
+                  onError('Form validation complete. Every required field has a value.');
+              }}
+            >
               Validate required fields
             </button>
             <button
@@ -764,6 +829,7 @@ export default function PrepareForm({
               <button
                 type="button"
                 onClick={() => {
+                  if (!validateRequired()) return;
                   const mime = format === 'csv' ? 'text/csv' : 'application/xml';
                   downloadText(
                     `${engine.info.name.replace(/\.pdf$/i, '')}.${format}`,
@@ -945,9 +1011,12 @@ export default function PrepareForm({
       </details>
 
       <p className="scope-note">
-        <FeatureBadge status="DEGRADED" /> Barcode and automatic field detection require review
-        of proposed results. <FeatureBadge status="LOCAL" /> Keystroke, validate, calculate,
-        format, and document-level JavaScript run locally with observable blocked side effects.
+        Barcode fields are unavailable: no independently decodable encoder is bundled. Automatic
+        field detection remains proposal-only until page text geometry is exposed by the engine.
+        Form-history storage remains off: persistent history needs a document-scoped engine
+        identity so values cannot cross document boundaries. <FeatureBadge status="LOCAL" />{' '}
+        Keystroke, validate, calculate, format, and document-level JavaScript run locally with
+        observable blocked side effects.
       </p>
     </section>
   );

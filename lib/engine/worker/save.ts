@@ -3,6 +3,7 @@ import { assertSaveFlags } from '../../core/limits';
 import type { EngineTypes } from '../port';
 import { withArenaSync, type Arena } from './arena';
 import { authenticateDocument } from './authentication';
+import { inspectDocumentEncryption } from './security';
 
 const PERMISSION_BITS: Record<EngineTypes['PdfPermission'], number> = {
   print: 1 << 2,
@@ -54,12 +55,23 @@ function writeOptions(
   return result;
 }
 
+function assertRc4Upgrade(options: EngineTypes['SaveOptions']): void {
+  if (options.mode !== 'full' || options.garbage === 'none' || options.encrypt !== 'aes-256') {
+    throw new Error(
+      'RC4 encryption is broken and read-only. Output requires a full garbage-collecting AES-256 save; RC4 is never preserved or written.',
+    );
+  }
+}
+
 function saveWithArena(
   arena: Arena,
   document: mupdf.PDFDocument,
   options: EngineTypes['SaveOptions'],
   password?: string,
+  enforceRc4Output = true,
 ): ArrayBuffer {
+  const sourceEncryption = inspectDocumentEncryption(document);
+  if (sourceEncryption.algorithm === 'rc4' && enforceRc4Output) assertRc4Upgrade(options);
   assertSaveFlags(
     {
       mode: options.mode,
@@ -73,16 +85,21 @@ function saveWithArena(
   );
   let target = document;
   if (options.mode === 'full') {
-    const staged = arena.keep(
-      document.saveToBuffer({ compress: true, 'regenerate-id': false }),
-    );
+    const replacingRc4 = sourceEncryption.algorithm === 'rc4' && options.encrypt === 'aes-256';
+    const stagingOptions = replacingRc4
+      ? writeOptions(options)
+      : { compress: true, 'regenerate-id': false };
+    const staged = arena.keep(document.saveToBuffer(stagingOptions));
     const isolated = arena.keep(
       mupdf.Document.openDocument(Uint8Array.from(staged.asUint8Array()), 'application/pdf'),
     );
     if (!(isolated instanceof mupdf.PDFDocument)) {
       throw new Error('The isolated save snapshot is not a PDF document.');
     }
-    authenticateDocument(isolated, password);
+    authenticateDocument(
+      isolated,
+      replacingRc4 ? (options['user-password'] ?? options['owner-password'] ?? '') : password,
+    );
     target = isolated;
   }
   const buffer = arena.keep(target.saveToBuffer(writeOptions(options)));
@@ -98,15 +115,19 @@ export function saveDocument(
 }
 
 export function snapshotDocument(document: mupdf.PDFDocument, password?: string): Uint8Array {
-  const data = saveDocument(
-    document,
-    {
-      mode: 'full',
-      garbage: 'none',
-      compress: true,
-      encrypt: 'keep',
-    },
-    password,
+  const data = withArenaSync((arena) =>
+    saveWithArena(
+      arena,
+      document,
+      {
+        mode: 'full',
+        garbage: 'none',
+        compress: true,
+        encrypt: 'keep',
+      },
+      password,
+      false,
+    ),
   );
   return new Uint8Array(data);
 }
@@ -115,17 +136,21 @@ export function persistenceSnapshot(
   document: mupdf.PDFDocument,
   password?: string,
 ): Uint8Array {
-  const data = saveDocument(
-    document,
-    {
-      mode: 'full',
-      // Recovery files are durable. Collect unreachable objects so applied redactions cannot
-      // leave their replaced content streams recoverable in OPFS.
-      garbage: 'deduplicate',
-      compress: true,
-      encrypt: 'keep',
-    },
-    password,
+  const data = withArenaSync((arena) =>
+    saveWithArena(
+      arena,
+      document,
+      {
+        mode: 'full',
+        // Recovery files are durable. Collect unreachable objects so applied redactions cannot
+        // leave their replaced content streams recoverable in OPFS.
+        garbage: 'deduplicate',
+        compress: true,
+        encrypt: 'keep',
+      },
+      password,
+      false,
+    ),
   );
   return new Uint8Array(data);
 }

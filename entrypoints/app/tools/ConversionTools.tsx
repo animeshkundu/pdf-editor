@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Download, FileCheck2, ScanText } from 'lucide-react';
-import ocrClient, { type OcrResult } from '@/lib/ocr/client';
+import { Download, FileCheck2, FileText, ScanText } from 'lucide-react';
+import { textToRtf } from '@/lib/conversion/rtf';
+import ocrClient, { type OcrResult, browserOcrDescription } from '@/lib/ocr/client';
 import type { EngineTypes } from '@/lib/engine/port';
 import { viewportStore } from '@/lib/store/viewport';
 import FeatureBadge from '../FeatureBadge';
@@ -21,7 +22,8 @@ export default function ConversionTools({
 }: Pick<ToolPanelProps, 'engine' | 'onError'>) {
   const [ocr, setOcr] = useState<OcrResult | null>(null);
   const [pdfa, setPdfa] = useState<EngineTypes['PdfAReport'] | null>(null);
-  const [busy, setBusy] = useState<'ocr' | 'pdfa' | 'markdown' | null>(null);
+  const [busy, setBusy] = useState<'ocr' | 'pdfa' | 'markdown' | 'rtf' | null>(null);
+  const ocrDesc = browserOcrDescription();
 
   const recognize = () => {
     setBusy('ocr');
@@ -68,12 +70,30 @@ export default function ConversionTools({
       .finally(() => setBusy(null));
   };
 
+  const exportRtf = () => {
+    setBusy('rtf');
+    void (async () => {
+      const pageTexts: Array<{ label: string; text: string }> = [];
+      for (const page of engine.info.pages) {
+        const text = await engine.getPageText(page.index);
+        pageTexts.push({ label: page.label, text: text.text });
+      }
+      const rtf = textToRtf(engine.info.title || engine.info.name, pageTexts);
+      download(`${engine.info.name.replace(/\.pdf$/i, '')}.rtf`, 'application/rtf', rtf);
+    })()
+      .catch((error: unknown) => {
+        const detail = error instanceof Error ? error.message : 'Unknown RTF error.';
+        onError(`Exporting RTF failed. ${detail}`);
+      })
+      .finally(() => setBusy(null));
+  };
+
   return (
     <section className="tool-panel" aria-label="Convert and validate">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">Document lab</span>
-          <h2>Convert & validate</h2>
+          <h2>Convert &amp; validate</h2>
         </div>
       </div>
 
@@ -82,18 +102,24 @@ export default function ConversionTools({
           <h3>On-device OCR</h3>
           <FeatureBadge status="DEGRADED" />
         </div>
-        <p>
-          Uses the browser&apos;s installed TextDetector when available. No model or page image
-          is downloaded.
-        </p>
+        <p>{ocrDesc.description}</p>
         <button type="button" disabled={busy !== null} onClick={recognize}>
           <ScanText aria-hidden="true" size={16} />{' '}
           {busy === 'ocr' ? 'Recognizing…' : 'Recognize current page'}
         </button>
+        <p className="scope-note" role="note">
+          <FeatureBadge status="EXCLUDED" /> <strong>CONV-020</strong>: Editable-text PDF output
+          is not offered here. Substituting recognized text for a scan silently corrupts
+          documents; it is never the default. The searchable-image overlay (invisible text over
+          the original image) is the correct output, but this build has no independently
+          accepted writer for it.
+        </p>
         {ocr ? (
           ocr.available ? (
             <>
               <textarea readOnly aria-label="Recognized page text" value={ocr.text} />
+              {/* CONV-019: Plain-text download of recognized text (searchable-image output
+                  requires engine integration; this is the degraded text-only variant). */}
               <button
                 type="button"
                 onClick={() =>
@@ -164,6 +190,55 @@ export default function ConversionTools({
           <Download aria-hidden="true" size={16} />{' '}
           {busy === 'markdown' ? 'Exporting…' : 'Download Markdown'}
         </button>
+      </article>
+
+      <article className="workflow-card">
+        <div className="panel-heading">
+          <h3>PDF to RTF</h3>
+          <FeatureBadge status="DEGRADED" />
+        </div>
+        {/* CONV-015: RTF export. RTF is a linear format; columns, floats, and
+            precise positioning flatten into reading order. The output is useful
+            when the text matters and the layout does not. No third-party library
+            is used; the format is simple enough for a local implementation. */}
+        <p>
+          Exports text in reading order as RTF 1.0. Columns, floats, and precise positioning are
+          not preserved — the format is linear. Use when text content matters and layout does
+          not.
+        </p>
+        <button type="button" disabled={busy !== null} onClick={exportRtf}>
+          <FileText aria-hidden="true" size={16} />{' '}
+          {busy === 'rtf' ? 'Exporting…' : 'Download RTF'}
+        </button>
+      </article>
+
+      <article className="workflow-card">
+        <div className="panel-heading">
+          <h3>HTML, Office, and scanner import</h3>
+          <FeatureBadge status="EXCLUDED" />
+        </div>
+        {/* CONV-003 / CONV-005 / CONV-004 honest capability statement.
+            These conversions are not implemented in this track. The reasons are
+            structural, not incremental. See the research doc for the full analysis. */}
+        <p className="scope-note" role="note">
+          <strong>CONV-003 (HTML to PDF)</strong>: Requires driving the browser&apos;s own print
+          pipeline over the HTML file. Local files are in principle reachable (same-origin), but
+          the browser print pipeline cannot be invoked programmatically to produce a file; it
+          opens the system print dialog. This is a structural browser limitation, not a missing
+          dependency. Not implemented.
+        </p>
+        <p className="scope-note" role="note">
+          <strong>CONV-005 (Office to PDF)</strong>: Word, Excel, and PowerPoint require a full
+          document-model parser for each format. No WASM-compiled parser for any Office format
+          is bundled. Adding one would require a dependency or bundle change, which is outside
+          this bounded track. Not implemented.
+        </p>
+        <p className="scope-note" role="note">
+          <strong>CONV-004 (scanner input)</strong>: No browser API reaches a hardware scanner.
+          Camera capture on a mobile device (via{' '}
+          <code>&lt;input type=&quot;file&quot; accept=&quot;image/*&quot; capture&gt;</code>)
+          is the structural substitute; it is excluded from this track as out of scope.
+        </p>
       </article>
     </section>
   );

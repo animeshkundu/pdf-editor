@@ -37,6 +37,9 @@ export interface EngineTypes {
     readonly encryption?: {
       readonly protected: boolean;
       readonly authenticatedAs: 'user' | 'owner';
+      readonly algorithm: 'rc4' | 'aes-128' | 'aes-256' | 'unknown';
+      readonly readOnly: boolean;
+      readonly disclosure?: string;
     };
   };
   TileRequest: {
@@ -77,10 +80,11 @@ export interface EngineTypes {
     readonly confirmSignatureInvalidation: boolean;
   };
   ExistingTextEditReport: EngineTypes['MutationResult'] & {
-    readonly fidelity: 'DEGRADED';
+    readonly fidelity: 'LOCAL' | 'DEGRADED';
     readonly analysis: 'inferred' | 'partial';
     readonly limitation?: 'form-xobject';
     readonly fontName: string;
+    readonly mechanism: 'content-splice' | 'redaction-overlay';
   };
   SearchHit: {
     readonly pageIndex: number;
@@ -329,6 +333,7 @@ export interface EngineTypes {
   OutputState: {
     readonly unappliedRedactions: number;
     readonly signatures: number;
+    readonly security: EngineTypes['DocumentSecurityInspection'];
     readonly canPersist: boolean;
     readonly persistenceReason?: string;
   };
@@ -357,16 +362,78 @@ export interface EngineTypes {
     readonly changed: number;
     readonly added: number;
     readonly removed: number;
+    readonly moved: number;
+    readonly truncated: boolean;
+    readonly comparedCurrentPages: number;
+    readonly comparedIncomingPages: number;
+    readonly totalCurrentPages: number;
+    readonly totalIncomingPages: number;
     readonly pages: readonly {
       readonly pageIndex: number;
-      readonly status: 'same' | 'changed' | 'added' | 'removed';
+      readonly currentPageIndex?: number;
+      readonly status: 'same' | 'changed' | 'moved' | 'inserted' | 'deleted';
       readonly currentLabel?: string;
       readonly incomingLabel?: string;
       readonly currentCharacters: number;
       readonly incomingCharacters: number;
       readonly dimensionsChanged: boolean;
       readonly rasterReviewRecommended: boolean;
+      readonly ocrRequired: boolean;
+      readonly similarity: number | null;
+      readonly textDiff?: {
+        readonly insertedWords: number;
+        readonly deletedWords: number;
+        readonly truncated: boolean;
+        readonly runs: readonly {
+          readonly type: 'equal' | 'insert' | 'delete';
+          readonly text: string;
+          readonly words: number;
+        }[];
+      };
+      readonly rasterDiff?: {
+        readonly metric: 'rmse';
+        readonly rmse: number;
+        readonly differentPixelRatio: number;
+        readonly maxChannelDelta: number;
+        readonly exceedsThreshold: boolean;
+        readonly threshold: number;
+      };
     }[];
+  };
+  DocumentEncryptionSecurity: {
+    readonly protected: boolean;
+    readonly algorithm: 'none' | 'rc4' | 'aes-128' | 'aes-256' | 'unknown';
+    readonly version: number | null;
+    readonly revision: number | null;
+    readonly readOnly: boolean;
+    readonly disclosure?: string;
+  };
+  SignatureFieldSecurity: {
+    readonly name: string;
+    readonly fieldObject: number | null;
+    readonly valueObject: number | null;
+    readonly signed: boolean;
+    readonly coveredRanges: readonly {
+      readonly offset: number;
+      readonly length: number;
+      readonly end: number;
+    }[];
+    readonly coveredBytes: number;
+    readonly signedRevisionEnd: number | null;
+    readonly laterBytes: number | null;
+    readonly laterChanges: boolean | null;
+    readonly documentRevisions: number;
+    readonly changeHistoryValidationCode: number | null;
+    readonly issues: readonly string[];
+  };
+  DocumentSecurityInspection: {
+    readonly encryption: EngineTypes['DocumentEncryptionSecurity'];
+    readonly signatures: readonly EngineTypes['SignatureFieldSecurity'][];
+    readonly limitations: readonly [
+      'No timestamping',
+      'No fresh revocation checking',
+      'No long-term validation (LTV)',
+    ];
   };
   PdfAReport: {
     readonly profile: string | null;

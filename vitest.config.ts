@@ -12,5 +12,7 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     exclude: ['tests/e2e/**'],
     globals: true,
+    reporters: ['default', 'json'],
+    outputFile: { json: 'artifacts/test-results/vitest.json' },
   },
 });
