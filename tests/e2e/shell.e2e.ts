@@ -174,7 +174,7 @@ test('SIGN-024 opens RC4 read-only and offers only an AES-256 replacement', asyn
   await expect(
     page.getByRole('button', { name: 'Replace RC4 with AES-256 copy' }),
   ).toBeVisible();
-  await expect(page.getByLabel('Encryption')).toHaveValue('aes-256');
+  await expect(page.getByLabel('Encryption')).toHaveText('AES-256');
   await expect(page.getByLabel('Encryption')).toBeDisabled();
   expect(consoleErrors).toEqual([]);
 });
