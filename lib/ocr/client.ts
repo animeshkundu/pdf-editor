@@ -101,8 +101,21 @@ export function projectOcrRenderSize(
   };
 }
 
-function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException('The operation was cancelled.', 'AbortError');
+function abortReason(signal: AbortSignal): Error {
+  const reason = signal.reason;
+  if (
+    (reason instanceof DOMException || reason instanceof Error) &&
+    reason.name === 'AbortError'
+  ) {
+    return reason;
+  }
+  const message =
+    reason instanceof Error
+      ? reason.message
+      : typeof reason === 'string' && reason
+        ? reason
+        : 'The operation was cancelled.';
+  return new DOMException(message, 'AbortError');
 }
 
 function throwIfAborted(signal: AbortSignal): void {

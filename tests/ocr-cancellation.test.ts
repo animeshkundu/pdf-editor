@@ -98,6 +98,16 @@ describe('OCR cancellation and single-flight', () => {
     expect(tesseract.createWorker).not.toHaveBeenCalled();
   });
 
+  it('normalizes arbitrary abort reasons to the AbortError contract', async () => {
+    const controller = new AbortController();
+    controller.abort(new Error('consumer cancelled'));
+
+    await expect(recognizePage(makeEngine(), 0, controller.signal)).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    expect(tesseract.createWorker).not.toHaveBeenCalled();
+  });
+
   it('passes cancellation through the tile loop and releases the canvas', async () => {
     let finishTile: (() => void) | undefined;
     const renderTile = vi.fn<EngineTypes['PdfEngine']['renderTile']>(
