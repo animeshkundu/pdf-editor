@@ -182,7 +182,7 @@ async function seedCompleteCache(
   return cache;
 }
 
-describe('generated offline service worker', () => {
+describe('emitted offline service worker', () => {
   it.each([
     ['enumerated asset', PRECACHE_URLS[1]!, 'same-origin'],
     ['app shell navigation', APP_URL, 'navigate'],
