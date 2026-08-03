@@ -259,6 +259,9 @@ async function performRecognition(
       legacyCore: false,
       legacyLang: false,
     });
+    let outcome:
+      | { readonly ok: true; readonly value: OcrResult }
+      | { readonly ok: false; readonly error: unknown };
     try {
       throwIfAborted(signal);
       const recognized = await awaitWithAbort(
@@ -273,10 +276,18 @@ async function performRecognition(
         signal,
       );
       throwIfAborted(signal);
-      return projectOcrResult(recognized.data);
-    } finally {
-      await worker.terminate();
+      outcome = { ok: true, value: projectOcrResult(recognized.data) };
+    } catch (error) {
+      outcome = { ok: false, error };
     }
+    try {
+      await worker.terminate();
+    } catch (error) {
+      if (outcome.ok) throw error;
+      console.error('Local OCR could not finish terminating its worker.', error);
+    }
+    if (!outcome.ok) throw outcome.error;
+    return outcome.value;
   } finally {
     canvas.width = 0;
     canvas.height = 0;

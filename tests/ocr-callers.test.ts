@@ -144,7 +144,7 @@ describe('OCR callers', () => {
       root.render(createElement(ConversionTools, { engine: secondEngine, onError }));
     });
     expect(firstSignal.aborted).toBe(true);
-    await act(async () => first.reject(abortError()));
+    await act(async () => first.reject(new Error('stale engine failure')));
     expect(onError).not.toHaveBeenCalled();
 
     await act(async () => button(container, 'Recognize current page').click());
@@ -218,7 +218,7 @@ describe('OCR callers', () => {
 
     await render(secondEngine);
     expect(firstSignal.aborted).toBe(true);
-    await act(async () => first.reject(abortError()));
+    await act(async () => first.reject(new Error('stale engine failure')));
     await loadComparison();
     await act(async () => button(container, 'Run OCR on page 1 for comparison').click());
     const secondSignal = ocr.recognizePage.mock.calls[1]?.[2] as AbortSignal;

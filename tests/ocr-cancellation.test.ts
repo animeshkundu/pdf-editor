@@ -182,6 +182,35 @@ describe('OCR cancellation and single-flight', () => {
     await expect(recognition).rejects.toMatchObject({ name: 'AbortError' });
   });
 
+  it('preserves an abort when worker termination also fails', async () => {
+    let finishRecognition: ((value: { data: typeof recognitionData }) => void) | undefined;
+    const recognize = vi.fn(
+      () =>
+        new Promise<{ data: typeof recognitionData }>((resolve) => {
+          finishRecognition = resolve;
+        }),
+    );
+    const terminationError = new Error('worker teardown failed');
+    const terminate = vi.fn(async () => {
+      throw terminationError;
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    tesseract.createWorker.mockResolvedValue({ recognize, terminate });
+    const controller = new AbortController();
+    const recognition = recognizePage(makeEngine(), 0, controller.signal);
+    await until(() => expect(recognize).toHaveBeenCalledOnce());
+
+    controller.abort(abortError());
+    finishRecognition?.({ data: recognitionData });
+
+    await expect(recognition).rejects.toMatchObject({ name: 'AbortError' });
+    expect(terminate).toHaveBeenCalledOnce();
+    expect(consoleError).toHaveBeenCalledWith(
+      'Local OCR could not finish terminating its worker.',
+      terminationError,
+    );
+  });
+
   it('settles and releases the predecessor before allocating a successor', async () => {
     let finishFirstRecognition: ((value: { data: typeof recognitionData }) => void) | undefined;
     let finishFirstTermination: (() => void) | undefined;

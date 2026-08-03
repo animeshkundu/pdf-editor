@@ -177,7 +177,11 @@ self.addEventListener('fetch', (event) => {
       }
       return response;
     } catch {
-      await notifyFailure(message);
+      try {
+        await notifyFailure(message);
+      } catch (error) {
+        console.error('Offline cache recovery could not notify the application.', error);
+      }
       return new Response(message, {
         status: 503,
         headers: { 'Content-Type': 'text/plain; charset=utf-8' },

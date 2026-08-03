@@ -267,6 +267,27 @@ describe('generated offline service worker', () => {
     });
   });
 
+  it('returns the preserved 503 when failure notification also fails', async () => {
+    const harness = workerHarness();
+    const cache = await seedCompleteCache(harness);
+    const evicted = PRECACHE_URLS[1]!;
+    await cache.delete(evicted);
+    harness.fetch.mockRejectedValueOnce(new TypeError('offline'));
+    harness.matchAll.mockRejectedValueOnce(new Error('client enumeration failed'));
+
+    const response = await harness.fetchRequest(evicted);
+
+    expect(response?.status).toBe(503);
+    expect(await response?.text()).toBe(
+      'Papertrail stopped because its offline cache is incomplete. Reconnect and reload ' +
+        'before opening a document; an older engine will not be used.',
+    );
+    expect(harness.consoleError).toHaveBeenCalledWith(
+      'Offline cache recovery could not notify the application.',
+      expect.any(Error),
+    );
+  });
+
   it('serves a verified current response when storage pressure prevents re-caching it', async () => {
     const harness = workerHarness();
     const cache = await seedCompleteCache(harness);

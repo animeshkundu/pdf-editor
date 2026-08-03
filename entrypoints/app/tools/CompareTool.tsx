@@ -58,7 +58,15 @@ export default function CompareTool({
     };
   }, []);
 
-  useEffect(() => () => ocrController.current?.abort(), [engine]);
+  useEffect(
+    () => () => {
+      ocrGeneration.current += 1;
+      ocrController.current?.abort();
+      ocrController.current = null;
+      if (mounted.current) setEnrichingPage(null);
+    },
+    [engine],
+  );
 
   const compare = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];

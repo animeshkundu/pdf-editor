@@ -48,4 +48,45 @@ describe('offline service-worker client', () => {
     expect(document.documentElement.dataset.offlineCache).toBe('error');
     unsubscribe();
   });
+
+  it('does not replace a cache-recovery error with a later update-install failure', async () => {
+    const events = new EventTarget();
+    const serviceWorker = {
+      controller: {},
+      ready: Promise.resolve(),
+      addEventListener: events.addEventListener.bind(events),
+      removeEventListener: events.removeEventListener.bind(events),
+      register: vi.fn(async () => ({ active: {}, installing: null })),
+      startMessages: vi.fn(),
+    };
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: serviceWorker,
+    });
+    const { registerOfflineApp, subscribeOfflineStatus } =
+      await import('@/lib/persistence/service-worker');
+    const statuses: Array<{ readonly state: string; readonly message: string }> = [];
+    const unsubscribe = subscribeOfflineStatus((status) => statuses.push(status));
+    await registerOfflineApp();
+    const recoveryMessage =
+      'Papertrail stopped because its offline cache is incomplete. Reconnect and reload before opening a document; an older engine will not be used.';
+
+    events.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'papertrail-offline-error', message: recoveryMessage },
+      }),
+    );
+    events.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'papertrail-offline-install-error',
+          message: 'A newer offline cache could not be installed.',
+        },
+      }),
+    );
+
+    expect(statuses.at(-1)).toEqual({ state: 'error', message: recoveryMessage });
+    expect(document.documentElement.dataset.offlineCache).toBe('error');
+    unsubscribe();
+  });
 });

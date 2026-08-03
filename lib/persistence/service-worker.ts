@@ -27,10 +27,12 @@ function listenForWorkerMessages(): void {
       value.type === 'papertrail-offline-install-error' &&
       navigator.serviceWorker.controller
     ) {
-      publish({
-        state: 'ready',
-        message: 'The current offline app remains available; a newer cache will retry later.',
-      });
+      if (currentStatus?.state !== 'error') {
+        publish({
+          state: 'ready',
+          message: 'The current offline app remains available; a newer cache will retry later.',
+        });
+      }
       return;
     }
     if (

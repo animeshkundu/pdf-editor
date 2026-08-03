@@ -42,7 +42,15 @@ export default function ConversionTools({
     };
   }, []);
 
-  useEffect(() => () => ocrController.current?.abort(), [engine]);
+  useEffect(
+    () => () => {
+      ocrGeneration.current += 1;
+      ocrController.current?.abort();
+      ocrController.current = null;
+      if (mounted.current) setBusy(null);
+    },
+    [engine],
+  );
 
   const recognize = () => {
     ocrController.current?.abort();
