@@ -18,6 +18,29 @@ to do next time.
 - Development happens on Windows; CI runs on Linux. `.gitattributes` normalises line
   endings to LF because the WASM freshness gate compares bytes.
 
+## 2026-08-03: cache existence is not installation completeness
+
+- **Context.** The offline worker used the existence of its versioned cache as proof that
+  installation had promoted every app-shell entry.
+- **What happened.** Browser termination can interrupt promotion without running a catch handler,
+  and storage pressure can evict one entry from an otherwise valid cache. Exact-cache-only fetch
+  handling then stranded an online client, including when the missing entry was the app document.
+- **What to do next time.** Verify every expected key before skipping installation. On a runtime
+  miss, fetch only the current same-origin asset with redirects refused, verify the response
+  origin, restore it, and reserve the version-mismatch 503 for genuine network failure. Exercise
+  the emitted worker with body-consuming Cache fakes and evict the controlled app document in the
+  production browser test.
+
+## 2026-08-03: cancellation is complete only after resources are released
+
+- **Context.** Page OCR spans tiled rendering, a multi-megapixel canvas, worker creation, and a
+  long uncancellable recognition call.
+- **What happened.** A bare abort flag would still let a successor overlap an already-dispatched
+  tile or a Tesseract worker that had not terminated.
+- **What to do next time.** Serialize latest-wins work on an always-settling completion promise.
+  Check cancellation after every await, terminate the worker on recognition abort, clear the
+  canvas in `finally`, and do not allocate the successor until the predecessor's cleanup settles.
+
 ## 2026-08-02: a controlled page does not put an out-of-scope worker offline
 
 - **Context.** The first service worker controlled `/pdf/app/` while Vite emitted document

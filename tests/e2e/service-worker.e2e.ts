@@ -46,6 +46,10 @@ test('AC-6 caches the mounted app and engine with a manifest-versioned upgrade',
   expect(serviceWorkerSource).not.toContain('"ocr/');
   expect(serviceWorkerSource).toContain('storage?.estimate?.()');
   expect(serviceWorkerSource).toContain("CACHE_NAME + '-installing'");
+  expect(serviceWorkerSource).toContain('async function cacheIsComplete()');
+  expect(serviceWorkerSource).toContain("redirect: 'error'");
+  expect(serviceWorkerSource).toContain('responseUrl.origin !== self.location.origin');
+  expect(serviceWorkerSource).toContain('await cache.put(cacheKey, response.clone())');
   expect(serviceWorkerSource).not.toContain('skipWaiting');
 
   await page.goto('/pdf/app/');
@@ -59,6 +63,20 @@ test('AC-6 caches the mounted app and engine with a manifest-versioned upgrade',
   const cacheNames = await page.evaluate(() => caches.keys());
   expect(cacheNames).toEqual([`papertrail-app-${cacheVersion}`]);
   await expect(page.getByText('LOCAL · Offline ready')).toBeVisible();
+
+  const shellUrl = new URL('/pdf/app/', page.url()).href;
+  const deleted = await page.evaluate(
+    async ({ cacheName, url }) => (await caches.open(cacheName)).delete(url),
+    { cacheName: `papertrail-app-${cacheVersion}`, url: shellUrl },
+  );
+  expect(deleted).toBe(true);
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'PDF editor', level: 1 })).toBeAttached();
+  const shellRestored = await page.evaluate(
+    async ({ cacheName, url }) => Boolean(await (await caches.open(cacheName)).match(url)),
+    { cacheName: `papertrail-app-${cacheVersion}`, url: shellUrl },
+  );
+  expect(shellRestored).toBe(true);
 
   await context.setOffline(true);
   await page.goto('/pdf/app/?offline=1');

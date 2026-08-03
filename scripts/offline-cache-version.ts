@@ -1,5 +1,20 @@
 import { createHash } from 'node:crypto';
 
+export function deriveOfflineWorkerLogicDigest(
+  sources: readonly (Uint8Array | string)[],
+): string {
+  const digest = createHash('sha256');
+  for (const source of sources) {
+    digest.update(
+      String(typeof source === 'string' ? Buffer.byteLength(source) : source.byteLength),
+    );
+    digest.update('\0');
+    digest.update(source);
+    digest.update('\0');
+  }
+  return digest.digest('hex');
+}
+
 export function deriveOfflineCacheVersion({
   manifestDigest,
   configDigest,
