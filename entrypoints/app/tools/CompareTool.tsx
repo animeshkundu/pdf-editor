@@ -1,7 +1,7 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { FileSearch, ScanText } from 'lucide-react';
 import type { EngineTypes } from '@/lib/engine/port';
-import ocrClient, { type OcrResult } from '@/lib/ocr/client';
+import ocrClient, { type OcrResult, isAbortError } from '@/lib/ocr/client';
 import FeatureBadge from '../FeatureBadge';
 import type { ToolPanelProps } from './types';
 
@@ -44,6 +44,21 @@ export default function CompareTool({
   const [busy, setBusy] = useState(false);
   const [enrichingPage, setEnrichingPage] = useState<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const ocrController = useRef<AbortController | null>(null);
+  const ocrGeneration = useRef(0);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      ocrGeneration.current += 1;
+      ocrController.current?.abort();
+      ocrController.current = null;
+    };
+  }, []);
+
+  useEffect(() => () => ocrController.current?.abort(), [engine]);
 
   const compare = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -67,10 +82,15 @@ export default function CompareTool({
   const enrichWithOcr = (resultPageIndex: number, currentPageIndex: number) => {
     if (enrichments.get(resultPageIndex)?.ocr) return;
     if (enrichingPage === resultPageIndex) return;
+    ocrController.current?.abort();
+    const controller = new AbortController();
+    const generation = ++ocrGeneration.current;
+    ocrController.current = controller;
     setEnrichingPage(resultPageIndex);
     void ocrClient
-      .recognizePage(engine, currentPageIndex)
+      .recognizePage(engine, currentPageIndex, controller.signal)
       .then((ocr) => {
+        if (generation !== ocrGeneration.current || controller.signal.aborted) return;
         setEnrichments((prev) => {
           const next = new Map(prev);
           next.set(resultPageIndex, { ...prev.get(resultPageIndex), ocr });
@@ -78,10 +98,15 @@ export default function CompareTool({
         });
       })
       .catch((error: unknown) => {
+        if (generation !== ocrGeneration.current || isAbortError(error)) return;
         const detail = error instanceof Error ? error.message : 'Unknown OCR error.';
         onError(`Inspecting the current scanned page failed. ${detail}`);
       })
-      .finally(() => setEnrichingPage(null));
+      .finally(() => {
+        if (!mounted.current || generation !== ocrGeneration.current) return;
+        ocrController.current = null;
+        setEnrichingPage(null);
+      });
   };
 
   return (

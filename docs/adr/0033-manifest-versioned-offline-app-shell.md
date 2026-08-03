@@ -29,13 +29,18 @@ exact precached bundle bytes, the public base, and the service-worker build logi
 worker-logic release therefore installs beside the live cache rather than deleting it in place.
 
 Installation estimates available quota where the browser exposes that API, fetches only an
-enumerated same-origin app shell, deletes only the new partial cache on any failure, and reports a
-visible error. Activation deletes every older
+enumerated same-origin app shell with redirects refused, verifies the fetched response's own
+origin, deletes only the new partial cache on any failure, and reports a visible error. The
+existence of a cache is not evidence of successful installation: every expected key is checked,
+and a cache left partial by worker termination is rebuilt on the next install. Activation deletes
+every older
 Papertrail cache before claiming clients. Updates follow the normal waiting-worker lifecycle, so
 an old client retains its matching old shell and engine until it closes; `skipWaiting()` is not
-used. Fetch handling is exact-cache-only: unknown requests
-are ignored, while a missing enumerated asset returns a loud 503 rather than falling back to an
-older engine. OCR assets remain lazy and are not precached.
+used. Fetch handling ignores unknown requests. A missing enumerated entry is fetched from the
+current same-origin publication with redirects refused, its response origin is verified, and the
+entry is restored before it is served. This preserves the no-stale-engine guarantee by fetching
+the current asset rather than by refusing to serve: no older cache is consulted. A loud 503 is
+returned only when that network recovery also fails. OCR assets remain lazy and are not precached.
 
 No web app manifest is added because doing so would require changing the exact app CSP. Offline
 operation is claimed; installability is not. IndexedDB earns no document role, and Tesseract's
@@ -44,7 +49,9 @@ optional language cache is disabled.
 ## Consequences
 
 The app and engine render a real PDF offline after one successful install, and a manifest change
-evicts the previous engine cache. Cold installation spends storage and bandwidth once. The
+evicts the previous engine cache. Storage-pressure eviction of an individual app-shell entry
+self-heals while online, including the application document itself; offline recovery still fails
+loudly rather than mixing versions. Cold installation spends storage and bandwidth once. The
 landing remains a zero-JavaScript surface and is outside the worker scope.
 
 ## Notes

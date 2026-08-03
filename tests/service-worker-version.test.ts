@@ -1,4 +1,7 @@
-import { deriveOfflineCacheVersion } from '../scripts/offline-cache-version';
+import {
+  deriveOfflineCacheVersion,
+  deriveOfflineWorkerLogicDigest,
+} from '../scripts/offline-cache-version';
 
 const base = {
   manifestDigest: 'manifest-digest',
@@ -48,5 +51,13 @@ describe('offline cache versioning', () => {
     });
 
     expect(new Set([first, changedLogic, changedBase])).toHaveLength(3);
+  });
+
+  it('changes the worker-logic digest when the extracted worker source changes', () => {
+    const config = 'vite worker plugin';
+    const first = deriveOfflineWorkerLogicDigest([config, 'worker source']);
+    const changedWorker = deriveOfflineWorkerLogicDigest([config, 'worker source changed']);
+
+    expect(first).not.toBe(changedWorker);
   });
 });

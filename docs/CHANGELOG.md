@@ -15,7 +15,8 @@ Nothing has been released yet. The repository is at `0.0.0`.
 - A shareable zero-JavaScript landing page with real dual-theme product captures, an inspectable
   document data path, factual hosted-editor comparison, honest boundaries, and native FAQ.
 - A manifest-digest-versioned same-origin service worker that precaches the app shell and MuPDF,
-  removes stale engine caches, fails loudly on partial installation, and renders a real PDF
+  removes stale engine caches, repairs interrupted installation and online cache eviction, refuses
+  redirects, fails loudly when current-origin recovery is unavailable, and renders a real PDF
   offline in Chromium and Firefox.
 - Lazy bundled Tesseract OCR across Chromium and Firefox, with three browser-selected LSTM cores,
   an English model, per-word confidence, and searchable-image PDF output accepted by qpdf and

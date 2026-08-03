@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Download, FileCheck2, FileText, ScanText } from 'lucide-react';
 import { textToRtf } from '@/lib/conversion/rtf';
-import ocrClient, { type OcrResult, browserOcrDescription } from '@/lib/ocr/client';
+import ocrClient, {
+  type OcrResult,
+  browserOcrDescription,
+  isAbortError,
+} from '@/lib/ocr/client';
 import type { EngineTypes } from '@/lib/engine/port';
 import { viewportStore } from '@/lib/store/viewport';
 import FeatureBadge from '../FeatureBadge';
@@ -23,18 +27,46 @@ export default function ConversionTools({
   const [ocr, setOcr] = useState<OcrResult | null>(null);
   const [pdfa, setPdfa] = useState<EngineTypes['PdfAReport'] | null>(null);
   const [busy, setBusy] = useState<'ocr' | 'pdfa' | 'markdown' | 'rtf' | null>(null);
+  const ocrController = useRef<AbortController | null>(null);
+  const ocrGeneration = useRef(0);
+  const mounted = useRef(true);
   const ocrDesc = browserOcrDescription();
 
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      ocrGeneration.current += 1;
+      ocrController.current?.abort();
+      ocrController.current = null;
+    };
+  }, []);
+
+  useEffect(() => () => ocrController.current?.abort(), [engine]);
+
   const recognize = () => {
+    ocrController.current?.abort();
+    const controller = new AbortController();
+    const generation = ++ocrGeneration.current;
+    ocrController.current = controller;
     setBusy('ocr');
     void ocrClient
-      .recognizePage(engine, viewportStore.getState().currentPage)
-      .then(setOcr)
+      .recognizePage(engine, viewportStore.getState().currentPage, controller.signal)
+      .then((result) => {
+        if (generation === ocrGeneration.current && !controller.signal.aborted) {
+          setOcr(result);
+        }
+      })
       .catch((error: unknown) => {
+        if (generation !== ocrGeneration.current || isAbortError(error)) return;
         const detail = error instanceof Error ? error.message : 'Unknown OCR error.';
         onError(`Recognizing this page failed. ${detail}`);
       })
-      .finally(() => setBusy(null));
+      .finally(() => {
+        if (!mounted.current || generation !== ocrGeneration.current) return;
+        ocrController.current = null;
+        setBusy(null);
+      });
   };
 
   const validate = () => {
