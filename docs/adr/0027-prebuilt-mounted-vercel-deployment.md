@@ -26,8 +26,10 @@ is extracted from the built app's meta policy and extended only with the header-
 
 ## Decision
 
-CI builds the application with `PDF_EDITOR_BASE=/pdf-editor/app/`, drives that mounted
-production artifact, and uploads `dist/`. The deployment workflow checks out the exact
+CI builds the application with `PDF_EDITOR_BASE=/pdf/app/`, drives that mounted
+production artifact, and uploads `dist/`. Public asset URLs stay under the application
+document's service-worker scope while Build Output API rewrites those requests into the
+collision-free internal `/pdf-editor/app/` static mount. The deployment workflow checks out the exact
 accepted commit, downloads that artifact into `site/app/`, assembles Build Output API v3, and
 deploys with `vercel deploy --prebuilt`.
 

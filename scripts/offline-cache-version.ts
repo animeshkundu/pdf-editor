@@ -1,0 +1,35 @@
+import { createHash } from 'node:crypto';
+
+export function deriveOfflineCacheVersion({
+  manifestDigest,
+  configDigest,
+  base,
+  assets,
+}: {
+  readonly manifestDigest: string;
+  readonly configDigest: string;
+  readonly base: string;
+  readonly assets: readonly {
+    readonly path: string;
+    readonly bytes: Uint8Array | string;
+  }[];
+}): string {
+  const assetDigest = createHash('sha256');
+  for (const asset of assets) {
+    assetDigest.update(asset.path);
+    assetDigest.update('\0');
+    assetDigest.update(asset.bytes);
+  }
+  return createHash('sha256')
+    .update(manifestDigest)
+    .update('\0')
+    .update(assetDigest.digest('hex'))
+    .update('\0')
+    .update(configDigest)
+    .update('\0')
+    .update(base)
+    .digest('hex')
+    .slice(0, 24);
+}
+
+export default deriveOfflineCacheVersion;

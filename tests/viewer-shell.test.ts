@@ -499,7 +499,7 @@ describe('Phase 3 viewer acceptance', () => {
     expect(container.textContent).toContain('OPEN');
   });
 
-  it('H1/H2 keeps excluded conversion and comparison paths labelled at their controls', async () => {
+  it('H1/H2 keeps open and excluded conversion paths labelled at their controls', async () => {
     await act(async () => root.render(createElement(App, { engineFactory })));
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
     const file = new File(['%PDF-1.7'], 'contract.pdf', { type: 'application/pdf' });
@@ -513,10 +513,8 @@ describe('Phase 3 viewer acceptance', () => {
     await act(async () => buttonNamed(container, 'Convert').click());
     const conversionPanel = container.querySelector('[aria-label="Convert and validate"]');
     expect(conversionPanel?.textContent).toContain('CONV-020');
-    expect(conversionPanel?.textContent).toContain('EXCLUDED');
-    expect(conversionPanel?.textContent).toContain(
-      'this build has no independently accepted writer',
-    );
+    expect(conversionPanel?.textContent).toContain('OPEN');
+    expect(conversionPanel?.textContent).toContain('Searchable-image PDF output is available');
     expect(conversionPanel?.textContent).toContain('Download Markdown');
     expect(conversionPanel?.textContent).toContain('Download RTF');
     expect(conversionPanel?.textContent).not.toContain('Markdown and RTF export are excluded');
@@ -524,8 +522,8 @@ describe('Phase 3 viewer acceptance', () => {
     await act(async () => buttonNamed(container, 'Compare').click());
     const comparePanel = container.querySelector('[aria-label="Compare documents"]');
     expect(comparePanel?.textContent).toContain('Scanned-against-digital comparison');
-    expect(comparePanel?.textContent).toContain('EXCLUDED');
-    expect(comparePanel?.textContent).toContain('never reported as a comparison result');
+    expect(comparePanel?.textContent).toContain('OPEN');
+    expect(comparePanel?.textContent).toContain('two-document OCR workflow');
   });
 
   it('SIGN-031 makes applying redactions reachable beside marks and unblocks output', async () => {
@@ -562,13 +560,21 @@ describe('Phase 3 viewer acceptance', () => {
     expect(container.textContent).toContain(
       'redaction writes through a content-stream filter that perturbs rendering on some documents',
     );
+    const confirmation = [
+      ...container.querySelectorAll<HTMLButtonElement>('[role="checkbox"]'),
+    ].find((candidate) =>
+      candidate.parentElement?.textContent?.includes('permanently removes'),
+    );
+    expect(buttonNamed(container, 'Apply redaction marks').disabled).toBe(true);
+    await act(async () => confirmation?.click());
+    expect(buttonNamed(container, 'Apply redaction marks').disabled).toBe(false);
     await act(async () => {
       buttonNamed(container, 'Apply redaction marks').click();
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(engine.applyRedactions).toHaveBeenCalledWith(false);
+    expect(engine.applyRedactions).toHaveBeenCalledWith(true);
     expect(container.textContent).toContain('no extractable characters were removed');
     expect(container.textContent).toContain('sampled marked region did not change');
     expect(container.textContent).toContain('Inspect the marked region');
@@ -596,6 +602,12 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
     });
     await act(async () => buttonNamed(container, 'Markup').click());
+    const confirmation = [
+      ...container.querySelectorAll<HTMLButtonElement>('[role="checkbox"]'),
+    ].find((candidate) =>
+      candidate.parentElement?.textContent?.includes('permanently removes'),
+    );
+    await act(async () => confirmation?.click());
     await act(async () => {
       buttonNamed(container, 'Apply redaction marks').click();
       await Promise.resolve();

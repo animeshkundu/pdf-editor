@@ -69,13 +69,22 @@ test.afterAll(() => rmSync(encryptedWorkDir, { recursive: true, force: true }));
 
 test('landing page publishes the mounted editor journey', async ({ page }) => {
   await page.goto('/pdf/');
-  await expect(page.getByRole('heading', { name: /Serious PDF work/ })).toBeVisible();
-  await expect(page.getByText('No upload. No account. No telemetry.')).toBeVisible();
-  expect(
-    await page
-      .getByText('Quarterly review.pdf')
-      .evaluate((element) => element.closest('[aria-hidden="true"]') !== null),
-  ).toBe(true);
+  await expect(
+    page.getByRole('heading', { name: 'Edit PDFs without uploading them.' }),
+  ).toBeVisible();
+  await expect(page.getByText('100% client-side')).toBeVisible();
+  await expect(page.locator('.workspace-preview')).toHaveCount(0);
+  const productImage = page.locator('.hero-shot img');
+  await expect(productImage).toBeVisible();
+  expect(await productImage.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(
+    1200,
+  );
+  const metaPolicy = await page
+    .locator('meta[http-equiv="Content-Security-Policy"]')
+    .getAttribute('content');
+  expect(metaPolicy).not.toContain('script-src');
+  expect(metaPolicy).not.toContain("'unsafe-inline'");
+  await expect(page.locator('details.proof-details')).toContainText('Verify it yourself');
   await page.getByRole('link', { name: 'Open a PDF' }).click();
   await expect(page).toHaveURL(/\/pdf\/app\/$/);
   await expect(page.getByRole('heading', { name: 'PDF editor', level: 1 })).toBeAttached();
@@ -109,6 +118,26 @@ test('shell mounts and contacts nobody', async ({ page }) => {
 
   expect(foreign, `Cross-origin requests: ${foreign.join(', ')}`).toEqual([]);
   expect(consoleErrors, `Console errors: ${consoleErrors.join(' | ')}`).toEqual([]);
+});
+
+test('keyboard focus reaches the overflow menu and icon tooltips', async ({ page }) => {
+  await page.goto('/pdf/app/');
+  const more = page.getByRole('button', { name: 'More editor actions' });
+  await more.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('menuitem', { name: 'Commands' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(more).toBeFocused();
+
+  await page.getByLabel('Open PDF').setInputFiles(taggedFixture);
+  await expect(page.locator('canvas.pdf-tile').first()).toBeVisible({ timeout: 15_000 });
+  const zoomOut = page.getByRole('button', { name: 'Zoom out' });
+  await page.getByRole('button', { name: 'Pan mode' }).focus();
+  await page.keyboard.press('Tab');
+  await expect(zoomOut).toBeFocused();
+  const tooltip = page.getByRole('tooltip');
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText('Zoom out');
 });
 
 test('SIGN-018 opens a protected PDF after a wrong-password retry', async ({ page }) => {

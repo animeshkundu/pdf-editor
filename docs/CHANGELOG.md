@@ -12,13 +12,25 @@ Nothing has been released yet. The repository is at `0.0.0`.
 
 ### Added
 
+- A shareable zero-JavaScript landing page with real dual-theme product captures, an inspectable
+  document data path, factual hosted-editor comparison, honest boundaries, and native FAQ.
+- A manifest-digest-versioned same-origin service worker that precaches the app shell and MuPDF,
+  removes stale engine caches, fails loudly on partial installation, and renders a real PDF
+  offline in Chromium and Firefox.
+- Lazy bundled Tesseract OCR across Chromium and Firefox, with three browser-selected LSTM cores,
+  an English model, per-word confidence, and searchable-image PDF output accepted by qpdf and
+  pdf.js.
+- Focus-reachable tooltips, a keyboard overflow menu, and explicit permanent-removal
+  acknowledgements for redaction and sanitizing.
+- A token-level null-filter diff that identifies `Td` to `TD`/`T*` text-position
+  reserialization as the live ADR 0020 lead without changing C8.
 - Byte-span content-stream editing for provable same-length ASCII `Tj` runs, with exact
   unspliced-byte preservation, forced-write reread proof, journal rollback, and path disclosure.
 - Signature coverage inspection backed by new MuPDF WASM exports, including byte ranges,
   later-revision evidence, and explicit separation from cryptographic validation.
 - Classified document comparison with word insertions/deletions, page moves, and arena-owned
   128 px raster RMSE metrics.
-- Text-only RTF export and explicit browser-floor OCR availability.
+- Text-only RTF export.
 - Password-protected PDF opening with an accessible retry dialog, user/owner authentication,
   encrypted search seeding, and AES-128/AES-256 preservation across full saves.
 - Search next/previous controls, active match position, Enter/Shift+Enter and F3 traversal.
@@ -91,7 +103,7 @@ Nothing has been released yet. The repository is at `0.0.0`.
   and FDF/XFDF/XML/CSV value interchange.
 - Worker-isolated MuJS for form keystroke, validation, calculation, and formatting actions;
   document-level scripts; an authoring console; and observable blocked external side effects.
-- Local compare reports, native-browser OCR with pre-commit degradation disclosure, PDF/A
+- Local compare reports, bundled local OCR with pre-commit degradation disclosure, PDF/A
   conformance checks, Markdown export, Read Out Loud, accessibility checks and property repair,
   browser print preparation, and the registry-backed pipeline builder.
 

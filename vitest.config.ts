@@ -1,7 +1,13 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
+import { OCR_VERSIONS } from './scripts/ocr-versions';
 
 export default defineConfig({
+  define: {
+    __TESSERACT_VERSION__: JSON.stringify(OCR_VERSIONS.tesseract),
+    __TESSERACT_CORE_VERSION__: JSON.stringify(OCR_VERSIONS.core),
+    __TESSERACT_LANGUAGE_VERSION__: JSON.stringify(OCR_VERSIONS.language),
+  },
   resolve: {
     alias: { '@': fileURLToPath(new URL('.', import.meta.url)) },
   },

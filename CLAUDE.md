@@ -29,9 +29,11 @@ style preference: it is what makes MuPDF's own journal a complete undo history
 - The main thread owns no MuPDF handle. `mupdf` may be imported **only** inside
   `lib/engine/worker/`; everything else goes through the `PdfEngine` port in
   `lib/engine/port.ts`. Enforced by `eslint.config.js`.
-- One `doc.worker` per open document, plus a shared read-only `search.worker` and a lazy
-  `ocr.worker`. Document workers are respawnable because a malformed PDF can trap the WASM
-  instance unrecoverably ([ADR 0008](docs/adr/0008-worker-topology-and-crash-isolation.md)).
+- One `doc.worker` per open document, plus a shared read-only `search.worker` and a lazy direct
+  Tesseract OCR worker. Document workers are respawnable because a malformed PDF can trap the
+  WASM instance unrecoverably
+  ([ADR 0008](docs/adr/0008-worker-topology-and-crash-isolation.md),
+  [ADR 0034](docs/adr/0034-bundle-own-origin-ocr.md)).
 - Rendering is tiled at no more than 512 by 512 device pixels. `toPixmap()` is not
   cancellable (upstream #190), and tiling is what makes the pipeline cancellable at roughly
   15 ms granularity ([ADR 0010](docs/adr/0010-tiled-render-pipeline.md)).

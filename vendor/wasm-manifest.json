@@ -24,7 +24,7 @@
     "vendor/mupdf-wasm/src/platform/wasm/tools/make-wasm-type.js": "30449067538ebbb7185e983c24fbca4cd02dd9b72808e8d6dcb7c825114c0872"
   },
   "inputs": {
-    "package.json": "9710f91347cee910e32f8d3bbd257d970dafb1b77f5731529b4dd18f6056b41c",
+    "package.json": "498ea8400131a2c9610b2d37d646b76f6c0a2535dc50b9221e250ff7b73478a7",
     "scripts/build-wasm.mjs": "07b08ce78ce5a6f0c3fd4f282994bb2dbc43784aa5d3707a635f1071085fbe79",
     "scripts/vendor-mupdf.mjs": "335e570099d04c87713ece3844abc14fc499f457d5868993d9d59c71ed127940",
     "vendor/mupdf-wasm/.emscripten-version": "f88f603fa5b8bbbdd6be6f7c9e65590259014ad190f144c673e89ecf536c1912",

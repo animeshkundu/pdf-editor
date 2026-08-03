@@ -27,7 +27,8 @@ export default function Security({
       : (engine.info.encryption?.authenticatedAs ?? null);
   const [ownerAuthenticationError, setOwnerAuthenticationError] = useState('');
   const [authenticatingOwner, setAuthenticatingOwner] = useState(false);
-  const [confirmRewrite, setConfirmRewrite] = useState(false);
+  const [confirmRedactions, setConfirmRedactions] = useState(false);
+  const [confirmSanitize, setConfirmSanitize] = useState(false);
   const [redactionOutcome, setRedactionOutcome] = useState<string | null>(null);
   const [applyingRedactions, setApplyingRedactions] = useState(false);
   const security = state?.security;
@@ -143,21 +144,26 @@ export default function Security({
             DEGRADED: redaction writes through a content-stream filter that perturbs rendering
             on some documents.
           </p>
-          {state.signatures > 0 ? (
-            <DesignedCheckbox
-              checked={confirmRewrite}
-              onCheckedChange={setConfirmRewrite}
-              label={
-                <>
-                  I understand that applying redactions invalidates {state.signatures} existing{' '}
-                  {state.signatures === 1 ? 'signature' : 'signatures'}.
-                </>
-              }
-            />
-          ) : null}
+          <DesignedCheckbox
+            checked={confirmRedactions}
+            onCheckedChange={setConfirmRedactions}
+            label={
+              <>
+                I understand that applying these marks permanently removes their content from
+                the full rewritten output
+                {state.signatures > 0
+                  ? ` and invalidates ${state.signatures} existing ${
+                      state.signatures === 1 ? 'signature' : 'signatures'
+                    }`
+                  : ''}
+                . I will keep an untouched copy if I may need it. The full rewritten output
+                cannot be restored through Undo.
+              </>
+            }
+          />
           <button
             type="button"
-            disabled={applyingRedactions || (state.signatures > 0 && !confirmRewrite)}
+            disabled={applyingRedactions || !confirmRedactions}
             onClick={() => {
               setApplyingRedactions(true);
               setRedactionOutcome(null);
@@ -168,7 +174,7 @@ export default function Security({
                     (annotation) => annotation.type === 'Redact',
                   );
                   const before = await snapshotRedactionText(engine, redactions);
-                  const report = await engine.applyRedactions(confirmRewrite);
+                  const report = await engine.applyRedactions(confirmRedactions);
                   onMutation(report);
                   setState((current) =>
                     current ? { ...current, unappliedRedactions: 0 } : current,
@@ -308,23 +314,29 @@ export default function Security({
             document. It never reports a partial clean as success.
           </p>
         </div>
-        {state?.signatures ? (
-          <DesignedCheckbox
-            checked={confirmRewrite}
-            onCheckedChange={setConfirmRewrite}
-            label={
-              <>
-                I understand that a full rewrite invalidates {state.signatures} existing{' '}
-                {state.signatures === 1 ? 'signature' : 'signatures'}.
-              </>
-            }
-          />
-        ) : null}
+        <DesignedCheckbox
+          checked={confirmSanitize}
+          onCheckedChange={setConfirmSanitize}
+          label={
+            <>
+              I understand that sanitizing permanently removes the listed data categories from a
+              separate full rewritten output
+              {state?.signatures
+                ? ` and invalidates ${state.signatures} existing ${
+                    state.signatures === 1 ? 'signature' : 'signatures'
+                  }`
+                : ''}
+              . The downloaded output cannot be restored through Undo.
+            </>
+          }
+        />
         <button
           type="button"
+          disabled={!confirmSanitize}
+          aria-describedby={!confirmSanitize ? 'sanitize-confirmation-help' : undefined}
           onClick={() => {
             void engine
-              .sanitize(confirmRewrite)
+              .sanitize(confirmSanitize)
               .then((report) => {
                 onMutation(report);
                 onOutput(
@@ -341,6 +353,9 @@ export default function Security({
         >
           Sanitize document and download
         </button>
+        <p id="sanitize-confirmation-help" className="scope-note">
+          Confirm the permanent-removal statement above before creating the sanitized output.
+        </p>
       </div>
       <dl className="capability-list compact">
         <div>

@@ -786,21 +786,26 @@ export default function MarkupTools({
             split, and sanitize. DEGRADED: redaction writes through a content-stream filter that
             perturbs rendering on some documents.
           </p>
-          {outputState.signatures > 0 ? (
-            <DesignedCheckbox
-              checked={confirmSignatureInvalidation}
-              onCheckedChange={setConfirmSignatureInvalidation}
-              label={
-                <>
-                  I understand that applying redactions invalidates {outputState.signatures}{' '}
-                  existing {outputState.signatures === 1 ? 'signature' : 'signatures'}.
-                </>
-              }
-            />
-          ) : null}
+          <DesignedCheckbox
+            checked={confirmSignatureInvalidation}
+            onCheckedChange={setConfirmSignatureInvalidation}
+            label={
+              <>
+                I understand that applying these marks permanently removes their content from
+                the full rewritten output
+                {outputState.signatures > 0
+                  ? ` and invalidates ${outputState.signatures} existing ${
+                      outputState.signatures === 1 ? 'signature' : 'signatures'
+                    }`
+                  : ''}
+                . I will keep an untouched copy if I may need it. The full rewritten output
+                cannot be restored through Undo.
+              </>
+            }
+          />
           <button
             type="button"
-            disabled={busy || (outputState.signatures > 0 && !confirmSignatureInvalidation)}
+            disabled={busy || !confirmSignatureInvalidation}
             onClick={() => {
               setBusy(true);
               setRedactionOutcome(null);

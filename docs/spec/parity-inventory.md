@@ -258,29 +258,33 @@ fallbacks and the capabilities withdrawn with that path.
       oracles. CJK, right-to-left, rotated, skewed, multiline, repeated, and non-fitting edits
       refuse before mutation. This replaces the earlier universal refusal without reviving
       the unsound `/ToUnicode` inversion that destroyed `cjk-itext.pdf`.
-- [ ] `EDIT-002` **Reflow within a text block after an edit** `EXCLUDED` from the guarded
-      replacement path. Reflow needs shaped text and a general content-stream writer; the
-      current path preserves one line's original bounds and refuses a replacement that cannot
-      fit at a readable size.
-- [ ] `EDIT-003` **Change font, size, colour, spacing, and alignment of existing text**
-      `DEGRADED`, on the disclosed overlay only.
+- [ ] `EDIT-002` **Reflow within a text block after an edit** `OPEN`, Spike A-2. The guarded
+      replacement path preserves one line's original bounds. The token-diff finding identifies
+      text-position reserialization as the live filter lead; reflow stays unshipped until a
+      preservation experiment passes the unchanged C8 corpus.
+- [ ] `EDIT-003` **Change font, size, colour, spacing, and alignment of existing text** `OPEN`,
+      Spike A-3: expose bounded current-run font and colour geometry through the engine port,
+      seed the disclosed overlay, and verify the result with an independent reader.
 - [ ] `EDIT-004` **Add a new text block** `LOCAL`. Adding text does not require inverting an existing
       font's encoding, so it is not blocked on either spike.
-- [ ] `EDIT-005` **Delete a text run** `EXCLUDED`, withdrawn after Spike A red. Covering
-      text is not deletion.
+- [ ] `EDIT-005` **Delete a text run** `OPEN`, Spike A-2. Covering text is not deletion; the
+      token-diff text-position lead must pass the unchanged C8 corpus before this can ship.
 - [ ] `EDIT-006` **Surface which path an edit took** (in place, or with a new subset embedded)
       `LOCAL`, and required by acceptance criterion H4.
 
 ### Images and objects
 
-- [ ] `EDIT-007` **Select, move, resize, and rotate an image** `EXCLUDED`, withdrawn after
-      Spike A red.
-- [ ] `EDIT-008` **Replace an image** `EXCLUDED`, withdrawn after Spike A red.
-- [ ] `EDIT-009` **Delete an image** `EXCLUDED`, withdrawn after Spike A red.
-- [ ] `EDIT-010` **Crop an image in place** `EXCLUDED`, withdrawn after Spike A red.
+- [ ] `EDIT-007` **Select, move, resize, and rotate an image** `OPEN`, Spike A-2 on the
+      token-diff text-position lead and unchanged C8 corpus.
+- [ ] `EDIT-008` **Replace an image** `OPEN`, Spike A-2 on the token-diff text-position lead
+      and unchanged C8 corpus.
+- [ ] `EDIT-009` **Delete an image** `OPEN`, Spike A-2 on the token-diff text-position lead
+      and unchanged C8 corpus.
+- [ ] `EDIT-010` **Crop an image in place** `OPEN`, Spike A-2 on the token-diff text-position
+      lead and unchanged C8 corpus.
 - [ ] `EDIT-011` **Extract an image to a file** `LOCAL`. Read-only, so no spike dependency.
-- [ ] `EDIT-012` **Arrange: bring forward, send backward, align, distribute** `EXCLUDED`,
-      withdrawn after Spike A red.
+- [ ] `EDIT-012` **Arrange: bring forward, send backward, align, distribute** `OPEN`, Spike
+      A-2 on the token-diff text-position lead and unchanged C8 corpus.
 - [ ] `EDIT-013` **Add an image** `LOCAL`
 
 ### Document-level content
@@ -313,10 +317,9 @@ fallbacks and the capabilities withdrawn with that path.
       unsigned output. It never silently invalidates a signature. Same conflict, same
       resolution, as
       [C7 and C6](../PRODUCT-SPEC.md#c7-and-c6-cannot-both-hold-on-the-same-save).
-- [ ] `EDIT-025` **Optimize: image downsampling and recompression, and font subsetting**
-      `EXCLUDED`, withdrawn after Spike A red. Both rewrite the page's resources and the
-      content stream that references them. Split from `EDIT-024` so the safe
-      garbage-collection half does not carry the withdrawn rewrite half.
+- [ ] `EDIT-025` **Optimize: image downsampling and recompression, and font subsetting** `OPEN`,
+      Spike A-2. Both rewrite page resources and their content references; they stay unshipped
+      until the token-diff text-position lead passes the unchanged C8 corpus.
 
 **Adding** any of the above is independent of the content-stream spikes. **Updating or
 removing** one is not, and the earlier blanket claim that "these document-level items are
@@ -508,7 +511,9 @@ unambiguous parity in the product.
 - [ ] `SIGN-012` **Import certificates and build a trust list** `LOCAL`
 - [ ] `SIGN-013` **Private keys never leave the device** `LOCAL`, stronger than most desktop tools.
 - [ ] `SIGN-014` **RFC 3161 timestamping** `EXCLUDED`, requires a network call to a TSA.
-- [ ] `SIGN-015` **Revocation checking** `DEGRADED`, not `EXCLUDED`. The earlier label was
+- [ ] `SIGN-015` **Revocation checking** `OPEN`, Spike R. Evidence already inside the file is
+      locally reachable, but the bounded DER decoder and WebCrypto verification path have not
+      shipped. The earlier `EXCLUDED` label was
       factually wrong: revocation evidence already inside the file is checkable offline.
       A DSS dictionary, an OCSP response stapled into the document, and a user-imported CRL
       are all usable without a network call, and refusing to read data sitting in the
@@ -553,7 +558,7 @@ unambiguous parity in the product.
 - [ ] `SIGN-028` **Mark text, images, or a region for redaction** `LOCAL`
 - [ ] `SIGN-029` **Search and mark all occurrences of a term or pattern** `LOCAL`
 - [ ] `SIGN-030` **Redaction properties**: fill colour, overlay text, and repeat overlay `LOCAL`
-- [ ] `SIGN-031` **Apply redaction, removing the content from the content stream**
+- [x] `SIGN-031` **Apply redaction, removing the content from the content stream**
       `DEGRADED`. Previously `EXCLUDED`, which was the wrong label: `EXCLUDED` means
       "impossible without a server, or absent from the engine", and this is neither.
       `applyRedactions` is present in the engine, exercised, and now wired. It was
@@ -639,14 +644,13 @@ unambiguous parity in the product.
 - [ ] `CONV-010` **To Markdown** `LOCAL`, beyond Acrobat. See
       [`competitor-wins.md`](competitor-wins.md#ilovepdf-pdf-to-markdown).
 - [ ] `CONV-011` **To HTML**, preserving structure where the document is tagged `LOCAL`
-- [ ] `CONV-012` **To Word (`.docx`)** `DEGRADED`. Reconstructing a document model the PDF does not
-      contain. Adobe's is server-side and the best available; ours will be worse. The export
-      dialog says what is likely to be lost before the user commits.
-- [ ] `CONV-013` **To Excel (`.xlsx`)** `DEGRADED`, strongest on tagged tables, weakest on visually
-      inferred ones, and it says which case it is in.
-- [ ] `CONV-014` **To PowerPoint (`.pptx`)** `DEGRADED`. PDF has no slide model, no speaker
-      notes and no shape grouping, so each page becomes a slide of positioned text boxes and
-      images. Editable, but not the deck it came from.
+- [ ] `CONV-012` **To Word (`.docx`)** `OPEN`, Spike O: build a bounded STORED OOXML package
+      and independently open the reconstructed document before claiming a degraded export.
+- [ ] `CONV-013` **To Excel (`.xlsx`)** `OPEN`, Spike O: build a bounded STORED OOXML package
+      and independently open tagged and inferred table fixtures before claiming a degraded export.
+- [ ] `CONV-014` **To PowerPoint (`.pptx`)** `OPEN`, Spike O: build a bounded STORED OOXML
+      package and independently open positioned text and image fixtures before claiming a
+      degraded export.
 - [x] `CONV-015` **To RTF** `DEGRADED`. A largely linear format: columns, floats, and precise
       positioning flatten into reading order. Useful when the text matters and the layout
       does not.
@@ -656,16 +660,16 @@ unambiguous parity in the product.
 ### OCR
 
 - [x] `CONV-017` **Recognize text in a scanned document** `DEGRADED`. Runs in the lazy
-      `ocr.worker` through the installed on-device `TextDetector` in Chromium. Firefox 131 and
-      Safari 15.2 do not implement that API and no model is downloaded; the unavailable state is
-      shown before use. Quality is worse on poor scans, unusual fonts, and non-Latin scripts.
-- [ ] `CONV-018` **Per-word confidence surfaced, not hidden** `LOCAL`
-- [ ] `CONV-019` **Searchable-image output** (invisible text layer over the original image) `LOCAL`,
-      the default, because it never alters what the user sees.
-- [ ] `CONV-020` **Editable-text output** `EXCLUDED`. Recognised text can be downloaded, but the
-      build has no independently accepted searchable/editable PDF text-layer writer. Substituting
-      recognised text for a scan is not offered
-      ([finding](../research/2026-08-01-conversion-and-compare.md)).
+      own-origin Tesseract worker with browser-selected LSTM core and bundled English data. The
+      engine and model load only on invocation. Quality is worse on poor scans, unusual fonts,
+      non-English text, and non-Latin scripts.
+- [x] `CONV-018` **Per-word confidence surfaced, not hidden** `LOCAL`
+- [x] `CONV-019` **Searchable-image output** (invisible text layer over the original image) `LOCAL`,
+      because it never alters what the user sees. The downloaded output is accepted by pdf.js
+      and qpdf.
+- [ ] `CONV-020` **Editable-text output** `OPEN`, Spike O-2. Searchable-image output now ships
+      through the bundled OCR engine and is accepted by pdf.js and qpdf. Reconstructing the scan
+      as editable layout remains unshipped because OCR does not recover the source document model.
 - [ ] `CONV-021` **Language selection** `LOCAL`
 - [ ] `CONV-022` **Deskew, despeckle, and background removal on scans** `LOCAL`
 
@@ -702,10 +706,10 @@ unambiguous parity in the product.
 - [ ] `CMPR-006` **A navigable difference list** `LOCAL`
 - [ ] `CMPR-007` **Filter by change type** `LOCAL`
 - [ ] `CMPR-008` **Compare report as a document** `LOCAL`
-- [ ] `CMPR-009` **Compare a scanned document against a digital one** `EXCLUDED`. The comparison
-      reports that OCR is required and can inspect the current page in Chromium, but it cannot
-      OCR both documents across the supported browser floor. It does not call that a comparison
-      result ([finding](../research/2026-08-01-conversion-and-compare.md)).
+- [ ] `CMPR-009` **Compare a scanned document against a digital one** `OPEN`, Spike C-2. Bundled
+      OCR now works across the supported browser floor, but the compare tool has not yet run OCR
+      over both documents or aligned those results. Current-page inspection is not called a
+      comparison result.
 
 ---
 
@@ -818,12 +822,14 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 - [ ] `A11Y-034` **Tags panel**: inspect, reorder, retype, and delete tags `LOCAL`, over
       the raw `/StructTreeRoot` per the note above.
 - [ ] `A11Y-035` **Reading order tool**: assign regions to tag types by drawing on the page
-      `EXCLUDED`, withdrawn after Spike A red because it requires writing `BDC`/`EMC`
-      marked-content operators with MCIDs into the content stream.
-- [ ] `A11Y-036` **Autotag document** `EXCLUDED`, withdrawn after Spike A red. Structure
-      inference without content associations would produce tags that do not identify the
-      rendered content.
-- [ ] `A11Y-037` **Autotag form fields** `DEGRADED`, same reasoning.
+      `OPEN`, Spike A-2. It requires writing `BDC`/`EMC` marked-content operators with MCIDs;
+      the token-diff text-position lead must pass the unchanged C8 corpus first.
+- [ ] `A11Y-036` **Autotag document** `OPEN`, Spike A-2. Structure inference without content
+      associations would produce tags that do not identify rendered content; marked-content
+      writing stays unshipped pending the unchanged C8 corpus.
+- [ ] `A11Y-037` **Autotag form fields** `OPEN`, Spike T. Widget annotations associate with the
+      structure tree through `OBJR` and `/StructParent`, not `BDC`/`EMC`; implement and
+      independently verify the missing `/StructTreeRoot` and ParentTree object-graph path.
 - [ ] `A11Y-038` **Set alternate text**, with a bulk pass over all figures `LOCAL`
 - [ ] `A11Y-039` **Set table headers and scope** `LOCAL`
 - [ ] `A11Y-040` **Set document language, including per-region language** `LOCAL`
@@ -843,11 +849,10 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
       document is tagged. Better than the standard approach: the usual invisible-DOM-text
       overlay exposes content-stream order, which reads a two-column page straight across
       the columns.
-- [ ] `A11Y-045` **Inferred reading order for untagged documents** `DEGRADED`. Block
-      analysis is a heuristic and it misorders the cases that most need it: multi-column
-      layouts, footnotes, sidebars, and tables. It is still far better than content-stream
-      order, but a screen-reader user is told the order was inferred rather than read from
-      the document, so they know to be sceptical of it.
+- [ ] `A11Y-045` **Inferred reading order for untagged documents** `OPEN`, Spike G. Expose
+      bounded block and line geometry through the engine port, then measure the column-aware
+      heuristic against labelled multi-column, footnote, sidebar, and table fixtures before
+      shipping its disclosure.
 
 ---
 
@@ -902,13 +907,13 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 
 312 items in total.
 
-| Label      | Count | Where it concentrates                                                                                                                                                                                         |
-| ---------- | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LOCAL`    |   251 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                               |
-| `DEGRADED` |    19 | Guarded text replacement, scalar form filling, Chromium-only OCR, signature revocation status, raster comparison, RC4                                                                                         |
-| `EXCLUDED` |    32 | Existing content/object rewrites, text reflow, unavailable conversion/OCR output, marked-content tagging, cloud workflows, XFA, scanner input, timestamping, online revocation checking, LTV, prepress, sound |
-| `OPEN`     |     5 | Signing (Spike C), signature validation (Spike D), and certificate encryption (Spike E)                                                                                                                       |
-| `EQUIV`    |     5 | Find, clipboard, save and save as, print, Read Out Loud                                                                                                                                                       |
+| Label      | Count | Where it concentrates                                                                                                                                                                                    |
+| ---------- | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LOCAL`    |   251 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                          |
+| `DEGRADED` |    12 | Guarded text replacement, scalar form filling, local OCR quality, selective redaction perturbation, raster comparison, RC4                                                                               |
+| `EXCLUDED` |    18 | Cloud workflows, unavailable engine formats, scanner hardware, timestamping, fresh online revocation acquisition, LTV, prepress, and sound                                                               |
+| `OPEN`     |    26 | Measured content rewriting, geometry, OOXML, editable OCR layout, two-document OCR compare, form identity, signing, signature validation, offline revocation evidence, and certificate encryption spikes |
+| `EQUIV`    |     5 | Find, clipboard, save and save as, print, Read Out Loud                                                                                                                                                  |
 
 By section:
 

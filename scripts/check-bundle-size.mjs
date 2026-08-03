@@ -22,11 +22,17 @@ const BUDGETS = {
   // Fetched on demand: the engine chunk and the WASM binaries.
   lazyJs: 900_000,
   wasm: 4_500_000,
+  // Tesseract is emitted under its own lazy path so MuPDF growth cannot hide behind it.
+  ocrEngine: 3_600_000,
+  ocrModel: 3_100_000,
   totalUnpacked: 80_000_000,
 };
 const LANDING_BUDGETS = {
-  compressed: 100_000,
-  totalUnpacked: 500_000,
+  // Dual-theme WebP captures are the landing page's primary evidence, not decoration.
+  // Brotli cannot materially recompress them, so the former 100 kB ceiling could not
+  // carry two real product views in both themes plus the proof-oriented page itself.
+  compressed: 200_000,
+  totalUnpacked: 900_000,
 };
 
 if (!existsSync(distDir)) {
@@ -97,24 +103,35 @@ for (const doc of html) {
   }
 }
 
-const buckets = { initialJs: 0, initialCss: 0, lazyJs: 0, wasm: 0 };
+const buckets = {
+  initialJs: 0,
+  initialCss: 0,
+  lazyJs: 0,
+  wasm: 0,
+  ocrEngine: 0,
+  ocrModel: 0,
+};
 let totalUnpacked = 0;
 const rows = [];
 
 for (const file of files) {
   const buf = readFileSync(file);
   const name = file.split(/[\\/]/).pop();
+  const shippedPath = relative(distDir, file).replace(/\\/g, '/');
   totalUnpacked += buf.length;
 
   let bucket = null;
-  if (file.endsWith('.wasm')) bucket = 'wasm';
+  if (shippedPath.startsWith('ocr/') && shippedPath.endsWith('.traineddata.gz')) {
+    bucket = 'ocrModel';
+  } else if (shippedPath.startsWith('ocr/')) bucket = 'ocrEngine';
+  else if (file.endsWith('.wasm')) bucket = 'wasm';
   else if (file.endsWith('.css')) bucket = referenced.has(name) ? 'initialCss' : 'lazyJs';
   else if (/\.(js|mjs)$/.test(file)) bucket = referenced.has(name) ? 'initialJs' : 'lazyJs';
 
   if (bucket) {
     const size = brotli(buf);
     buckets[bucket] += size;
-    rows.push({ file: relative(distDir, file).replace(/\\/g, '/'), bucket, size });
+    rows.push({ file: shippedPath, bucket, size });
   }
 }
 
