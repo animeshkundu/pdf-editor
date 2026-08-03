@@ -15,7 +15,9 @@ export default defineConfig({
   testMatch: '**/*.e2e.ts',
   timeout: 60_000,
   fullyParallel: false,
-  workers: 2,
+  // The bundled OCR acceptance run saturates the shared CI runner; serial files keep
+  // keyboard timing assertions meaningful instead of measuring cross-spec CPU contention.
+  workers: process.env.CI === 'true' ? 1 : 2,
   retries: 0,
   reporter: [['line']],
   use: {
