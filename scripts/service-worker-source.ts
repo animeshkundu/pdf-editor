@@ -33,18 +33,19 @@ const ASSET_URLS = ASSET_PATHS.map((path) =>
 const PRECACHE_URLS = [PUBLIC_APP_URL, ...ASSET_URLS];
 const PRECACHE_SET = new Set(PRECACHE_URLS);
 
-async function notifyFailure(message) {
+async function notifyClients(type, message) {
   const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
   for (const client of windows) {
-    client.postMessage({ type: 'papertrail-offline-error', message });
+    client.postMessage({ type, message });
   }
 }
 
+async function notifyFailure(message) {
+  await notifyClients('papertrail-offline-error', message);
+}
+
 async function notifyInstallFailure(message) {
-  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-  for (const client of windows) {
-    client.postMessage({ type: 'papertrail-offline-install-error', message });
-  }
+  await notifyClients('papertrail-offline-install-error', message);
 }
 
 async function cacheIsComplete() {
@@ -165,9 +166,14 @@ self.addEventListener('fetch', (event) => {
       try {
         await cache.put(cacheKey, response.clone());
       } catch {
-        await notifyInstallFailure(
-          'The current application asset loaded, but this browser could not restore it for repeat offline use.',
-        );
+        try {
+          await notifyClients(
+            'papertrail-offline-cache-error',
+            'The current application asset loaded, but this browser could not restore it for repeat offline use. Free site storage and reload while online before relying on offline use.',
+          );
+        } catch (error) {
+          console.error('Offline cache recovery could not notify the application.', error);
+        }
       }
       return response;
     } catch {

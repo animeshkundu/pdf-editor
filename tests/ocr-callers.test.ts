@@ -152,8 +152,7 @@ describe('OCR callers', () => {
     await act(async () => root.unmount());
     mounted = false;
     expect(secondSignal.aborted).toBe(true);
-    second.reject(abortError());
-    await Promise.resolve();
+    await act(async () => second.reject(abortError()));
     expect(onError).not.toHaveBeenCalled();
   });
 
@@ -227,8 +226,7 @@ describe('OCR callers', () => {
     await act(async () => root.unmount());
     mounted = false;
     expect(secondSignal.aborted).toBe(true);
-    second.reject(abortError());
-    await Promise.resolve();
+    await act(async () => second.reject(abortError()));
     expect(onError).not.toHaveBeenCalled();
   });
 });

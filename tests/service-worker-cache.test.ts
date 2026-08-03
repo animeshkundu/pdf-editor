@@ -102,6 +102,10 @@ function workerHarness(
   const caches = new FakeCacheStorage();
   const messages: unknown[] = [];
   const fetch = vi.fn(network);
+  const matchAll = vi.fn(async () => [
+    { postMessage: (message: unknown) => messages.push(message) },
+  ]);
+  const consoleError = vi.fn();
   const self = {
     location: new URL(`${APP_URL}sw.js`),
     navigator: {
@@ -110,7 +114,7 @@ function workerHarness(
       },
     },
     clients: {
-      matchAll: async () => [{ postMessage: (message: unknown) => messages.push(message) }],
+      matchAll,
       claim: async () => undefined,
     },
     addEventListener(type: string, listener: InstallListener | FetchListener) {
@@ -126,6 +130,7 @@ function workerHarness(
     precacheBytes: 10_000,
   });
   runInNewContext(source, {
+    console: { error: consoleError },
     Request,
     Response,
     Set,
@@ -137,7 +142,9 @@ function workerHarness(
 
   return {
     caches,
+    consoleError,
     fetch,
+    matchAll,
     messages,
     async install(): Promise<void> {
       const listener = listeners.get('install') as InstallListener | undefined;
@@ -273,10 +280,28 @@ describe('generated offline service worker', () => {
     expect(await response?.text()).toBe('current:/pdf/app/assets/app.js');
     expect(await cache.match(evicted)).toBeUndefined();
     expect(harness.messages).toContainEqual({
-      type: 'papertrail-offline-install-error',
+      type: 'papertrail-offline-cache-error',
       message:
-        'The current application asset loaded, but this browser could not restore it for repeat offline use.',
+        'The current application asset loaded, but this browser could not restore it for repeat offline use. Free site storage and reload while online before relying on offline use.',
     });
+  });
+
+  it('serves a verified current response when cache-failure notification also fails', async () => {
+    const harness = workerHarness();
+    const cache = await seedCompleteCache(harness);
+    const evicted = PRECACHE_URLS[1]!;
+    await cache.delete(evicted);
+    cache.failNextPut = new DOMException('quota exhausted', 'QuotaExceededError');
+    harness.matchAll.mockRejectedValueOnce(new Error('client enumeration failed'));
+
+    const response = await harness.fetchRequest(evicted);
+
+    expect(response?.status).toBe(200);
+    expect(await response?.text()).toBe('current:/pdf/app/assets/app.js');
+    expect(harness.consoleError).toHaveBeenCalledWith(
+      'Offline cache recovery could not notify the application.',
+      expect.any(Error),
+    );
   });
 
   it('refuses an unverifiable or foreign response during cache-miss recovery', async () => {

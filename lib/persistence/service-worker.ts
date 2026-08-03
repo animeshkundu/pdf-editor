@@ -35,12 +35,14 @@ function listenForWorkerMessages(): void {
     }
     if (
       value.type !== 'papertrail-offline-error' &&
-      value.type !== 'papertrail-offline-install-error'
+      value.type !== 'papertrail-offline-install-error' &&
+      value.type !== 'papertrail-offline-cache-error'
     ) {
       return;
     }
     publish({ state: 'error', message: value.message });
   });
+  navigator.serviceWorker.startMessages();
 }
 
 async function waitForController(): Promise<void> {
@@ -113,12 +115,14 @@ export function registerOfflineApp(): Promise<void> {
       if (!navigator.serviceWorker.controller && !workerRegistration.active) {
         await waitForController();
       }
-      publish({
-        state: 'ready',
-        message: navigator.serviceWorker.controller
-          ? 'The application shell and PDF engine are ready for repeat offline use.'
-          : 'Offline support is installed and will control the next normal app load.',
-      });
+      if (currentStatus?.state !== 'error') {
+        publish({
+          state: 'ready',
+          message: navigator.serviceWorker.controller
+            ? 'The application shell and PDF engine are ready for repeat offline use.'
+            : 'Offline support is installed and will control the next normal app load.',
+        });
+      }
     })
     .catch((error: unknown) => {
       const detail = error instanceof Error ? error.message : 'Unknown service-worker error.';

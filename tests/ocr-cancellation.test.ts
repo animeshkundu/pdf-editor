@@ -211,15 +211,15 @@ describe('OCR cancellation and single-flight', () => {
     const first = recognizePage(makeEngine(), 0);
     await until(() => expect(firstWorker.recognize).toHaveBeenCalledOnce());
     const second = recognizePage(makeEngine(), 0);
-    await Promise.resolve();
-    await Promise.resolve();
-    const workerAllocationsBeforeRelease = tesseract.createWorker.mock.calls.length;
+    await until(() => expect(firstWorker.terminate).toHaveBeenCalledOnce());
+    for (let tick = 0; tick < 10; tick += 1) await Promise.resolve();
+    expect(tesseract.createWorker).toHaveBeenCalledOnce();
 
     finishFirstRecognition?.({ data: recognitionData });
     finishFirstTermination?.();
+    await until(() => expect(tesseract.createWorker).toHaveBeenCalledTimes(2));
     const [firstResult, secondResult] = await Promise.allSettled([first, second]);
 
-    expect(workerAllocationsBeforeRelease).toBe(1);
     expect(firstResult).toMatchObject({
       status: 'rejected',
       reason: { name: 'AbortError' },
