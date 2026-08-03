@@ -50,9 +50,11 @@ optional language cache is disabled.
 
 The app and engine render a real PDF offline after one successful install, and a manifest change
 evicts the previous engine cache. Storage-pressure eviction of an individual app-shell entry
-self-heals while online, including the application document itself; offline recovery still fails
-loudly rather than mixing versions. Cold installation spends storage and bandwidth once. The
-landing remains a zero-JavaScript surface and is outside the worker scope.
+self-heals while online, including the application document itself. If that recovery crosses a
+publication boundary, the current shell and its hashed assets load from the origin and install
+their matching worker; an offline reload is not guaranteed until that worker activates. No older
+engine is substituted. Cold installation spends storage and bandwidth once. The landing remains
+a zero-JavaScript surface and is outside the worker scope.
 
 ## Notes
 
