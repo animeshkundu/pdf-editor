@@ -1,5 +1,8 @@
 import {
+  useCallback,
+  useEffect,
   useId,
+  useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
@@ -25,9 +28,60 @@ export function DesignedTooltip({
   readonly label: string;
   readonly children: ReactElement;
 }) {
+  const [open, setOpen] = useState(false);
+  const pointerDown = useRef(false);
+  const focusAnimationFrame = useRef<number | undefined>(undefined);
+  const resetPointerDown = useCallback(() => {
+    pointerDown.current = false;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (focusAnimationFrame.current !== undefined) {
+        cancelAnimationFrame(focusAnimationFrame.current);
+      }
+      resetPointerDown();
+    };
+  }, [resetPointerDown]);
+
   return (
-    <Tooltip.Root>
-      <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
+    <Tooltip.Root open={open} onOpenChange={setOpen}>
+      <Tooltip.Trigger
+        asChild
+        onPointerDown={() => {
+          pointerDown.current = true;
+          window.addEventListener(
+            'pointerup',
+            resetPointerDown,
+            { once: true },
+          );
+          window.addEventListener(
+            'pointercancel',
+            resetPointerDown,
+            { once: true },
+          );
+        }}
+        onFocus={(event) => {
+          const trigger = event.currentTarget;
+          const focusFromPointer = pointerDown.current;
+          if (!focusFromPointer) {
+            // Reconcile after Radix handles focus so a post-open render cannot suppress keyboard help.
+            focusAnimationFrame.current = requestAnimationFrame(() => {
+              focusAnimationFrame.current = undefined;
+              if (document.activeElement === trigger) setOpen(true);
+            });
+          }
+        }}
+        onBlur={() => {
+          if (focusAnimationFrame.current !== undefined) {
+            cancelAnimationFrame(focusAnimationFrame.current);
+            focusAnimationFrame.current = undefined;
+          }
+          setOpen(false);
+        }}
+      >
+        {children}
+      </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Content className="designed-tooltip" sideOffset={7}>
           {label}

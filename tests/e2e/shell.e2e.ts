@@ -138,6 +138,8 @@ test('keyboard focus reaches the overflow menu and icon tooltips', async ({ page
   const tooltip = page.getByRole('tooltip');
   await expect(tooltip).toBeVisible();
   await expect(tooltip).toContainText('Zoom out');
+  await zoomOut.click();
+  await expect(tooltip).toBeHidden();
 });
 
 test('SIGN-018 opens a protected PDF after a wrong-password retry', async ({ page }) => {
