@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import engineErrors, { type EngineTypes } from '@/lib/engine/port';
 import renderLayout from '@/lib/render/layout';
-import type { ResolvedCommand } from '@/lib/commands/registry';
+import type { ResolvedCommand, ShortcutRemapping } from '@/lib/commands/registry';
 import AccessibilityTools from './tools/AccessibilityTools';
 import AutomationBuilder from './tools/AutomationBuilder';
 import CompareTool from './tools/CompareTool';
@@ -50,6 +50,7 @@ interface PanelProps {
   readonly onOutput: (data: ArrayBuffer, name: string) => void;
   readonly onRotateView: (degrees: 90 | -90) => void;
   readonly commands: readonly ResolvedCommand[];
+  readonly shortcutRemapping: ShortcutRemapping;
   readonly onError: (message: string) => void;
   readonly onNotice: (message: string) => void;
 }

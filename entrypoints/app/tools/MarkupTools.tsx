@@ -23,6 +23,8 @@ import {
   Upload,
   Waves,
 } from 'lucide-react';
+import { commandById } from '@/lib/commands/registry';
+import { formatShortcut } from '@/lib/commands/shortcuts';
 import type { EngineTypes } from '@/lib/engine/port';
 import { useDocumentStore } from '@/lib/store/document';
 import { useToolStore } from '@/lib/store/tools';
@@ -360,9 +362,15 @@ function downloadJson(name: string, value: unknown): void {
 
 export default function MarkupTools({
   engine,
+  shortcutRemapping = {},
   onMutation,
   onError,
-}: Pick<ToolPanelProps, 'engine' | 'onMutation' | 'onError'>) {
+}: Pick<ToolPanelProps, 'engine' | 'shortcutRemapping' | 'onMutation' | 'onError'>) {
+  const markupFamilyShortcut =
+    shortcutRemapping['markup-family'] ?? commandById('markup-family').shortcut;
+  const markupFamilyShortcutLabel = markupFamilyShortcut
+    ? formatShortcut(markupFamilyShortcut)
+    : null;
   const [annotations, setAnnotations] = useState<readonly AnnotationInfo[]>([]);
   const activeEditorTool = useToolStore((state) => state.activeTool);
   const selectEditorTool = useToolStore((state) => state.selectTool);
@@ -964,10 +972,21 @@ export default function MarkupTools({
                 Delete selected mark
               </button>
             </div>
-          ) : null}
+          ) : (
+            <p className="empty-message">
+              Select an annotation above to edit or delete its properties
+              {markupFamilyShortcutLabel
+                ? ` (or press ${markupFamilyShortcutLabel} to choose a markup tool)`
+                : ''}
+              .
+            </p>
+          )}
         </DesignedDisclosure>
       ) : (
-        <p className="empty-message">Choose a markup tool to add the first annotation.</p>
+        <p className="empty-message">
+          Choose a markup tool to add the first annotation
+          {markupFamilyShortcutLabel ? ` (or press ${markupFamilyShortcutLabel})` : ''}.
+        </p>
       )}
 
       <p className="scope-note">
