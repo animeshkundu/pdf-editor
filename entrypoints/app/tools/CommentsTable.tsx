@@ -269,6 +269,10 @@ export default function CommentsTable({
             </button>
           </div>
         </div>
+      ) : visible.length > 0 ? (
+        <p className="empty-message">
+          Select a comment above to reply, edit its body, or change its status.
+        </p>
       ) : null}
       {selected && textMode ? (
         <ActiveTextEntry

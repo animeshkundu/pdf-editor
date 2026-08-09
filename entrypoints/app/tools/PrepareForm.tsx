@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { ArrowDown, ArrowUp, Download, Plus, TestTube2, Upload } from 'lucide-react';
+import { commandById } from '@/lib/commands/registry';
+import { formatShortcut } from '@/lib/commands/shortcuts';
 import { assertFileSize, budgetFor } from '@/lib/core/limits';
 import type { EngineTypes } from '@/lib/engine/port';
 import formCapabilities from '@/lib/forms/capabilities';
@@ -28,11 +30,20 @@ function uniqueNames(fields: readonly FormField[]): string[] {
 
 export default function PrepareForm({
   engine,
+  shortcutRemapping = {},
   onMutation,
   onNavigate,
   onError,
   onNotice,
-}: Pick<ToolPanelProps, 'engine' | 'onMutation' | 'onNavigate' | 'onError' | 'onNotice'>) {
+}: Pick<
+  ToolPanelProps,
+  'engine' | 'shortcutRemapping' | 'onMutation' | 'onNavigate' | 'onError' | 'onNotice'
+>) {
+  const formFieldToolShortcut =
+    shortcutRemapping['form-field-tool'] ?? commandById('form-field-tool').shortcut;
+  const formFieldToolShortcutLabel = formFieldToolShortcut
+    ? formatShortcut(formFieldToolShortcut)
+    : null;
   const [fields, setFields] = useState<readonly FormField[]>([]);
   const [selected, setSelected] = useState('');
   const [layoutSelection, setLayoutSelection] = useState<readonly string[]>([]);
@@ -683,7 +694,15 @@ export default function PrepareForm({
                 Apply position, size & properties
               </button>
             </div>
-          ) : null}
+          ) : (
+            <p className="empty-message">
+              Select a field above to edit its value, position, and properties
+              {formFieldToolShortcutLabel
+                ? ` (or press ${formFieldToolShortcutLabel} to select the form field tool)`
+                : ''}
+              .
+            </p>
+          )}
 
           {editingValue && selectedField ? (
             <ActiveTextEntry

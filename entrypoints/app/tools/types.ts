@@ -1,7 +1,9 @@
 import type { EngineTypes } from '@/lib/engine/port';
+import type { ShortcutRemapping } from '@/lib/commands/registry';
 
 export interface ToolPanelProps {
   readonly engine: EngineTypes['PdfEngine'];
+  readonly shortcutRemapping?: ShortcutRemapping;
   readonly onMutation: (result: EngineTypes['MutationResult']) => void;
   readonly onNavigate: (pageIndex: number) => void;
   readonly onOutput: (data: ArrayBuffer, name: string) => void;

@@ -12,6 +12,9 @@ Nothing has been released yet. The repository is at `0.0.0`.
 
 ### Added
 
+- Reachable empty-state text in the markup, comments, and forms panels for the no-selection
+  case (existing items but nothing picked yet), naming what to select and, where the command
+  registry defines one, the tool's keyboard shortcut.
 - A shareable zero-JavaScript landing page with real dual-theme product captures, an inspectable
   document data path, factual hosted-editor comparison, honest boundaries, and native FAQ.
 - A manifest-digest-versioned same-origin service worker that precaches the app shell and MuPDF,

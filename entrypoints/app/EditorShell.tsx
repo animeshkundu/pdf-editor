@@ -1325,6 +1325,7 @@ export default function EditorShell({
                         onOutput={onOutput}
                         onRotateView={(degrees) => viewportRef.current?.rotateView(degrees)}
                         commands={commands}
+                        shortcutRemapping={shortcutRemapping}
                         onError={setError}
                         onNotice={setNotice}
                       />
