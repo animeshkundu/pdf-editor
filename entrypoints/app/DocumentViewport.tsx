@@ -17,7 +17,7 @@ const { WorkerCrashedError } = engineErrors;
 const { PAGE_GAP, PDF_POINT_SCALE, PageLayout, viewportTileRects } = renderLayout;
 
 interface DocumentViewportHandle {
-  goToPage(pageIndex: number): void;
+  goToPage(pageIndex: number, behavior?: ScrollBehavior): void;
   zoomBy(factor: number): void;
   resetZoom(): void;
   fitWidth(): void;
@@ -166,8 +166,8 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
     const resetTool = useToolStore((state) => state.resetTool);
 
     useImperativeHandle(ref, () => ({
-      goToPage(pageIndex) {
-        apiRef.current?.goToPage(pageIndex);
+      goToPage(pageIndex, behavior) {
+        apiRef.current?.goToPage(pageIndex, behavior);
       },
       zoomBy(factor) {
         apiRef.current?.zoomBy(factor);
@@ -986,10 +986,22 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
       content.style.width = `${initialWidth}px`;
       scroller.scrollLeft = Math.max(0, (initialWidth - scroller.clientWidth) / 2);
       apiRef.current = {
-        goToPage(pageIndex) {
+        goToPage(pageIndex, requestedBehavior) {
+          if (!Number.isInteger(pageIndex) || engine.info.pages.length === 0) return;
           const safeIndex = Math.min(engine.info.pages.length - 1, Math.max(0, pageIndex));
-          scrollToLogical(layout.offsetFor(safeIndex), 'smooth');
-          scroller.focus();
+          const behavior =
+            requestedBehavior === 'auto' ||
+            window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+              ? 'auto'
+              : 'smooth';
+          scrollToLogical(layout.offsetFor(safeIndex), behavior);
+          if (behavior === 'auto') {
+            viewportStore.getState().setCurrentPage(safeIndex);
+            if (currentPageRef.current) {
+              currentPageRef.current.textContent = `${safeIndex + 1} / ${engine.info.pages.length}`;
+            }
+          }
+          scroller.focus({ preventScroll: true });
         },
         zoomBy(factor) {
           setZoom(zoom * factor);

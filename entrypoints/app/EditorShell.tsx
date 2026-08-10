@@ -90,7 +90,7 @@ type PanelKind =
   | 'history'
   | 'capabilities';
 interface DocumentViewportHandle {
-  goToPage(pageIndex: number): void;
+  goToPage(pageIndex: number, behavior?: ScrollBehavior): void;
   zoomBy(factor: number): void;
   resetZoom(): void;
   fitWidth(): void;
@@ -1319,7 +1319,9 @@ export default function EditorShell({
                         label={label}
                         engine={engine}
                         searchInputRef={searchInputRef}
-                        onNavigate={(pageIndex) => viewportRef.current?.goToPage(pageIndex)}
+                        onNavigate={(pageIndex, behavior) =>
+                          viewportRef.current?.goToPage(pageIndex, behavior)
+                        }
                         onSearchHit={onSearchHit}
                         onMutation={onMutation}
                         onOutput={onOutput}

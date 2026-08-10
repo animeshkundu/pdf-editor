@@ -370,6 +370,7 @@ test('honours ADR 0016 tokens, motion, focus, themes, and narrow zoomed layouts'
       ['--border-subtle', '--surface-raised', 3],
       ['--border-strong', '--surface-chrome', 3],
       ['--focus-ring', '--surface-chrome', 3],
+      ['--focus-ring', '--surface-selected', 3],
     ] as const) {
       expect(
         await resolvedContrast(page, foreground, background),

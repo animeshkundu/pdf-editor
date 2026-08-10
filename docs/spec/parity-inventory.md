@@ -77,8 +77,10 @@ marked **(unverified)**. Nothing in this document is a benchmark or a measuremen
 ### Navigation panels
 
 - [ ] `VIEW-020` **Page thumbnails**, virtualized, with drag to reorder `LOCAL`
-- [ ] `VIEW-021` **Bookmarks (outline)**, including nesting, expand and collapse, and jump to
-      destination `LOCAL`
+- [x] `VIEW-021` **Bookmark outline navigation**, including nesting, expand and collapse, and jump
+      to destination `LOCAL`. Bookmark creation, renaming, reordering, and deletion are not
+      included.
+- [ ] `VIEW-038` **Bookmark authoring**, including create, rename, reorder, and delete `LOCAL`
 - [ ] `VIEW-022` **Attachments panel**, list, open, save out, add, delete `LOCAL`. Attachment
       extraction is a known malware vector, so an attachment is never auto-opened and its
       declared type is never trusted over its bytes.
@@ -905,11 +907,11 @@ Spike A rather than `LOCAL`. Items that only set or read a dictionary value stay
 
 ## Coverage summary
 
-312 items in total.
+313 items in total.
 
 | Label      | Count | Where it concentrates                                                                                                                                                                                    |
 | ---------- | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `LOCAL`    |   251 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                          |
+| `LOCAL`    |   252 | Viewing, navigation, search, selection, markup, comment management, organize pages, forms, signing, redaction, accessibility, print, automation                                                          |
 | `DEGRADED` |    12 | Guarded text replacement, scalar form filling, local OCR quality, selective redaction perturbation, raster comparison, RC4                                                                               |
 | `EXCLUDED` |    18 | Cloud workflows, unavailable engine formats, scanner hardware, timestamping, fresh online revocation acquisition, LTV, prepress, and sound                                                               |
 | `OPEN`     |    26 | Measured content rewriting, geometry, OOXML, editable OCR layout, two-document OCR compare, form identity, signing, signature validation, offline revocation evidence, and certificate encryption spikes |
@@ -919,7 +921,7 @@ By section:
 
 | Section                               | Items |
 | ------------------------------------- | ----: |
-| 1. Viewing and navigation (`VIEW`)    |    37 |
+| 1. Viewing and navigation (`VIEW`)    |    38 |
 | 2. Search and text selection (`FIND`) |    14 |
 | 3. Comment and markup (`MARK`)        |    35 |
 | 4. Comment management (`CMNT`)        |    13 |
