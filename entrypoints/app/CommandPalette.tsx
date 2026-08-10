@@ -177,7 +177,7 @@ export default function CommandPalette({
       <Dialog.Portal>
         <Dialog.Overlay className="palette-backdrop" />
         <Dialog.Content asChild>
-          <section className="command-palette" aria-describedby={undefined}>
+          <section className="command-palette product-overlay" aria-describedby={undefined}>
             <header className="palette-header">
               <Command aria-hidden="true" size={18} />
               <Dialog.Title asChild>

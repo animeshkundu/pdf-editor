@@ -5,5 +5,9 @@ export default function FeatureBadge({
 }: {
   readonly status: EngineTypes['FeatureStatus'];
 }) {
-  return <span className={`status-badge status-${status.toLocaleLowerCase()}`}>{status}</span>;
+  return (
+    <span className={`status-badge product-status status-${status.toLocaleLowerCase()}`}>
+      {status}
+    </span>
+  );
 }

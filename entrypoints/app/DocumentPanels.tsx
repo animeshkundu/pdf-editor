@@ -19,7 +19,7 @@ type OutlineNode = EngineTypes['OutlineNode'];
 type PageInfo = EngineTypes['PageInfo'];
 type PdfEngine = EngineTypes['PdfEngine'];
 type SearchHit = EngineTypes['SearchHit'];
-type PanelKind =
+export type PanelKind =
   | 'pages'
   | 'outline'
   | 'attachments'
@@ -36,6 +36,7 @@ type PanelKind =
   | 'automation'
   | 'history'
   | 'capabilities';
+export type NavigatorTab = Extract<PanelKind, 'pages' | 'outline' | 'attachments' | 'search'>;
 const { WorkerCrashedError } = engineErrors;
 const { PDF_POINT_SCALE } = renderLayout;
 
@@ -597,6 +598,60 @@ export function CapabilitiesPanel() {
         </div>
       </dl>
     </>
+  );
+}
+
+const NAVIGATOR_TABS: readonly { readonly kind: NavigatorTab; readonly label: string }[] = [
+  { kind: 'pages', label: 'Thumbnails' },
+  { kind: 'outline', label: 'Outline' },
+  { kind: 'attachments', label: 'Attachments' },
+  { kind: 'search', label: 'Search' },
+];
+
+export function DocumentNavigator({
+  tab,
+  onTabChange,
+  ...props
+}: Omit<PanelProps, 'kind' | 'label'> & {
+  readonly tab: NavigatorTab;
+  readonly onTabChange: (tab: NavigatorTab) => void;
+}) {
+  return (
+    <aside className="navigator-panel" aria-label="Document navigator">
+      <header className="navigator-header">
+        <div>
+          <span className="eyebrow">Navigate</span>
+          <h2>Navigator</h2>
+        </div>
+        <StatusBadge>LOCAL</StatusBadge>
+      </header>
+      <div className="navigator-tabs" role="tablist" aria-label="Navigator views">
+        {NAVIGATOR_TABS.map((candidate) => (
+          <button
+            key={candidate.kind}
+            type="button"
+            role="tab"
+            aria-selected={tab === candidate.kind}
+            aria-controls={`navigator-${candidate.kind}`}
+            id={`navigator-tab-${candidate.kind}`}
+            onClick={() => onTabChange(candidate.kind)}
+          >
+            {candidate.label}
+          </button>
+        ))}
+      </div>
+      <div
+        id={`navigator-${tab}`}
+        role="tabpanel"
+        aria-labelledby={`navigator-tab-${tab}`}
+        className="navigator-content"
+      >
+        {tab === 'pages' ? <PagesPanel {...props} /> : null}
+        {tab === 'outline' ? <OutlinePanel {...props} /> : null}
+        {tab === 'attachments' ? <AttachmentsPanel {...props} /> : null}
+        {tab === 'search' ? <SearchPanel {...props} /> : null}
+      </div>
+    </aside>
   );
 }
 

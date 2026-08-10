@@ -86,7 +86,7 @@ export default function AutomationBuilder({
   };
 
   return (
-    <section className="tool-panel" aria-label="Automation pipeline builder">
+    <section className="tool-panel tool-panel-automation" aria-label="Automation">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">No-code local actions</span>

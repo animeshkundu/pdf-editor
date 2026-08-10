@@ -22,7 +22,7 @@ export default function HistoryPanel({
   }, [engine, onError]);
 
   return (
-    <section className="tool-panel" aria-label="Document history">
+    <section className="tool-panel tool-panel-history" aria-label="Document history">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">MuPDF journal</span>

@@ -11,6 +11,7 @@ import * as Popover from '@radix-ui/react-popover';
 import * as Select from '@radix-ui/react-select';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { Check, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { COLOR_CHOICES, semanticColorValue } from '@/lib/ui/semanticTokens';
 
 export interface SelectOption<T extends string> {
   readonly value: T;
@@ -60,7 +61,7 @@ export function DesignedSelect<T extends string>({
       onValueChange={(nextValue) => onValueChange(nextValue as T)}
     >
       <Select.Trigger
-        className="designed-select"
+        className="designed-select product-control"
         aria-label={label}
         aria-describedby={describedBy}
       >
@@ -169,7 +170,7 @@ export function DesignedSlider({
   return (
     <div
       tabIndex={0}
-      className="designed-slider"
+      className="designed-slider product-control"
       role="slider"
       aria-label={label}
       aria-valuemin={min}
@@ -198,15 +199,6 @@ export function DesignedSlider({
     </div>
   );
 }
-
-const COLOR_CHOICES = [
-  '#15181d',
-  '#3853d8',
-  '#b4232b',
-  '#7a4d00',
-  '#176b43',
-  '#ffffff',
-] as const;
 
 export function DesignedColorPicker({
   label,
@@ -243,21 +235,24 @@ export function DesignedColorPicker({
           sideOffset={4}
         >
           <div className="designed-color-grid">
-            {COLOR_CHOICES.map((color) => (
-              <button
-                type="button"
-                key={color}
-                aria-label={`Use ${color}`}
-                aria-pressed={value.toLocaleLowerCase() === color}
-                style={{ '--selected-color': color } as CSSProperties}
-                onClick={() => {
-                  onValueChange(color);
-                  setDraft(color);
-                }}
-              >
-                <span aria-hidden="true" />
-              </button>
-            ))}
+            {COLOR_CHOICES.map(([token, label]) => {
+              const color = semanticColorValue(token);
+              return (
+                <button
+                  type="button"
+                  key={token}
+                  aria-label={`Use ${label}`}
+                  aria-pressed={value.toLocaleLowerCase() === color}
+                  style={{ '--selected-color': `var(--${token})` } as CSSProperties}
+                  onClick={() => {
+                    onValueChange(color);
+                    setDraft(color);
+                  }}
+                >
+                  <span aria-hidden="true" />
+                </button>
+              );
+            })}
           </div>
           <label>
             <span>Hex colour</span>

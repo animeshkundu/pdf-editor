@@ -369,7 +369,7 @@ describe('Phase 3 viewer acceptance', () => {
     );
     expect(document.activeElement).toBe(searchInput);
 
-    const markupButton = buttonNamed(container, 'Markup');
+    const markupButton = buttonNamed(container, 'Comment');
     markupButton.focus();
     await act(async () => markupButton.click());
     expect(document.activeElement).toBe(markupButton);
@@ -490,7 +490,7 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    await act(async () => buttonNamed(container, 'Scope').click());
+    await act(async () => buttonNamed(container, 'Tools and capabilities').click());
     expect(container.textContent).toContain('Existing-text editing');
     expect(container.textContent).toContain('OPEN');
     expect(container.textContent).toContain('True redaction');
@@ -510,8 +510,8 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
     });
 
-    await act(async () => buttonNamed(container, 'Convert').click());
-    const conversionPanel = container.querySelector('[aria-label="Convert and validate"]');
+    await act(async () => buttonNamed(container, 'Convert and OCR').click());
+    const conversionPanel = container.querySelector('[aria-label="Convert and OCR"]');
     expect(conversionPanel?.textContent).toContain('CONV-020');
     expect(conversionPanel?.textContent).toContain('OPEN');
     expect(conversionPanel?.textContent).toContain('Searchable-image PDF output is available');
@@ -555,7 +555,7 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
     });
 
-    await act(async () => buttonNamed(container, 'Markup').click());
+    await act(async () => buttonNamed(container, 'Comment').click());
     expect(container.textContent).toContain('Apply 1 redaction mark');
     expect(container.textContent).toContain(
       'redaction writes through a content-stream filter that perturbs rendering on some documents',
@@ -601,7 +601,7 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    await act(async () => buttonNamed(container, 'Markup').click());
+    await act(async () => buttonNamed(container, 'Comment').click());
     const confirmation = [
       ...container.querySelectorAll<HTMLButtonElement>('[role="checkbox"]'),
     ].find((candidate) =>
@@ -672,7 +672,7 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    await act(async () => buttonNamed(container, 'Find').click());
+    await act(async () => buttonNamed(container, 'Search').click());
     const searchInput = container.querySelector<HTMLInputElement>(
       'input[aria-label="Find in document"]',
     );
@@ -795,7 +795,7 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    await act(async () => buttonNamed(container, 'Markup').click());
+    await act(async () => buttonNamed(container, 'Comment').click());
     const textBox = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Text box'),
     );
@@ -969,7 +969,7 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    await act(async () => buttonNamed(container, 'Organize').click());
+    await act(async () => buttonNamed(container, 'Organize Pages').click());
 
     expect(buttonNamed(container, 'Rotate view left').disabled).toBe(false);
     expect(buttonNamed(container, 'Insert blank page').disabled).toBe(false);
@@ -1007,7 +1007,7 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    await act(async () => buttonNamed(container, 'Forms').click());
+    await act(async () => buttonNamed(container, 'Fill and Sign').click());
     const name = [...container.querySelectorAll('label')]
       .find((label) => label.textContent?.includes('Unique name'))
       ?.querySelector('input');
@@ -1036,7 +1036,7 @@ describe('Phase 3 viewer acceptance', () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    await act(async () => buttonNamed(container, 'Forms').click());
+    await act(async () => buttonNamed(container, 'Fill and Sign').click());
     const name = [...container.querySelectorAll('label')]
       .find((label) => label.textContent?.includes('Unique name'))
       ?.querySelector('input');
@@ -1101,7 +1101,7 @@ describe('Phase 3 viewer acceptance', () => {
     expect(engine.compareDocument).toHaveBeenCalledWith('other.pdf', expect.any(ArrayBuffer));
     expect(container.textContent).toContain('1 changed');
 
-    await act(async () => buttonNamed(container, 'Convert').click());
+    await act(async () => buttonNamed(container, 'Convert and OCR').click());
     await act(async () => buttonNamed(container, 'Validate PDF/A').click());
     await act(async () => {
       await Promise.resolve();

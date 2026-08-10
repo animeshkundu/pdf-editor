@@ -53,7 +53,7 @@ export default function ActiveTextEntry({
   }, [kind, state.direction, state.value]);
 
   return (
-    <div className="active-entry" data-kind={kind}>
+    <div className="active-entry product-entry" data-kind={kind}>
       <canvas ref={canvasRef} className="active-entry-preview" aria-hidden="true" />
       <textarea
         ref={inputRef}

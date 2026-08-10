@@ -48,7 +48,7 @@ export default function PasswordDialog({
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
         <Dialog.Content
-          className="password-dialog"
+          className="password-dialog product-dialog"
           aria-describedby="password-description"
           onCloseAutoFocus={(event) => {
             event.preventDefault();

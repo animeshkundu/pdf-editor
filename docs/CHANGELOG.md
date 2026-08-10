@@ -110,6 +110,9 @@ Nothing has been released yet. The repository is at `0.0.0`.
 
 ### Changed
 
+- Rebuilt the editor frame around a persistent command area, tabbed Navigator, and single
+  contextual properties rail with familiar PDF tool naming.
+
 - RC4-encrypted documents are mutation-disabled and can only produce a full,
   garbage-collecting AES-256 replacement.
 - Form authoring emits one field default appearance, writes deterministic PDF tab order, and

@@ -6,42 +6,22 @@ import {
   useState,
   type ChangeEvent,
   type DragEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
 } from 'react';
 import {
-  BookOpen,
-  Accessibility,
   Check,
-  ChevronDown,
-  ChevronUp,
   ChevronsUpDown,
   Command,
   Download,
-  FilePenLine,
-  FileArchive,
-  FileSearch,
-  GitCompareArrows,
   FolderOpen,
-  History,
-  Info,
-  MessageSquareText,
   MoreHorizontal,
   Moon,
-  NotebookTabs,
   PanelTop,
-  Printer,
-  PanelRightClose,
   Redo2,
   Save,
-  ShieldCheck,
-  ScanText,
   Sun,
   Undo2,
-  X,
   ZoomIn,
   ZoomOut,
-  Workflow,
 } from 'lucide-react';
 import * as Select from '@radix-ui/react-select';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -60,11 +40,16 @@ import { registerOfflineApp, subscribeOfflineStatus } from '@/lib/persistence/se
 import { useDocumentStore } from '@/lib/store/document';
 import { useToolStore, type EditorTool } from '@/lib/store/tools';
 import CommandPalette from './CommandPalette';
-import DocumentPanel, { CapabilitiesPanel } from './DocumentPanels';
+import DocumentPanel, {
+  DocumentNavigator,
+  type NavigatorTab,
+  type PanelKind,
+} from './DocumentPanels';
 import DocumentViewport from './DocumentViewport';
 import SelectionActionBar, { type SelectionAction } from './SelectionActionBar';
 import PasswordDialog from './PasswordDialog';
 import { DesignedTooltip } from './DesignedControls';
+import ToolIcon, { type ToolIconName } from './ToolIcon';
 
 type Theme = 'light' | 'dark';
 type Density = 'compact' | 'comfortable' | 'touch';
@@ -72,23 +57,6 @@ type PdfEngine = EngineTypes['PdfEngine'];
 type PdfEngineFactory = EngineTypes['PdfEngineFactory'];
 type SearchHit = EngineTypes['SearchHit'];
 const { EngineRequestError } = engineErrors;
-type PanelKind =
-  | 'pages'
-  | 'outline'
-  | 'attachments'
-  | 'search'
-  | 'markup'
-  | 'comments'
-  | 'organize'
-  | 'forms'
-  | 'security'
-  | 'compare'
-  | 'convert'
-  | 'accessibility'
-  | 'print'
-  | 'automation'
-  | 'history'
-  | 'capabilities';
 interface DocumentViewportHandle {
   goToPage(pageIndex: number): void;
   zoomBy(factor: number): void;
@@ -112,24 +80,20 @@ interface PendingOpenRequest extends PendingPasswordOpen {
 const PANEL_TOOLS: readonly {
   readonly kind: PanelKind;
   readonly label: string;
-  readonly icon: typeof BookOpen;
+  readonly icon: ToolIconName;
 }[] = [
-  { kind: 'pages', label: 'Pages', icon: ChevronsUpDown },
-  { kind: 'outline', label: 'Outline', icon: BookOpen },
-  { kind: 'attachments', label: 'Files', icon: FileArchive },
-  { kind: 'search', label: 'Find', icon: FileSearch },
-  { kind: 'markup', label: 'Markup', icon: FilePenLine },
-  { kind: 'comments', label: 'Comments', icon: MessageSquareText },
-  { kind: 'organize', label: 'Organize', icon: PanelTop },
-  { kind: 'forms', label: 'Forms', icon: NotebookTabs },
-  { kind: 'security', label: 'Protect', icon: ShieldCheck },
-  { kind: 'compare', label: 'Compare', icon: GitCompareArrows },
-  { kind: 'convert', label: 'Convert', icon: ScanText },
-  { kind: 'accessibility', label: 'Access', icon: Accessibility },
-  { kind: 'print', label: 'Print', icon: Printer },
-  { kind: 'automation', label: 'Automate', icon: Workflow },
-  { kind: 'history', label: 'History', icon: History },
-  { kind: 'capabilities', label: 'Scope', icon: Info },
+  { kind: 'markup', label: 'Comment', icon: 'comment' },
+  { kind: 'comments', label: 'Comments', icon: 'comment' },
+  { kind: 'organize', label: 'Organize Pages', icon: 'pages' },
+  { kind: 'forms', label: 'Fill and Sign', icon: 'sign' },
+  { kind: 'security', label: 'Protect', icon: 'protect' },
+  { kind: 'compare', label: 'Compare', icon: 'compare' },
+  { kind: 'convert', label: 'Convert and OCR', icon: 'convert' },
+  { kind: 'accessibility', label: 'Accessibility', icon: 'accessibility' },
+  { kind: 'print', label: 'Print', icon: 'print' },
+  { kind: 'automation', label: 'Automation', icon: 'automation' },
+  { kind: 'history', label: 'History', icon: 'history' },
+  { kind: 'capabilities', label: 'Tools and capabilities', icon: 'tools' },
 ];
 
 const TOOL_FAMILIES: readonly {
@@ -221,42 +185,40 @@ function loadShortcutSettings(): {
 
 function loadPanelLayout(name: string): {
   readonly key: string;
-  readonly open: readonly PanelKind[];
-  readonly collapsed: readonly PanelKind[];
-  readonly widths: Readonly<Partial<Record<PanelKind, number>>>;
+  readonly active: PanelKind | null;
+  readonly navigator: NavigatorTab;
   readonly error: string;
 } {
   const key = `papertrail:panels:${name}`;
   try {
     const serialized = window.localStorage.getItem(key);
-    if (!serialized) return { key, open: ['pages'], collapsed: [], widths: {}, error: '' };
+    if (!serialized) return { key, active: null, navigator: 'pages', error: '' };
     const value: unknown = JSON.parse(serialized);
     if (!value || typeof value !== 'object') throw new Error('Panel layout is not an object.');
     const record = value as {
+      readonly active?: unknown;
+      readonly navigator?: unknown;
       readonly open?: unknown;
-      readonly collapsed?: unknown;
-      readonly widths?: unknown;
     };
     const validKinds = new Set(PANEL_TOOLS.map(({ kind }) => kind));
-    const open: readonly PanelKind[] = Array.isArray(record.open)
-      ? record.open.filter((kind): kind is PanelKind => validKinds.has(kind as PanelKind))
-      : ['pages'];
-    const collapsed: readonly PanelKind[] = Array.isArray(record.collapsed)
-      ? record.collapsed.filter((kind): kind is PanelKind => validKinds.has(kind as PanelKind))
-      : [];
-    const widths: Partial<Record<PanelKind, number>> = {};
-    if (record.widths && typeof record.widths === 'object') {
-      for (const [kind, width] of Object.entries(record.widths)) {
-        if (validKinds.has(kind as PanelKind) && typeof width === 'number') {
-          widths[kind as PanelKind] = Math.min(480, Math.max(260, width));
-        }
-      }
-    }
+    const oldOpen = Array.isArray(record.open) ? record.open : [];
+    const active =
+      typeof record.active === 'string' && validKinds.has(record.active as PanelKind)
+        ? (record.active as PanelKind)
+        : (oldOpen.find((kind): kind is PanelKind => validKinds.has(kind as PanelKind)) ??
+          null);
+    const navigatorTabs = new Set<NavigatorTab>(['pages', 'outline', 'attachments', 'search']);
+    const navigator =
+      typeof record.navigator === 'string' &&
+      navigatorTabs.has(record.navigator as NavigatorTab)
+        ? (record.navigator as NavigatorTab)
+        : (oldOpen.find((kind): kind is NavigatorTab =>
+            navigatorTabs.has(kind as NavigatorTab),
+          ) ?? 'pages');
     return {
       key,
-      open,
-      collapsed,
-      widths,
+      active,
+      navigator,
       error: '',
     };
   } catch (layoutError) {
@@ -264,9 +226,8 @@ function loadPanelLayout(name: string): {
       layoutError instanceof Error ? layoutError.message : 'Unknown panel-layout error.';
     return {
       key,
-      open: ['pages'],
-      collapsed: [],
-      widths: {},
+      active: null,
+      navigator: 'pages',
       error: `The saved panel layout could not be restored. ${detail}`,
     };
   }
@@ -281,12 +242,9 @@ export default function EditorShell({
   const [theme, setTheme] = useState<Theme>('light');
   const [density, setDensity] = useState<Density>('comfortable');
   const [engine, setEngine] = useState<PdfEngine | null>(null);
-  const [openPanels, setOpenPanels] = useState<readonly PanelKind[]>([]);
-  const [collapsedPanels, setCollapsedPanels] = useState<readonly PanelKind[]>([]);
+  const [activePanel, setActivePanel] = useState<PanelKind | null>(null);
+  const [navigatorTab, setNavigatorTab] = useState<NavigatorTab>('pages');
   const [findFocusRequest, setFindFocusRequest] = useState(0);
-  const [panelWidths, setPanelWidths] = useState<Readonly<Partial<Record<PanelKind, number>>>>(
-    {},
-  );
   const [panelLayoutKey, setPanelLayoutKey] = useState('');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutRemapping, setShortcutRemappingState] = useState<ShortcutRemapping>(
@@ -393,7 +351,7 @@ export default function EditorShell({
     try {
       window.localStorage.setItem(
         key,
-        JSON.stringify({ open: openPanels, collapsed: collapsedPanels, widths: panelWidths }),
+        JSON.stringify({ active: activePanel, navigator: navigatorTab }),
       );
     } catch (layoutError) {
       const detail =
@@ -403,7 +361,7 @@ export default function EditorShell({
         0,
       );
     }
-  }, [collapsedPanels, engine, openPanels, panelLayoutKey, panelWidths]);
+  }, [activePanel, engine, navigatorTab, panelLayoutKey]);
 
   useEffect(() => {
     if (!notice) return;
@@ -455,8 +413,7 @@ export default function EditorShell({
   }, []);
   const openFind = useCallback(() => {
     if (!engine) return;
-    setOpenPanels((current) => (current.includes('search') ? current : [...current, 'search']));
-    setCollapsedPanels((current) => current.filter((kind) => kind !== 'search'));
+    setNavigatorTab('search');
     setFindFocusRequest((current) => current + 1);
   }, [engine]);
 
@@ -465,88 +422,29 @@ export default function EditorShell({
     searchInputRef.current?.focus();
   }, [findFocusRequest]);
 
-  const choosePanel = useCallback(
+  const showPanel = useCallback(
     (kind: PanelKind) => {
       if (!engine && kind !== 'capabilities') {
         if (loading) {
           pendingPanelRef.current = kind;
-          return;
+        } else {
+          setNotice(
+            `Open a PDF to use ${PANEL_TOOLS.find((tool) => tool.kind === kind)?.label}.`,
+          );
         }
-        setNotice(
-          `Open a PDF to use ${PANEL_TOOLS.find((tool) => tool.kind === kind)?.label}.`,
-        );
         return;
       }
-      setOpenPanels((current) =>
-        current.includes(kind)
-          ? current.filter((candidate) => candidate !== kind)
-          : [...current, kind],
-      );
-      setCollapsedPanels((current) => current.filter((candidate) => candidate !== kind));
+      setSelectionAction(null);
+      setActivePanel(kind);
     },
     [engine, loading],
   );
 
-  const showPanel = useCallback((kind: PanelKind) => {
-    setOpenPanels((current) => (current.includes(kind) ? current : [...current, kind]));
-    setCollapsedPanels((current) => current.filter((candidate) => candidate !== kind));
-  }, []);
-
-  const closePanel = useCallback((kind: PanelKind) => {
-    setOpenPanels((current) => current.filter((candidate) => candidate !== kind));
-    setCollapsedPanels((current) => current.filter((candidate) => candidate !== kind));
-    requestAnimationFrame(() => panelButtonRefs.current.get(kind)?.focus());
-  }, []);
-
   const closeAllPanels = useCallback(() => {
-    setOpenPanels([]);
-    setCollapsedPanels([]);
-    requestAnimationFrame(() => panelButtonRefs.current.get('pages')?.focus());
+    setActivePanel(null);
+    setSelectionAction(null);
+    requestAnimationFrame(() => viewportRef.current?.focus());
   }, []);
-
-  const startPanelResize = useCallback(
-    (kind: PanelKind, event: ReactPointerEvent<HTMLElement>) => {
-      event.preventDefault();
-      const startX = event.clientX;
-      const startWidth = panelWidths[kind] ?? 304;
-      const onMove = (moveEvent: PointerEvent) => {
-        const width = Math.min(480, Math.max(260, startWidth + startX - moveEvent.clientX));
-        setPanelWidths((current) => ({ ...current, [kind]: width }));
-      };
-      const finish = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', finish);
-        window.removeEventListener('pointercancel', finish);
-      };
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', finish, { once: true });
-      window.addEventListener('pointercancel', finish, { once: true });
-    },
-    [panelWidths],
-  );
-
-  const resizePanelFromKeyboard = useCallback(
-    (kind: PanelKind, event: ReactKeyboardEvent<HTMLElement>) => {
-      const currentWidth = panelWidths[kind] ?? 304;
-      const nextWidth =
-        event.key === 'ArrowLeft'
-          ? currentWidth + 16
-          : event.key === 'ArrowRight'
-            ? currentWidth - 16
-            : event.key === 'Home'
-              ? 260
-              : event.key === 'End'
-                ? 480
-                : null;
-      if (nextWidth === null) return;
-      event.preventDefault();
-      setPanelWidths((current) => ({
-        ...current,
-        [kind]: Math.min(480, Math.max(260, nextWidth)),
-      }));
-    },
-    [panelWidths],
-  );
 
   const openFile = useCallback(
     async (
@@ -592,17 +490,8 @@ export default function EditorShell({
         const panelLayout = loadPanelLayout(nextEngine.info.name);
         const pendingPanel = pendingPanelRef.current;
         pendingPanelRef.current = null;
-        setOpenPanels(
-          pendingPanel && !panelLayout.open.includes(pendingPanel)
-            ? [...panelLayout.open, pendingPanel]
-            : panelLayout.open,
-        );
-        setCollapsedPanels(
-          pendingPanel
-            ? panelLayout.collapsed.filter((kind) => kind !== pendingPanel)
-            : panelLayout.collapsed,
-        );
-        setPanelWidths(panelLayout.widths);
+        setActivePanel(pendingPanel ?? panelLayout.active);
+        setNavigatorTab(panelLayout.navigator);
         setPanelLayoutKey(panelLayout.key);
         if (panelLayout.error) setNotice(panelLayout.error);
         setPendingPasswordOpen(null);
@@ -776,8 +665,8 @@ export default function EditorShell({
       zoomOut: () => viewportRef.current?.zoomBy(1 / 1.2),
       actualSize: () => viewportRef.current?.resetZoom(),
       fitWidth: () => viewportRef.current?.fitWidth(),
-      pages: () => showPanel('pages'),
-      outline: () => showPanel('outline'),
+      pages: () => setNavigatorTab('pages'),
+      outline: () => setNavigatorTab('outline'),
       comments: () => showPanel('comments'),
       organize: () => showPanel('organize'),
       forms: () => showPanel('forms'),
@@ -864,6 +753,13 @@ export default function EditorShell({
           resetTool();
           return;
         }
+        if (selectionAction || activePanel) {
+          event.preventDefault();
+          setSelectionAction(null);
+          setActivePanel(null);
+          viewportRef.current?.focus();
+          return;
+        }
         if (
           target instanceof Element &&
           target.closest(
@@ -927,11 +823,13 @@ export default function EditorShell({
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [
+    activePanel,
     activeTool,
     commandContext,
     engine,
     paletteOpen,
     resetTool,
+    selectionAction,
     selectTool,
     shortcutRemapping,
     showPanel,
@@ -1166,28 +1064,81 @@ export default function EditorShell({
         </div>
       </header>
 
-      <main
-        className={`workspace${openPanels.length > 0 ? ' panels-visible' : ''}`}
-        aria-busy={loading}
-      >
-        <nav aria-label="Tools" className="tool-rail">
-          {PANEL_TOOLS.map(({ kind, label, icon: Icon }) => (
-            <button
-              ref={(element) => {
-                if (element) panelButtonRefs.current.set(kind, element);
-                else panelButtonRefs.current.delete(kind);
-              }}
-              type="button"
-              key={kind}
-              className={openPanels.includes(kind) ? 'active' : ''}
-              aria-pressed={openPanels.includes(kind)}
-              onClick={() => choosePanel(kind)}
-            >
-              <Icon aria-hidden="true" size={18} />
-              <span>{label}</span>
-            </button>
-          ))}
-        </nav>
+      <nav aria-label="PDF tools" className="command-bar">
+        <button
+          type="button"
+          className={activePanel === 'markup' ? 'active' : ''}
+          onClick={() => showPanel('markup')}
+        >
+          <ToolIcon name="edit" size={16} />
+          <span>Edit Text and Images</span>
+        </button>
+        <button
+          type="button"
+          className={activePanel === 'markup' ? 'active' : ''}
+          onClick={() => {
+            selectTool('note');
+            showPanel('markup');
+          }}
+        >
+          <ToolIcon name="comment" size={16} />
+          <span>Comment</span>
+        </button>
+        <button
+          type="button"
+          className={activePanel === 'markup' ? 'active' : ''}
+          onClick={() => {
+            selectTool('redaction-mark');
+            showPanel('markup');
+          }}
+        >
+          <ToolIcon name="redact" size={16} />
+          <span>Redact</span>
+        </button>
+        {PANEL_TOOLS.filter(({ kind }) => kind !== 'markup').map(({ kind, label, icon }) => (
+          <button
+            ref={(element) => {
+              if (element) panelButtonRefs.current.set(kind, element);
+              else panelButtonRefs.current.delete(kind);
+            }}
+            type="button"
+            key={kind}
+            className={activePanel === kind ? 'active' : ''}
+            aria-pressed={activePanel === kind}
+            onClick={() => showPanel(kind)}
+          >
+            <ToolIcon name={icon} size={16} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <main className="workspace" aria-busy={loading}>
+        <aside className="navigator-rail" aria-label="Navigator">
+          {engine ? (
+            <DocumentNavigator
+              tab={navigatorTab}
+              onTabChange={setNavigatorTab}
+              engine={engine}
+              searchInputRef={searchInputRef}
+              onNavigate={(pageIndex) => viewportRef.current?.goToPage(pageIndex)}
+              onSearchHit={onSearchHit}
+              onMutation={onMutation}
+              onOutput={onOutput}
+              onRotateView={(degrees) => viewportRef.current?.rotateView(degrees)}
+              commands={commands}
+              onError={setError}
+              onNotice={setNotice}
+            />
+          ) : (
+            <div className="navigator-empty">
+              <span className="eyebrow">Navigator</span>
+              <p>
+                Open a PDF to browse thumbnails, bookmarks, attachments, and search results.
+              </p>
+            </div>
+          )}
+        </aside>
 
         <section
           id="document-pane"
@@ -1253,104 +1204,57 @@ export default function EditorShell({
           )}
         </section>
 
-        {openPanels.length > 0 ? (
-          <aside className="panel-dock" aria-label="Open contextual panels">
-            {openPanels.map((kind) => {
-              const collapsed = collapsedPanels.includes(kind);
-              const label = PANEL_TOOLS.find((tool) => tool.kind === kind)?.label ?? kind;
-              return (
-                <section
-                  className="panel-frame"
-                  data-collapsed={collapsed}
-                  key={`${documentEpoch}-${kind}`}
-                  style={{ width: `${panelWidths[kind] ?? 304}px` }}
-                >
-                  <div
-                    role="separator"
-                    tabIndex={0}
-                    className="panel-resize-handle"
-                    aria-label={`Resize ${label} panel`}
-                    aria-orientation="vertical"
-                    aria-valuemin={260}
-                    aria-valuemax={480}
-                    aria-valuenow={panelWidths[kind] ?? 304}
-                    onPointerDown={(event) => startPanelResize(kind, event)}
-                    onKeyDown={(event) => resizePanelFromKeyboard(kind, event)}
-                  />
-                  <header className="panel-chrome">
-                    <strong>{label}</strong>
-                    <span>
-                      <DesignedTooltip
-                        label={`${collapsed ? 'Expand' : 'Collapse'} ${label} panel`}
-                      >
-                        <button
-                          type="button"
-                          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${label} panel`}
-                          onClick={() =>
-                            setCollapsedPanels((current) =>
-                              current.includes(kind)
-                                ? current.filter((candidate) => candidate !== kind)
-                                : [...current, kind],
-                            )
-                          }
-                        >
-                          {collapsed ? (
-                            <ChevronDown aria-hidden="true" size={16} />
-                          ) : (
-                            <ChevronUp aria-hidden="true" size={16} />
-                          )}
-                        </button>
-                      </DesignedTooltip>
-                      <DesignedTooltip label={`Close ${label} panel`}>
-                        <button
-                          type="button"
-                          aria-label={`Close ${label} panel`}
-                          onClick={() => closePanel(kind)}
-                        >
-                          <X aria-hidden="true" size={16} />
-                        </button>
-                      </DesignedTooltip>
-                    </span>
-                  </header>
-                  {!collapsed ? (
-                    engine ? (
-                      <DocumentPanel
-                        kind={kind}
-                        label={label}
-                        engine={engine}
-                        searchInputRef={searchInputRef}
-                        onNavigate={(pageIndex) => viewportRef.current?.goToPage(pageIndex)}
-                        onSearchHit={onSearchHit}
-                        onMutation={onMutation}
-                        onOutput={onOutput}
-                        onRotateView={(degrees) => viewportRef.current?.rotateView(degrees)}
-                        commands={commands}
-                        onError={setError}
-                        onNotice={setNotice}
-                      />
-                    ) : kind === 'capabilities' ? (
-                      <aside className="context-panel" aria-label="capabilities panel">
-                        <CapabilitiesPanel />
-                      </aside>
-                    ) : null
-                  ) : null}
-                </section>
-              );
-            })}
-          </aside>
-        ) : null}
+        <aside className="contextual-rail" aria-label="Contextual properties">
+          {engine && (selectionAction || activePanel) ? (
+            <header className="contextual-rail-header">
+              <span className="eyebrow">
+                {selectionAction ? 'Current selection' : 'Active tool'}
+              </span>
+              <button type="button" aria-label="Close contextual rail" onClick={closeAllPanels}>
+                Close
+              </button>
+            </header>
+          ) : null}
+          {engine && selectionAction ? (
+            <SelectionActionBar
+              engine={engine}
+              action={selectionAction}
+              onMutation={onMutation}
+              onClose={() => setSelectionAction(null)}
+              onError={setError}
+              onNotice={setNotice}
+            />
+          ) : engine && activePanel ? (
+            <DocumentPanel
+              key={`${documentEpoch}-${activePanel}`}
+              kind={activePanel}
+              label={
+                PANEL_TOOLS.find((tool) => tool.kind === activePanel)?.label ?? activePanel
+              }
+              engine={engine}
+              searchInputRef={searchInputRef}
+              onNavigate={(pageIndex) => viewportRef.current?.goToPage(pageIndex)}
+              onSearchHit={onSearchHit}
+              onMutation={onMutation}
+              onOutput={onOutput}
+              onRotateView={(degrees) => viewportRef.current?.rotateView(degrees)}
+              commands={commands}
+              onError={setError}
+              onNotice={setNotice}
+            />
+          ) : (
+            <div className="contextual-empty">
+              <span className="eyebrow">Properties</span>
+              <h2>{engine ? 'Ready for selection' : 'Open a PDF'}</h2>
+              <p>
+                {engine
+                  ? 'Select text or choose a tool to see only the properties relevant to your current task.'
+                  : 'Your document viewport stays central. Its contextual properties appear here when a PDF is open.'}
+              </p>
+            </div>
+          )}
+        </aside>
       </main>
-
-      {engine && selectionAction ? (
-        <SelectionActionBar
-          engine={engine}
-          action={selectionAction}
-          onMutation={onMutation}
-          onClose={() => setSelectionAction(null)}
-          onError={setError}
-          onNotice={setNotice}
-        />
-      ) : null}
 
       <footer className="status-bar" aria-label="Document status">
         {engine ? (
@@ -1395,14 +1299,14 @@ export default function EditorShell({
             <output ref={analysisStatusRef} aria-label="Analysis scope">
               Analysis pending
             </output>
-            {openPanels.length > 0 ? (
-              <DesignedTooltip label="Close contextual panels">
+            {activePanel || selectionAction ? (
+              <DesignedTooltip label="Close contextual rail">
                 <button
                   type="button"
-                  aria-label="Close contextual panels"
+                  aria-label="Close contextual rail"
                   onClick={closeAllPanels}
                 >
-                  <PanelRightClose aria-hidden="true" size={15} />
+                  <PanelTop aria-hidden="true" size={15} />
                 </button>
               </DesignedTooltip>
             ) : null}

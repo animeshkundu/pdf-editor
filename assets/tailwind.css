@@ -111,6 +111,48 @@
   --thumbnail-row-height: 232px;
   --control-radius: 8px;
   --panel-radius: 12px;
+  --type-caption: 0.75rem;
+  --type-label: 0.8125rem;
+  --type-body: 0.9375rem;
+  --type-title: 1.125rem;
+  --type-heading: 1.375rem;
+  --type-display: 1.875rem;
+  --line-caption: 1.3;
+  --line-body: 1.5;
+  --line-heading: 1.2;
+  --space-500: 32px;
+  --space-600: 48px;
+  --elevation-rail: 0 1px 2px rgb(12 14 18 / 0.08);
+  --elevation-panel: 0 8px 24px rgb(12 14 18 / 0.1);
+  --elevation-float: 0 12px 32px rgb(12 14 18 / 0.16);
+  --elevation-dialog: 0 20px 48px rgb(12 14 18 / 0.22);
+  --content-primary: var(--text-primary);
+  --content-secondary: var(--text-secondary);
+  --content-disabled: var(--text-disabled);
+  --content-on-accent: var(--text-on-accent);
+  --accent: var(--accent-fill);
+  --accent-hover: var(--accent-fill-hover);
+  --accent-content: var(--accent-text);
+  --status-positive-surface: var(--success-surface);
+  --status-positive-content: var(--success-text);
+  --status-warning-surface: var(--warning-surface);
+  --status-warning-content: var(--warning-text);
+  --status-danger-surface: var(--danger-surface);
+  --status-danger-content: var(--danger-text);
+  --status-info-surface: var(--info-surface);
+  --status-info-content: var(--info-text);
+  --state-hover: var(--surface-hover);
+  --state-selected: var(--surface-selected);
+  --state-active: var(--accent-surface);
+  --state-disabled: var(--surface-disabled);
+  --annotation-stroke: var(--accent-fill);
+  --annotation-fill: var(--accent-surface);
+  --color-choice-ink: var(--text-primary);
+  --color-choice-accent: var(--accent-fill);
+  --color-choice-danger: var(--danger-text);
+  --color-choice-warning: var(--warning-text);
+  --color-choice-positive: var(--success-text);
+  --color-choice-paper: var(--page-paper);
 
   /* Density: one name, three values. Set data-density on <html>. */
   --space-25: 1px;
@@ -137,6 +179,8 @@
   --space-200: 8px;
   --space-300: 12px;
   --space-400: 16px;
+  --space-500: 24px;
+  --space-600: 32px;
   --row-height: 32px;
   --control-height: 26px;
   --rail-width: 48px;
@@ -148,6 +192,8 @@
   --space-200: 16px;
   --space-300: 20px;
   --space-400: 32px;
+  --space-500: 40px;
+  --space-600: 56px;
   --row-height: 48px;
   --control-height: 44px;
   --rail-width: 64px;
@@ -195,7 +241,13 @@
   --status-excluded: var(--danger-text);
   --status-open: var(--color-ink-300);
   --page-shadow: 0 1px 3px rgb(0 0 0 / 0.5), 0 8px 24px rgb(0 0 0 / 0.4);
+  --elevation-rail: 0 1px 2px rgb(0 0 0 / 0.36);
+  --elevation-panel: 0 8px 24px rgb(0 0 0 / 0.32);
+  --elevation-float: 0 12px 32px rgb(0 0 0 / 0.42);
+  --elevation-dialog: 0 20px 48px rgb(0 0 0 / 0.58);
   --surface-overlay: rgb(12 14 18 / 0.72);
+  --annotation-stroke: var(--accent-text);
+  --annotation-fill: var(--accent-surface);
   /* --page-paper stays white: the PDF's own media box defines the paper, and
      tinting it would misrepresent the document. An explicit night-reading filter
      is a separate, opt-in view mode. */
@@ -2630,4 +2682,402 @@ button:disabled {
   :focus-visible {
     outline: 2px solid Highlight;
   }
+}
+
+/* Acrobat-familiar application frame: a permanent Navigator, a command strip, and one
+   contextual rail keep the document visually central without floating chrome over it. */
+.editor-shell {
+  grid-template-rows: var(--row-height) var(--row-height) minmax(0, 1fr) var(--status-height);
+}
+
+.command-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-50);
+  min-width: 0;
+  overflow-x: auto;
+  padding-inline: var(--space-200);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  box-shadow: var(--elevation-rail);
+}
+
+.command-bar button {
+  display: inline-flex;
+  min-height: var(--control-height);
+  align-items: center;
+  gap: var(--space-50);
+  flex: 0 0 auto;
+  padding-inline: var(--space-100);
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--type-label);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.command-bar button:hover:not(:disabled),
+.command-bar button.active {
+  border-color: var(--border-subtle);
+  background: var(--state-active);
+  color: var(--accent-text);
+}
+
+.workspace {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(13rem, 18rem) minmax(0, 1fr) minmax(18rem, 24rem);
+  background: var(--surface-canvas);
+}
+
+.navigator-rail,
+.contextual-rail {
+  min-width: 0;
+  overflow: auto;
+  background: var(--surface-chrome);
+}
+
+.navigator-rail {
+  border-inline-end: 1px solid var(--border-subtle);
+}
+
+.contextual-rail {
+  border-inline-start: 1px solid var(--border-subtle);
+}
+
+.navigator-panel,
+.contextual-empty,
+.navigator-empty,
+.selection-properties {
+  padding: var(--space-200);
+}
+
+.navigator-header,
+.contextual-rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-100);
+  padding: var(--space-200);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+.navigator-header {
+  padding-bottom: var(--space-100);
+  border: 0;
+  background: transparent;
+}
+
+.navigator-header h2,
+.contextual-empty h2,
+.selection-properties h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--type-title);
+  line-height: 1.2;
+}
+
+.navigator-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-50);
+  padding: 0 var(--space-200) var(--space-100);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.navigator-tabs button {
+  min-width: 0;
+  min-height: var(--control-height);
+  padding-inline: var(--space-50);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--type-caption);
+  font-weight: 700;
+}
+
+.navigator-tabs button[aria-selected='true'] {
+  border-color: var(--accent-fill);
+  color: var(--accent-text);
+}
+
+.navigator-content {
+  min-height: 0;
+  padding: var(--space-200);
+}
+
+.navigator-content .panel-heading {
+  display: none;
+}
+
+.contextual-rail-header {
+  position: sticky;
+  z-index: 2;
+  inset-block-start: 0;
+}
+
+.contextual-rail-header button,
+.selection-properties .icon-control {
+  min-height: var(--control-height);
+  padding-inline: var(--space-100);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-chrome);
+  color: var(--text-secondary);
+  font-size: var(--type-caption);
+}
+
+.contextual-empty,
+.navigator-empty {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.contextual-empty p,
+.navigator-empty p,
+.selection-summary {
+  margin: var(--space-100) 0 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.selection-summary {
+  padding: var(--space-100);
+  border-inline-start: 2px solid var(--accent-fill);
+  background: var(--accent-surface);
+  color: var(--text-primary);
+  font-size: var(--type-label);
+}
+
+.selection-properties {
+  display: grid;
+  gap: var(--space-100);
+}
+
+.selection-properties [role='toolbar'] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-100);
+}
+
+.selection-properties button:not(.icon-control) {
+  display: inline-flex;
+  min-height: var(--control-height);
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-100);
+  padding: var(--space-100);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--control-radius);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+@media (max-width: 900px) {
+  .editor-shell {
+    grid-template-rows: auto var(--row-height) minmax(0, 1fr) var(--status-height);
+  }
+
+  .workspace {
+    grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(14rem, 20rem);
+  }
+
+  .contextual-rail {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--border-subtle);
+    border-inline-start: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .editor-shell {
+    grid-template-rows: auto auto minmax(0, 1fr) var(--status-height);
+  }
+
+  .command-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-block: var(--space-50);
+    overflow: visible;
+  }
+
+  .command-bar button {
+    min-width: 0;
+    justify-content: flex-start;
+    padding-inline: var(--space-100);
+    overflow: hidden;
+  }
+
+  .command-bar button > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(11rem, 16rem) minmax(0, 1fr) minmax(14rem, 20rem);
+  }
+
+  .navigator-rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .contextual-rail {
+    grid-column: auto;
+  }
+}
+
+/* Shared product treatment. Tool-specific classes only select a semantic accent; no panel
+   carries a palette or density decision of its own. */
+.product-viewport {
+  box-shadow: inset 0 0 0 1px var(--border-subtle);
+}
+
+.product-overlay,
+.product-dialog {
+  box-shadow: var(--elevation-dialog);
+}
+
+.product-entry {
+  padding: var(--space-200);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--panel-radius);
+  background: var(--surface-raised);
+}
+
+.product-control:focus-visible,
+.product-status:focus-visible {
+  outline-color: var(--focus-ring);
+}
+
+.product-status {
+  letter-spacing: 0.07em;
+}
+
+.tool-panel {
+  display: grid;
+  gap: var(--space-200);
+  --tool-accent: var(--accent);
+}
+
+.tool-panel > .panel-heading {
+  position: relative;
+  padding-block-end: var(--space-200);
+  margin: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tool-panel > .panel-heading::after {
+  position: absolute;
+  width: var(--space-500);
+  height: 2px;
+  inset-block-end: -1px;
+  inset-inline-start: 0;
+  background: var(--tool-accent);
+  content: '';
+}
+
+.tool-panel > .panel-heading h2 {
+  font-size: var(--type-heading);
+  line-height: var(--line-heading);
+}
+
+.tool-panel-comment {
+  --tool-accent: var(--accent);
+}
+
+.tool-panel-pages {
+  --tool-accent: var(--status-info-content);
+}
+
+.tool-panel-sign {
+  --tool-accent: var(--status-positive-content);
+}
+
+.tool-panel-protect {
+  --tool-accent: var(--status-danger-content);
+}
+
+.tool-panel-compare,
+.tool-panel-convert {
+  --tool-accent: var(--status-warning-content);
+}
+
+.tool-panel-accessibility,
+.tool-panel-print,
+.tool-panel-automation,
+.tool-panel-history {
+  --tool-accent: var(--accent-content);
+}
+
+.tool-panel .workflow-card,
+.tool-panel .result-preview,
+.tool-panel .warning-card,
+.tool-panel .sanitize-card,
+.tool-panel .property-drawer,
+.tool-panel .annotation-inspector,
+.tool-panel .comment-inspector {
+  box-shadow: var(--elevation-rail);
+}
+
+.tool-panel .primary-action {
+  border-color: var(--tool-accent);
+  background: var(--tool-accent);
+}
+
+.tool-panel .primary-action:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.contextual-rail {
+  box-shadow: var(--elevation-rail);
+}
+
+.navigator-rail {
+  box-shadow: var(--elevation-rail);
+}
+
+.contextual-empty {
+  display: grid;
+  align-content: start;
+  gap: var(--space-100);
+}
+
+.contextual-empty::before {
+  display: grid;
+  width: calc(var(--control-height) * 1.5);
+  height: calc(var(--control-height) * 1.5);
+  place-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--panel-radius);
+  background: var(--surface-raised);
+  color: var(--accent-content);
+  content: '⌁';
+  font-size: var(--type-title);
+}
+
+.command-palette .palette-header {
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+.command-palette .palette-results button[aria-selected='true'] {
+  background: var(--state-selected);
+  color: var(--accent-content);
+}
+
+.password-dialog .dialog-error {
+  padding: var(--space-100);
+  border-inline-start: 2px solid var(--danger-border);
+  background: var(--status-danger-surface);
+  color: var(--status-danger-content);
 }

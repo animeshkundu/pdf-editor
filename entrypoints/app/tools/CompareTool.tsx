@@ -118,7 +118,7 @@ export default function CompareTool({
   };
 
   return (
-    <section className="tool-panel" aria-label="Compare documents">
+    <section className="tool-panel tool-panel-compare" aria-label="Compare documents">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">Local review</span>

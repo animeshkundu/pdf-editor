@@ -33,8 +33,8 @@ test('CONV-017 and CONV-019 run bundled OCR lazily and produce an independent-re
 
   await page.getByLabel('Open PDF').setInputFiles(fixture);
   await expect(page.locator('canvas.pdf-tile').first()).toBeVisible({ timeout: 20_000 });
-  await page.getByRole('button', { name: 'Convert', exact: true }).click();
-  const convert = page.getByRole('region', { name: 'Convert and validate' });
+  await page.getByRole('button', { name: 'Convert and OCR', exact: true }).click();
+  const convert = page.getByRole('region', { name: 'Convert and OCR' });
   await expect(convert).toContainText('bundled Tesseract LSTM engine');
   await convert.getByRole('button', { name: 'Recognize current page' }).click();
 
