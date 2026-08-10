@@ -656,7 +656,9 @@ test('uses designed controls with density-aware target sizes on every panel', as
   expect(optionBox?.height ?? 0).toBeGreaterThanOrEqual(44);
   await option.click();
   await markup.getByRole('button', { name: /^Fill colour:/ }).click();
-  const swatch = page.getByRole('button', { name: 'Use #3853d8' });
+  const swatch = page
+    .getByLabel('Fill colour choices')
+    .getByRole('button', { name: 'Use Accent', exact: true });
   const swatchBox = await swatch.boundingBox();
   expect(swatchBox?.width ?? 0).toBeGreaterThanOrEqual(44);
   expect(swatchBox?.height ?? 0).toBeGreaterThanOrEqual(44);
