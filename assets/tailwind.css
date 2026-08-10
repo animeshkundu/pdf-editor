@@ -1191,21 +1191,67 @@ button:disabled {
 
 .outline-tree ul {
   padding-inline-start: var(--space-200);
-  border-inline-start: 1px solid var(--border-subtle);
+  border-inline-start: var(--focus-ring-width) solid var(--border-subtle);
 }
 
-.outline-tree button {
+.outline-tree ul ul ul ul {
+  padding-inline-start: var(--space-100);
+}
+
+.outline-tree [role='treeitem'] {
   width: 100%;
-  justify-content: flex-start;
-  padding: var(--space-100);
-  border: 0;
   border-radius: var(--control-radius);
-  background: transparent;
+  color: var(--text-primary);
+  cursor: default;
+}
+
+.outline-tree [role='treeitem']:hover > .outline-tree-row {
+  background: var(--surface-hover);
+}
+
+.outline-tree [role='treeitem'][aria-current='location'] > .outline-tree-row {
+  box-shadow: inset var(--space-50) 0 0 var(--focus-ring);
+  background: var(--surface-selected);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.outline-tree [role='treeitem'][data-current-ancestor='true'] > .outline-tree-row {
+  background: var(--accent-surface);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.outline-tree [role='treeitem'][aria-disabled='true'] > .outline-tree-row {
+  color: var(--text-disabled);
+}
+
+.outline-tree-row {
+  display: flex;
+  min-height: var(--row-height);
+  align-items: center;
+  gap: var(--space-50);
+  padding: var(--space-100);
+  border-radius: var(--control-radius);
   text-align: start;
 }
 
-.outline-tree button:hover:not(:disabled) {
-  background: var(--surface-raised);
+.outline-tree-toggle,
+.outline-tree-spacer {
+  display: inline-flex;
+  width: var(--control-height);
+  flex: 0 0 var(--control-height);
+  align-items: center;
+  justify-content: center;
+}
+
+.outline-tree [role='treeitem'][aria-expanded='true'] > .outline-tree-row .outline-tree-toggle {
+  transform: rotate(90deg);
+}
+
+.outline-tree-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .attachment-list li {

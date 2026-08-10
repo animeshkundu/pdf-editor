@@ -12,6 +12,8 @@ Nothing has been released yet. The repository is at `0.0.0`.
 
 ### Added
 
+- PDF outline navigation with a collapsible keyboard-operable tree, scroll-following current
+  section, isolated malformed destinations, and a clear no-bookmarks state.
 - A shareable zero-JavaScript landing page with real dual-theme product captures, an inspectable
   document data path, factual hosted-editor comparison, honest boundaries, and native FAQ.
 - A manifest-digest-versioned same-origin service worker that precaches the app shell and MuPDF,

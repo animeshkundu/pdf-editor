@@ -267,10 +267,11 @@ function readOutlineLevel(iterator: mupdf.OutlineIterator): OutlineNode[] {
       pageIndex = resolved >= 0 ? resolved : null;
     }
     let children: OutlineNode[] = [];
-    if (iterator.down() === mupdf.OutlineIterator.ITERATOR_AT_ITEM) {
+    const childState = iterator.down();
+    if (childState === mupdf.OutlineIterator.ITERATOR_AT_ITEM) {
       children = readOutlineLevel(iterator);
-      iterator.up();
     }
+    if (childState !== mupdf.OutlineIterator.ITERATOR_DID_NOT_MOVE) iterator.up();
     nodes.push({
       title: item.title || 'Untitled bookmark',
       pageIndex,

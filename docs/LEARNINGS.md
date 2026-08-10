@@ -18,6 +18,16 @@ to do next time.
 - Development happens on Windows; CI runs on Linux. `.gitattributes` normalises line
   endings to LF because the WASM freshness gate compares bytes.
 
+## 2026-08-10: subscribe to viewport semantics, never viewport motion
+
+- **Context.** The document outline must follow the reader as the current page changes, while
+  scrolling itself remains outside React.
+- **What happened.** The viewport store writes scroll offsets on every scroll event, but writes the
+  current page only when a page boundary is crossed. A whole-store subscription would therefore
+  turn continuous scrolling into React rendering.
+- **What to do next time.** Subscribe UI state to the narrow semantic selector it needs, such as
+  `currentPage`, and keep raw scroll-position updates on the imperative render path.
+
 ## 2026-08-03: cache existence is not installation completeness
 
 - **Context.** The offline worker used the existence of its versioned cache as proof that

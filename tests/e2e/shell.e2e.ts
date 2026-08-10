@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,10 +15,28 @@ const scanFixture = fileURLToPath(
 const outlineFixture = fileURLToPath(
   new URL('../fixtures/pdf-corpus/ocg-acrobat.pdf', import.meta.url),
 );
+const nestedOutlineFixture = fileURLToPath(
+  new URL('../fixtures/pdf-corpus/nested-outline.pdf', import.meta.url),
+);
+const previewDirectory = join(process.cwd(), '.factory-preview');
 const encryptedWorkDir = mkdtempSync(join(tmpdir(), 'pdf-editor-e2e-encrypted-'));
 const encryptedFixture = join(encryptedWorkDir, 'protected.pdf');
 const ownerOnlyFixture = join(encryptedWorkDir, 'owner-only.pdf');
 const rc4Fixture = join(encryptedWorkDir, 'rc4.pdf');
+
+async function expandToDeepDetail(page: Page) {
+  let current = page.getByRole('treeitem', { name: 'Part One' });
+  await current.focus();
+  for (const childName of ['Chapter One', 'Section One', 'Deep Topic', 'Deep Detail']) {
+    await current.press('ArrowRight');
+    await expect(current).toHaveAttribute('aria-expanded', 'true');
+    await current.press('ArrowRight');
+    const child = page.getByRole('treeitem', { name: childName });
+    await expect(child).toBeFocused();
+    current = child;
+  }
+  return current;
+}
 
 test.beforeAll(() => {
   const setup = spawnSync(process.execPath, ['scripts/setup-qpdf.mjs', '--print-path'], {
@@ -138,6 +156,121 @@ test('keyboard focus reaches the overflow menu and icon tooltips', async ({ page
   const tooltip = page.getByRole('tooltip');
   await expect(tooltip).toBeVisible();
   await expect(tooltip).toContainText('Zoom out');
+});
+
+test('VIEW-021 navigates a nested PDF outline and keeps Pages as a sibling panel', async ({
+  page,
+}) => {
+  await page.goto('/pdf/app/');
+  await page.getByLabel('Open PDF').setInputFiles(nestedOutlineFixture);
+  await expect(page.locator('canvas.pdf-tile').first()).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole('button', { name: 'Outline', exact: true }).click();
+  await expect(page.getByRole('complementary', { name: 'Pages panel' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Outline panel' })).toBeVisible();
+  const rootItems = page.locator('.outline-tree > [role="treeitem"]');
+  await expect(rootItems).toHaveCount(3);
+  await expect(rootItems.nth(0)).toContainText('Introduction');
+  await expect(rootItems.nth(1)).toContainText('Part One');
+  await expect(rootItems.nth(2)).toContainText('Appendix');
+
+  const detail = await expandToDeepDetail(page);
+  await detail.press('Enter');
+  await expect(detail).toHaveAttribute('aria-current', 'location');
+  await expect
+    .poll(() => page.getByLabel('Document pages').evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(0);
+  await expect(page.getByRole('status', { name: 'Current page', exact: true })).toHaveText(
+    '3 / 4',
+  );
+  await expect(page.getByRole('treeitem', { name: 'Deep Detail' })).toHaveAttribute(
+    'aria-current',
+    'location',
+  );
+  await expect(page.getByRole('treeitem', { name: 'Deep Detail' })).toBeFocused();
+
+  await page.getByLabel('Document pages').evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    element.dispatchEvent(new Event('scroll'));
+  });
+  await expect(page.getByRole('status', { name: 'Current page', exact: true })).toHaveText(
+    '4 / 4',
+  );
+  await expect(page.getByRole('treeitem', { name: 'Appendix' })).toHaveAttribute(
+    'aria-current',
+    'location',
+  );
+  await page.getByRole('treeitem', { name: 'Introduction' }).click();
+  await expect(page.getByRole('status', { name: 'Current page', exact: true })).toHaveText(
+    '1 / 4',
+  );
+
+  await page.getByLabel('Open PDF').setInputFiles(taggedFixture);
+  await expect(
+    page.getByText('distiller-tagged-linearized.pdf', { exact: true }),
+  ).toBeAttached();
+  await page.getByRole('button', { name: 'Outline', exact: true }).click();
+  await expect(page.getByText('This document has no bookmarks.')).toBeVisible();
+});
+
+test('captures VIEW-021 outline states across themes and densities', async ({
+  page,
+  browserName,
+}) => {
+  if (browserName === 'chromium') mkdirSync(previewDirectory, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 1200 });
+  await page.goto('/pdf/app/');
+  await page.getByLabel('Open PDF').setInputFiles(nestedOutlineFixture);
+  await expect(page.locator('canvas.pdf-tile').first()).toBeVisible({ timeout: 15_000 });
+  await page.getByRole('button', { name: 'Outline', exact: true }).click();
+
+  await expandToDeepDetail(page);
+
+  for (const density of ['compact', 'comfortable', 'touch'] as const) {
+    await page.getByRole('combobox', { name: 'Interface density' }).click();
+    await page.getByRole('option', { name: new RegExp(density, 'i') }).click();
+    for (const theme of ['light', 'dark'] as const) {
+      const shell = page.locator('.editor-shell');
+      if ((await shell.getAttribute('data-theme')) !== theme) {
+        await page
+          .getByRole('button', {
+            name: theme === 'dark' ? 'Use dark theme' : 'Use light theme',
+          })
+          .click();
+      }
+      if (browserName === 'chromium') {
+        await page.getByRole('complementary', { name: 'Outline panel' }).screenshot({
+          path: join(previewDirectory, `outline-${density}-${theme}-deep.png`),
+        });
+      }
+    }
+  }
+
+  await page.getByLabel('Open PDF').setInputFiles(taggedFixture);
+  await expect(
+    page.getByText('distiller-tagged-linearized.pdf', { exact: true }),
+  ).toBeAttached();
+  await page.getByRole('button', { name: 'Outline', exact: true }).click();
+  await expect(page.getByText('This document has no bookmarks.')).toBeVisible();
+  for (const density of ['compact', 'comfortable', 'touch'] as const) {
+    await page.getByRole('combobox', { name: 'Interface density' }).click();
+    await page.getByRole('option', { name: new RegExp(density, 'i') }).click();
+    for (const theme of ['light', 'dark'] as const) {
+      const shell = page.locator('.editor-shell');
+      if ((await shell.getAttribute('data-theme')) !== theme) {
+        await page
+          .getByRole('button', {
+            name: theme === 'dark' ? 'Use dark theme' : 'Use light theme',
+          })
+          .click();
+      }
+      if (browserName === 'chromium') {
+        await page.getByRole('complementary', { name: 'Outline panel' }).screenshot({
+          path: join(previewDirectory, `outline-${density}-${theme}-empty.png`),
+        });
+      }
+    }
+  }
 });
 
 test('SIGN-018 opens a protected PDF after a wrong-password retry', async ({ page }) => {
@@ -345,8 +478,8 @@ test('opens and renders a PDF through the production worker and WASM build', asy
 
   await page.getByLabel('Open PDF').setInputFiles(outlineFixture);
   await expect(page.getByText('ocg-acrobat.pdf', { exact: true })).toBeAttached();
-  await page.getByRole('button', { name: 'Outline' }).click();
-  await expect(page.getByRole('button', { name: 'Leere Seite' })).toBeVisible();
+  await page.getByRole('button', { name: 'Outline', exact: true }).click();
+  await expect(page.getByRole('treeitem', { name: 'Leere Seite' })).toBeVisible();
 
   await page.getByLabel('Open PDF').setInputFiles(scanFixture);
   await expect(page.getByText('12 pages · LOCAL')).toBeAttached();

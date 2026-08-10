@@ -21,6 +21,15 @@ const PDFBOX_LICENSE = 'Apache-2.0';
 
 export const corpus: readonly CorpusDocument[] = [
   {
+    file: 'nested-outline.pdf',
+    sha256: '02076512627469953767e1ac0f996610aaf3f545510e48185c85736bf1ec7cf2',
+    producer: 'PDF Editor outline regression fixture',
+    pages: 4,
+    source: 'Repository-authored ISO 32000 nested-outline fixture',
+    license: 'AGPL-3.0-only',
+    features: ['outline', 'nested-outline', 'explicit-destination'],
+  },
+  {
     file: 'inline-image-embedded-ei.pdf',
     sha256: 'a82e5bfd6834017768d113f4d28e742dcc8ebf6186cc5f45bedaf2de6ce4708c',
     producer: 'PDF Editor tokenizer regression fixture',

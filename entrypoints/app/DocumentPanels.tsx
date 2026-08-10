@@ -1,7 +1,20 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { ChevronRight } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
+import { useStore } from 'zustand/react';
 import engineErrors, { type EngineTypes } from '@/lib/engine/port';
 import renderLayout from '@/lib/render/layout';
 import type { ResolvedCommand } from '@/lib/commands/registry';
+import { viewportStore } from '@/lib/store/viewport';
 import AccessibilityTools from './tools/AccessibilityTools';
 import AutomationBuilder from './tools/AutomationBuilder';
 import CompareTool from './tools/CompareTool';
@@ -44,7 +57,7 @@ interface PanelProps {
   readonly label: string;
   readonly engine: PdfEngine;
   readonly searchInputRef: RefObject<HTMLInputElement | null>;
-  readonly onNavigate: (pageIndex: number) => void;
+  readonly onNavigate: (pageIndex: number, behavior?: ScrollBehavior) => void;
   readonly onSearchHit: (hit: SearchHit) => void;
   readonly onMutation: (result: EngineTypes['MutationResult']) => void;
   readonly onOutput: (data: ArrayBuffer, name: string) => void;
@@ -181,43 +194,258 @@ function PagesPanel({
   );
 }
 
-function OutlineTree({
-  nodes,
-  onNavigate,
-  describedBy,
-}: {
-  readonly nodes: readonly OutlineNode[];
-  readonly onNavigate: (pageIndex: number) => void;
-  readonly describedBy: string;
-}) {
+interface IndexedOutlineNode {
+  readonly node: OutlineNode;
+  readonly path: string;
+  readonly parentPath: string | null;
+}
+
+function indexOutline(
+  nodes: readonly OutlineNode[],
+  parentPath: string | null = null,
+): readonly IndexedOutlineNode[] {
+  return nodes.flatMap((node, index) => {
+    const path = parentPath === null ? `${index}` : `${parentPath}.${index}`;
+    return [{ node, path, parentPath }, ...indexOutline(node.children, path)];
+  });
+}
+
+function validOutlinePage(pageIndex: number | null, pageCount: number): pageIndex is number {
   return (
-    <ul className="outline-tree">
-      {nodes.map((node, index) => (
-        <li key={`${node.title}-${index}`}>
-          <button
-            type="button"
-            disabled={node.pageIndex === null}
-            aria-describedby={node.pageIndex === null ? describedBy : undefined}
-            onClick={() => {
-              if (node.pageIndex !== null) onNavigate(node.pageIndex);
-            }}
-          >
-            {node.title}
-          </button>
-          {node.children.length > 0 ? (
-            <OutlineTree
-              nodes={node.children}
-              onNavigate={onNavigate}
-              describedBy={describedBy}
-            />
-          ) : null}
-        </li>
-      ))}
-    </ul>
+    pageIndex !== null && Number.isInteger(pageIndex) && pageIndex >= 0 && pageIndex < pageCount
   );
 }
 
-function OutlinePanel({ engine, onNavigate }: Pick<PanelProps, 'engine' | 'onNavigate'>) {
+function outlineAncestors(path: string | null): readonly string[] {
+  if (path === null) return [];
+  const parts = path.split('.');
+  return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join('.'));
+}
+
+function visibleOutlinePaths(
+  nodes: readonly OutlineNode[],
+  expanded: ReadonlySet<string>,
+  parentPath: string | null = null,
+): readonly string[] {
+  return nodes.flatMap((node, index) => {
+    const path = parentPath === null ? `${index}` : `${parentPath}.${index}`;
+    return [
+      path,
+      ...(node.children.length > 0 && expanded.has(path)
+        ? visibleOutlinePaths(node.children, expanded, path)
+        : []),
+    ];
+  });
+}
+
+export function OutlinePanel({
+  engine,
+  onNavigate,
+}: {
+  readonly engine: Pick<PdfEngine, 'info'>;
+  readonly onNavigate: (pageIndex: number, behavior?: ScrollBehavior) => void;
+}) {
+  const currentPage = useStore(viewportStore, (state) => state.currentPage);
+  const currentPageRevision = useStore(viewportStore, (state) => state.currentPageRevision);
+  const activatedOutlinePath = useStore(viewportStore, (state) => state.activatedOutlinePath);
+  const activatedOutlinePage = useStore(viewportStore, (state) => state.activatedOutlinePage);
+  const entries = useMemo(() => indexOutline(engine.info.outline), [engine.info.outline]);
+  const derivedCurrentPath = useMemo(() => {
+    let current: string | null = null;
+    for (const entry of entries) {
+      if (
+        validOutlinePage(entry.node.pageIndex, engine.info.pages.length) &&
+        entry.node.pageIndex <= currentPage
+      ) {
+        current = entry.path;
+      }
+    }
+    return current;
+  }, [currentPage, engine.info.pages.length, entries]);
+  const activatedEntry =
+    activatedOutlinePath === null
+      ? undefined
+      : entries.find((entry) => entry.path === activatedOutlinePath);
+  const currentPath =
+    activatedEntry !== undefined &&
+    activatedOutlinePage === currentPage &&
+    activatedEntry.node.pageIndex === activatedOutlinePage
+      ? activatedOutlinePath
+      : derivedCurrentPath;
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
+    () => new Set(outlineAncestors(currentPath)),
+  );
+  const [collapsed, setCollapsed] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const [focusablePath, setFocusablePath] = useState<string | null>(
+    () => currentPath ?? entries[0]?.path ?? null,
+  );
+  const itemRefs = useRef(new Map<string, HTMLLIElement>());
+  const effectiveExpanded = useMemo(
+    () =>
+      new Set([
+        ...expanded,
+        ...outlineAncestors(currentPath).filter(
+          (path) => collapsed.get(path) !== currentPageRevision,
+        ),
+      ]),
+    [collapsed, currentPageRevision, currentPath, expanded],
+  );
+
+  const visiblePaths = useMemo(
+    () => visibleOutlinePaths(engine.info.outline, effectiveExpanded),
+    [effectiveExpanded, engine.info.outline],
+  );
+  const effectiveFocusablePath =
+    focusablePath !== null && visiblePaths.includes(focusablePath)
+      ? focusablePath
+      : currentPath && visiblePaths.includes(currentPath)
+        ? currentPath
+        : (visiblePaths[0] ?? null);
+
+  const focusItem = (path: string) => {
+    setFocusablePath(path);
+    requestAnimationFrame(() => itemRefs.current.get(path)?.focus());
+  };
+
+  const toggleItem = (path: string) => {
+    if (effectiveExpanded.has(path)) {
+      if (focusablePath?.startsWith(`${path}.`)) setFocusablePath(path);
+      setExpanded((current) => new Set([...current].filter((candidate) => candidate !== path)));
+      setCollapsed((current) => new Map(current).set(path, currentPageRevision));
+    } else {
+      setCollapsed((current) => {
+        const next = new Map(current);
+        next.delete(path);
+        return next;
+      });
+      setExpanded((current) => new Set(current).add(path));
+    }
+  };
+
+  const activateItem = (entry: IndexedOutlineNode) => {
+    if (validOutlinePage(entry.node.pageIndex, engine.info.pages.length)) {
+      viewportStore.getState().activateOutline(entry.path, entry.node.pageIndex);
+      onNavigate(entry.node.pageIndex, 'auto');
+      requestAnimationFrame(() => itemRefs.current.get(entry.path)?.focus());
+    } else if (entry.node.children.length > 0) {
+      toggleItem(entry.path);
+    }
+  };
+
+  const onItemKeyDown = (
+    event: ReactKeyboardEvent<HTMLLIElement>,
+    entry: IndexedOutlineNode,
+  ) => {
+    if (event.target !== event.currentTarget) return;
+    const visibleIndex = visiblePaths.indexOf(entry.path);
+    let nextPath: string | undefined;
+    switch (event.key) {
+      case 'ArrowDown':
+        nextPath = visiblePaths[Math.min(visiblePaths.length - 1, visibleIndex + 1)];
+        break;
+      case 'ArrowUp':
+        nextPath = visiblePaths[Math.max(0, visibleIndex - 1)];
+        break;
+      case 'ArrowRight':
+        if (entry.node.children.length === 0) break;
+        if (!effectiveExpanded.has(entry.path)) {
+          toggleItem(entry.path);
+        } else {
+          nextPath = `${entry.path}.0`;
+        }
+        break;
+      case 'ArrowLeft':
+        if (entry.node.children.length > 0 && effectiveExpanded.has(entry.path)) {
+          toggleItem(entry.path);
+        } else if (entry.parentPath !== null) {
+          nextPath = entry.parentPath;
+        } else {
+          break;
+        }
+        break;
+      case 'Home':
+        nextPath = visiblePaths[0];
+        break;
+      case 'End':
+        nextPath = visiblePaths.at(-1);
+        break;
+      case 'Enter':
+      case ' ':
+        activateItem(entry);
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (nextPath !== undefined) focusItem(nextPath);
+  };
+
+  const onItemClick = (event: ReactMouseEvent<HTMLLIElement>, entry: IndexedOutlineNode) => {
+    if (
+      event.target instanceof Element &&
+      event.target.closest('[role="treeitem"]') !== event.currentTarget
+    ) {
+      return;
+    }
+    setFocusablePath(entry.path);
+    event.currentTarget.focus();
+    if (
+      event.target instanceof Element &&
+      event.target.closest('[data-outline-toggle]') !== null &&
+      entry.node.children.length > 0
+    ) {
+      toggleItem(entry.path);
+      return;
+    }
+    activateItem(entry);
+  };
+
+  const renderNodes = (
+    nodes: readonly OutlineNode[],
+    parentPath: string | null = null,
+  ): ReactNode =>
+    nodes.map((node, index) => {
+      const path = parentPath === null ? `${index}` : `${parentPath}.${index}`;
+      const entry: IndexedOutlineNode = { node, path, parentPath };
+      const hasChildren = node.children.length > 0;
+      const isExpanded = hasChildren && effectiveExpanded.has(path);
+      const isValid = validOutlinePage(node.pageIndex, engine.info.pages.length);
+      const isCurrent = currentPath === path;
+      const isCurrentAncestor = currentPath?.startsWith(`${path}.`) ?? false;
+      return (
+        <li
+          key={path}
+          ref={(element) => {
+            if (element) itemRefs.current.set(path, element);
+            else itemRefs.current.delete(path);
+          }}
+          role="treeitem"
+          tabIndex={effectiveFocusablePath === path ? 0 : -1}
+          aria-label={node.title}
+          aria-current={isCurrent ? 'location' : undefined}
+          aria-expanded={hasChildren ? isExpanded : undefined}
+          aria-disabled={!isValid ? true : undefined}
+          aria-describedby={!isValid ? 'outline-destination-help' : undefined}
+          data-current-ancestor={isCurrentAncestor || undefined}
+          onClick={(event) => onItemClick(event, entry)}
+          onKeyDown={(event) => onItemKeyDown(event, entry)}
+        >
+          <span className="outline-tree-row">
+            {hasChildren ? (
+              <span className="outline-tree-toggle" data-outline-toggle aria-hidden="true">
+                <ChevronRight size={16} />
+              </span>
+            ) : (
+              <span className="outline-tree-spacer" aria-hidden="true" />
+            )}
+            <span className="outline-tree-title">{node.title}</span>
+          </span>
+          {isExpanded ? <ul role="group">{renderNodes(node.children, path)}</ul> : null}
+        </li>
+      );
+    });
+
   return (
     <>
       <div className="panel-heading">
@@ -230,14 +458,12 @@ function OutlinePanel({ engine, onNavigate }: Pick<PanelProps, 'engine' | 'onNav
       {engine.info.outline.length > 0 ? (
         <>
           <p id="outline-destination-help" className="scope-note">
-            Outline entries without a page destination are shown for context but cannot
+            Outline entries without a valid page destination are shown for context but cannot
             navigate.
           </p>
-          <OutlineTree
-            nodes={engine.info.outline}
-            onNavigate={onNavigate}
-            describedBy="outline-destination-help"
-          />
+          <ul className="outline-tree" role="tree" aria-label="Document outline">
+            {renderNodes(engine.info.outline)}
+          </ul>
         </>
       ) : (
         <p className="empty-message">This document has no bookmarks.</p>
