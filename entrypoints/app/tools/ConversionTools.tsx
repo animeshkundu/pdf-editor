@@ -129,11 +129,11 @@ export default function ConversionTools({
   };
 
   return (
-    <section className="tool-panel" aria-label="Convert and validate">
+    <section className="tool-panel tool-panel-convert" aria-label="Convert and OCR">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">Document lab</span>
-          <h2>Convert &amp; validate</h2>
+          <h2>Convert and OCR</h2>
         </div>
       </div>
 

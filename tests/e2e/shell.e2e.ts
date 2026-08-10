@@ -113,7 +113,7 @@ test('shell mounts and contacts nobody', async ({ page }) => {
   await page.goto('/pdf/app/');
 
   await expect(page.getByRole('heading', { name: 'PDF editor', level: 1 })).toBeAttached();
-  await expect(page.getByRole('navigation', { name: 'Tools' })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'PDF tools' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Skip to document' })).toBeAttached();
 
   expect(foreign, `Cross-origin requests: ${foreign.join(', ')}`).toEqual([]);
@@ -192,7 +192,7 @@ test('SIGN-024 opens RC4 read-only and offers only an AES-256 replacement', asyn
   await page.getByLabel('Document password').fill('reader-secret');
   await page.getByRole('button', { name: 'Unlock' }).click();
 
-  await page.getByRole('button', { name: 'Forms' }).click();
+  await page.getByRole('button', { name: 'Fill and Sign' }).click();
   await page.getByLabel('Unique name').fill('must-not-write');
   await page.getByRole('button', { name: 'Create field' }).click();
   await expect(page.getByRole('alert')).toContainText('broken RC4 encryption');
@@ -337,15 +337,17 @@ test('opens and renders a PDF through the production worker and WASM build', asy
       .getByRole('contentinfo', { name: 'Document status' })
       .evaluate((element) => element.scrollWidth <= element.clientWidth),
   ).toBe(true);
+  await page.getByRole('button', { name: 'Comment', exact: true }).click();
   const closePanelBox = await page
-    .getByRole('button', { name: 'Close contextual panels' })
+    .getByRole('complementary', { name: 'Contextual properties' })
+    .getByRole('button', { name: 'Close contextual rail' })
     .boundingBox();
   expect(closePanelBox?.width).toBeGreaterThanOrEqual(44);
   expect((closePanelBox?.x ?? 321) + (closePanelBox?.width ?? 0)).toBeLessThanOrEqual(320);
 
   await page.getByLabel('Open PDF').setInputFiles(outlineFixture);
   await expect(page.getByText('ocg-acrobat.pdf', { exact: true })).toBeAttached();
-  await page.getByRole('button', { name: 'Outline' }).click();
+  await page.getByRole('tab', { name: 'Outline' }).click();
   await expect(page.getByRole('button', { name: 'Leere Seite' })).toBeVisible();
 
   await page.getByLabel('Open PDF').setInputFiles(scanFixture);

@@ -131,11 +131,11 @@ export default function CommentsTable({
   };
 
   return (
-    <section className="tool-panel" aria-label="Comments table">
+    <section className="tool-panel tool-panel-comment" aria-label="Comment list">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">Document review</span>
-          <h2>Comments</h2>
+          <h2>Comment list</h2>
         </div>
         <FeatureBadge status="LOCAL" />
       </div>

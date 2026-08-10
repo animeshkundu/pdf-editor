@@ -301,11 +301,11 @@ export default function OrganizePages({
   };
 
   return (
-    <section className="tool-panel" aria-label="Organize pages">
+    <section className="tool-panel tool-panel-pages" aria-label="Organize Pages">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">Document structure</span>
-          <h2>Organize pages</h2>
+          <h2>Organize Pages</h2>
         </div>
         <FeatureBadge status="LOCAL" />
       </div>

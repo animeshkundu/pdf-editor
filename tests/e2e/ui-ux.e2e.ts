@@ -16,25 +16,23 @@ const secondFixture = fileURLToPath(
 );
 const encryptedWorkDir = mkdtempSync(join(tmpdir(), 'pdf-editor-ui-ux-'));
 const encryptedFixture = join(encryptedWorkDir, 'protected.pdf');
-const screenshotDirectory = join(process.cwd(), 'screenshots', 'ui-sweep');
+const screenshotDirectory = join(process.cwd(), '.factory-preview');
 let qpdfPath = '';
 const panelSurfaces = [
-  'Pages',
-  'Outline',
-  'Files',
-  'Find',
-  'Markup',
+  'Edit Text and Images',
+  'Comment',
+  'Redact',
   'Comments',
-  'Organize',
-  'Forms',
+  'Organize Pages',
+  'Fill and Sign',
   'Protect',
   'Compare',
-  'Convert',
-  'Access',
+  'Convert and OCR',
+  'Accessibility',
   'Print',
-  'Automate',
+  'Automation',
   'History',
-  'Scope',
+  'Tools and capabilities',
 ] as const;
 
 interface RuntimeGuard {
@@ -86,7 +84,7 @@ async function openFixture(page: Page, name = 'review.pdf') {
 
 async function capture(page: Page, browserName: string, name: string) {
   if (browserName !== 'chromium') return;
-  await page.screenshot({ path: join(screenshotDirectory, name) });
+  await page.screenshot({ path: join(screenshotDirectory, name), scale: 'device' });
 }
 
 async function expectFocusTrap(page: Page, dialogName: string) {
@@ -242,7 +240,7 @@ test('resets tools from property controls and exposes keyboard tool families', a
 
   await page.keyboard.press('r');
   await capture(page, browserName, 'active-redaction-tool.png');
-  const panel = page.getByRole('region', { name: 'Markup tools' });
+  const panel = page.getByRole('region', { name: 'Comment and Redact tools' });
   await expect(panel).toBeVisible();
   await panel.getByRole('button', { name: 'Tool properties' }).click();
   await panel.getByRole('combobox', { name: 'Line style' }).focus();
@@ -315,10 +313,10 @@ test('traps and restores focus for the unsaved-change dialog', async ({
   browserName,
 }) => {
   await openFixture(page);
-  const markup = page.getByRole('button', { name: 'Markup', exact: true });
+  const markup = page.getByRole('button', { name: 'Comment', exact: true });
   await markup.click();
   await page
-    .getByRole('region', { name: 'Markup tools' })
+    .getByRole('region', { name: 'Comment and Redact tools' })
     .getByRole('button', { name: 'Sticky note' })
     .click();
   await expect(page.getByRole('button', { name: 'Undo document change' })).toBeEnabled();
@@ -402,7 +400,7 @@ test('honours ADR 0016 tokens, motion, focus, themes, and narrow zoomed layouts'
         }),
       ).toEqual([...tokens, 'rgb(255, 255, 255)']);
       await expect(page.getByRole('banner', { name: 'Global toolbar' })).toBeVisible();
-      await expect(page.getByRole('navigation', { name: 'Tools' })).toBeVisible();
+      await expect(page.getByRole('navigation', { name: 'PDF tools' })).toBeVisible();
       const commandBox = await page.getByRole('button', { name: 'Commands' }).boundingBox();
       expect(Math.round((commandBox?.height ?? 0) * 100) / 100).toBeGreaterThanOrEqual(
         Number.parseFloat(tokens[1]),
@@ -456,7 +454,7 @@ test('keeps every narrow-shell control inside the viewport and every tool reacha
 
   for (const region of [
     page.getByRole('banner', { name: 'Global toolbar' }),
-    page.getByRole('navigation', { name: 'Tools' }),
+    page.getByRole('navigation', { name: 'PDF tools' }),
     page.getByRole('contentinfo', { name: 'Document status' }),
   ]) {
     const boxes = await region
@@ -488,7 +486,7 @@ test('keeps every narrow-shell control inside the viewport and every tool reacha
     }
   }
 
-  const rail = page.getByRole('navigation', { name: 'Tools' });
+  const rail = page.getByRole('navigation', { name: 'PDF tools' });
   for (const label of panelSurfaces) {
     const button = rail.getByRole('button', { name: label, exact: true });
     await expect(button).toBeVisible();
@@ -510,21 +508,21 @@ test('keeps empty-shell tools operable and explains their document prerequisite'
   page,
 }) => {
   await page.goto('/pdf/app/');
-  const rail = page.getByRole('navigation', { name: 'Tools' });
+  const rail = page.getByRole('navigation', { name: 'PDF tools' });
   for (const label of panelSurfaces) {
     await expect(rail.getByRole('button', { name: label, exact: true })).toBeEnabled();
   }
-  await rail.getByRole('button', { name: 'Forms', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('Open a PDF to use Forms.');
+  await rail.getByRole('button', { name: 'Fill and Sign', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('Open a PDF to use Fill and Sign.');
   await page.keyboard.press('m');
   await expect(page.getByRole('status')).toContainText('Open a PDF to use document tools.');
-  await expect(page.locator('.panel-frame')).toHaveCount(0);
+  await expect(page.locator('.contextual-rail .context-panel')).toHaveCount(0);
   await expect(page.getByRole('contentinfo', { name: 'Document status' })).toContainText(
     /Tool:\s*Select and pan/i,
   );
-  await rail.getByRole('button', { name: 'Scope', exact: true }).click();
+  await rail.getByRole('button', { name: 'Tools and capabilities', exact: true }).click();
   await expect(
-    page.getByRole('complementary', { name: 'Open contextual panels' }),
+    page.getByRole('complementary', { name: 'Contextual properties' }),
   ).toBeVisible();
 });
 
@@ -538,16 +536,13 @@ test('uses designed controls with density-aware target sizes on every panel', as
     await page.getByRole('option', { name: new RegExp(density, 'i') }).click();
     const minimum = density === 'touch' ? 44 : 24;
     for (const label of panelSurfaces) {
-      const trigger = page.getByRole('navigation', { name: 'Tools' }).getByRole('button', {
+      const trigger = page.getByRole('navigation', { name: 'PDF tools' }).getByRole('button', {
         name: label,
         exact: true,
       });
       if ((await trigger.getAttribute('aria-pressed')) !== 'true') await trigger.click();
-      const frame = page
-        .locator('.panel-frame')
-        .filter({ has: page.locator('.panel-chrome strong', { hasText: label }) })
-        .last();
-      await expect(frame).toBeVisible();
+      const frame = page.locator('.contextual-rail .context-panel');
+      await expect(frame).toHaveCount(1);
       expect(
         await frame
           .locator(
@@ -593,7 +588,7 @@ test('uses designed controls with density-aware target sizes on every panel', as
       expect(unexplainedDisabled, `${label} disabled-control explanations`).toEqual([]);
       const undersized = await frame
         .locator(
-          'button:not(.panel-resize-handle), input:not([type="file"]), [role="combobox"], [role="checkbox"], [role="slider"]',
+          'button, input:not([type="file"]), [role="combobox"], [role="checkbox"], [role="slider"]',
         )
         .evaluateAll(
           (elements, target) =>
@@ -622,7 +617,7 @@ test('uses designed controls with density-aware target sizes on every panel', as
     }
     const shellUndersized = await page
       .locator(
-        '.global-bar button, .global-bar [role="combobox"], .status-bar button, .tool-rail button',
+        '.global-bar button, .global-bar [role="combobox"], .status-bar button, .command-bar button',
       )
       .evaluateAll(
         (elements, target) =>
@@ -650,10 +645,10 @@ test('uses designed controls with density-aware target sizes on every panel', as
   }
 
   await page
-    .getByRole('navigation', { name: 'Tools' })
-    .getByRole('button', { name: 'Markup', exact: true })
+    .getByRole('navigation', { name: 'PDF tools' })
+    .getByRole('button', { name: 'Comment', exact: true })
     .click();
-  const markup = page.getByRole('region', { name: 'Markup tools' });
+  const markup = page.getByRole('region', { name: 'Comment and Redact tools' });
   await markup.getByRole('button', { name: 'Tool properties' }).click();
   await markup.getByRole('combobox', { name: 'Line style' }).click();
   const option = page.getByRole('option', { name: 'Dashed' });
@@ -686,39 +681,24 @@ test('uses designed controls with density-aware target sizes on every panel', as
   expect(await opacity.getAttribute('aria-valuenow')).not.toBe(opacityBeforeDrag);
 });
 
-test('keeps contextual panels concurrent, resizable, collapsible, and persistent', async ({
+test('keeps one contextual panel active and the Navigator tabbed and persistent', async ({
   page,
   browserName,
 }) => {
   await openFixture(page, 'panel-layout.pdf');
-  for (const label of ['Markup', 'Forms']) {
-    await page
-      .getByRole('navigation', { name: 'Tools' })
-      .getByRole('button', { name: label, exact: true })
-      .click();
-  }
-  await expect(page.locator('.panel-frame')).toHaveCount(3);
-  const markupFrame = page
-    .locator('.panel-frame')
-    .filter({ has: page.locator('.panel-chrome strong', { hasText: 'Markup' }) });
-  const before = await markupFrame.boundingBox();
-  const handle = markupFrame.getByRole('separator', { name: 'Resize Markup panel' });
-  const handleBox = await handle.boundingBox();
-  if (!handleBox) throw new Error('Markup resize handle was not rendered.');
-  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + 40);
-  await page.mouse.down();
-  await page.mouse.move(handleBox.x - 70, handleBox.y + 40);
-  await page.mouse.up();
-  expect((await markupFrame.boundingBox())?.width ?? 0).toBeGreaterThan(before?.width ?? 0);
-  const pointerWidth = (await markupFrame.boundingBox())?.width ?? 0;
-  const separator = markupFrame.getByRole('separator', { name: 'Resize Markup panel' });
-  await separator.focus();
-  await page.keyboard.press('ArrowLeft');
-  expect((await markupFrame.boundingBox())?.width ?? 0).toBeGreaterThan(pointerWidth);
-  await capture(page, browserName, 'concurrent-panels.png');
+  const tools = page.getByRole('navigation', { name: 'PDF tools' });
+  await tools.getByRole('button', { name: 'Comment', exact: true }).click();
+  const rail = page.getByRole('complementary', { name: 'Contextual properties' });
+  await expect(rail.locator('.context-panel')).toHaveCount(1);
+  await expect(rail).toContainText('Comment and Redact');
+  await tools.getByRole('button', { name: 'Fill and Sign', exact: true }).click();
+  await expect(rail.locator('.context-panel')).toHaveCount(1);
+  await expect(rail).toContainText('Fill and Sign');
+  await expect(rail).not.toContainText('Comment and Redact');
+  await page.getByRole('tab', { name: 'Search' }).click();
+  await expect(page.getByRole('tabpanel')).toContainText('Whole document');
+  await capture(page, browserName, 'single-contextual-rail.png');
 
-  await markupFrame.getByRole('button', { name: 'Collapse Markup panel' }).click();
-  await expect(markupFrame).toHaveAttribute('data-collapsed', 'true');
   await page.reload();
   await page.getByLabel('Open PDF').setInputFiles({
     name: 'panel-layout.pdf',
@@ -726,27 +706,29 @@ test('keeps contextual panels concurrent, resizable, collapsible, and persistent
     buffer: readFileSync(fixture),
   });
   await expect(page.locator('canvas.pdf-tile').first()).toBeVisible();
-  await expect(page.locator('.panel-frame')).toHaveCount(3);
+  await expect(page.getByRole('tab', { name: 'Search' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
   await expect(
-    page
-      .locator('.panel-frame')
-      .filter({ has: page.locator('.panel-chrome strong', { hasText: 'Markup' }) }),
-  ).toHaveAttribute('data-collapsed', 'true');
+    page.getByRole('complementary', { name: 'Contextual properties' }),
+  ).toContainText('Fill and Sign');
 
   await page.getByRole('region', { name: 'Document pages' }).focus();
   await page.keyboard.press('Control+f');
   const searchInput = page.getByRole('searchbox', { name: 'Find in document' });
   await expect(searchInput).toBeFocused();
-  const markup = page.getByRole('button', { name: 'Markup', exact: true });
+  const markup = page.getByRole('button', { name: 'Comment', exact: true });
   await markup.click();
   await expect(markup).toBeFocused();
   await expect(searchInput).not.toBeFocused();
 
-  const closeAll = page.getByRole('button', { name: 'Close contextual panels' });
+  const closeAll = page
+    .getByRole('complementary', { name: 'Contextual properties' })
+    .getByRole('button', { name: 'Close contextual rail' });
   await closeAll.focus();
   await closeAll.click();
-  await expect(page.getByRole('button', { name: 'Pages', exact: true })).toBeFocused();
-  await expect(page.locator('.panel-frame')).toHaveCount(0);
+  await expect(page.locator('.contextual-rail .context-panel')).toHaveCount(0);
   await page.reload();
   await page.getByLabel('Open PDF').setInputFiles({
     name: 'panel-layout.pdf',
@@ -754,7 +736,7 @@ test('keeps contextual panels concurrent, resizable, collapsible, and persistent
     buffer: readFileSync(fixture),
   });
   await expect(page.locator('canvas.pdf-tile').first()).toBeVisible();
-  await expect(page.locator('.panel-frame')).toHaveCount(0);
+  await expect(page.locator('.contextual-rail .context-panel')).toHaveCount(0);
 });
 
 test('remaps tool shortcuts locally and selects text from the keyboard', async ({
@@ -930,8 +912,8 @@ test('validates every reachable file-producing UI path with independent readers'
   await page.getByRole('button', { name: 'Download PDF' }).click();
   await expectValidPdf(await saved);
 
-  await page.getByRole('button', { name: 'Organize', exact: true }).click();
-  const organize = page.getByRole('region', { name: 'Organize pages' });
+  await page.getByRole('button', { name: 'Organize Pages', exact: true }).click();
+  const organize = page.getByRole('region', { name: 'Organize Pages' });
   await organize.getByRole('checkbox', { name: /Select page 1/i }).click();
   await organize.getByRole('button', { name: 'Extract selected' }).click();
   const extracted = page.waitForEvent('download');
@@ -948,7 +930,7 @@ test('validates every reachable file-producing UI path with independent readers'
   for (const download of splitDownloads) await expectValidPdf(download);
 
   await page.getByRole('button', { name: 'Protect', exact: true }).click();
-  const protect = page.getByRole('region', { name: 'Security and redaction' });
+  const protect = page.getByRole('region', { name: 'Protect and Redact' });
   await protect.getByLabel('Open password').fill('reader-secret');
   await protect.getByLabel('Permissions password').fill('owner-secret');
   const protectedDownload = page.waitForEvent('download');
@@ -966,8 +948,8 @@ test('validates every reachable file-producing UI path with independent readers'
   await protect.getByRole('button', { name: 'Sanitize document and download' }).click();
   await expectValidPdf(await sanitizedDownload);
 
-  await page.getByRole('button', { name: 'Markup', exact: true }).click();
-  const markup = page.getByRole('region', { name: 'Markup tools' });
+  await page.getByRole('button', { name: 'Comment', exact: true }).click();
+  const markup = page.getByRole('region', { name: 'Comment and Redact tools' });
   await markup.getByRole('button', { name: 'Tool properties' }).click();
   await markup.getByLabel('Tool set name').fill('Acceptance set');
   await markup.getByRole('button', { name: 'Save named set' }).click();
@@ -993,7 +975,7 @@ test('validates every reachable file-producing UI path with independent readers'
   await page.keyboard.press('Escape');
 
   await page.getByRole('button', { name: 'Comments', exact: true }).click();
-  const comments = page.getByRole('region', { name: 'Comments table' });
+  const comments = page.getByRole('region', { name: 'Comment list' });
   await comments.getByRole('button', { name: 'Preview export' }).click();
   const commentDownload = page.waitForEvent('download');
   await comments.getByRole('button', { name: 'Download XFDF' }).click();
@@ -1013,8 +995,8 @@ test('validates every reachable file-producing UI path with independent readers'
     ),
   ).toEqual({ root: 'xfdf', hasAnnotations: true, parserError: false });
 
-  await page.getByRole('button', { name: 'Forms', exact: true }).click();
-  const forms = page.getByRole('region', { name: 'Prepare form' });
+  await page.getByRole('button', { name: 'Fill and Sign', exact: true }).click();
+  const forms = page.getByRole('region', { name: 'Fill and Sign' });
   await forms.getByLabel('Unique name').fill('acceptance-field');
   await forms.getByRole('button', { name: 'Create field' }).click();
   await expect(
@@ -1042,8 +1024,8 @@ test('validates every reachable file-producing UI path with independent readers'
     ),
   ).toEqual({ root: 'xfdf', fields: ['acceptance-field'], parserError: false });
 
-  await page.getByRole('button', { name: 'Automate', exact: true }).click();
-  const automation = page.getByRole('region', { name: 'Automation pipeline builder' });
+  await page.getByRole('button', { name: 'Automation', exact: true }).click();
+  const automation = page.getByRole('region', { name: 'Automation' });
   await automation.getByRole('button', { name: 'Add step' }).click();
   const pipelineDownload = page.waitForEvent('download');
   await automation.getByRole('button', { name: 'Export pipeline' }).click();
@@ -1055,8 +1037,8 @@ test('validates every reachable file-producing UI path with independent readers'
     steps: [{ commandId: 'save' }],
   });
 
-  await page.getByRole('button', { name: 'Convert', exact: true }).click();
-  const convert = page.getByRole('region', { name: 'Convert and validate' });
+  await page.getByRole('button', { name: 'Convert and OCR', exact: true }).click();
+  const convert = page.getByRole('region', { name: 'Convert and OCR' });
   const markdownDownload = page.waitForEvent('download');
   await convert.getByRole('button', { name: 'Download Markdown' }).click();
   const markdownResult = await markdownDownload;
@@ -1135,12 +1117,10 @@ for (const density of ['compact', 'comfortable', 'touch'] as const) {
       ] as const) {
         await page.setViewportSize(size);
         for (const label of panelSurfaces) {
-          const nav = page.getByRole('navigation', { name: 'Tools' });
-          const open = nav.locator('button[aria-pressed="true"]');
-          while ((await open.count()) > 0) await open.first().click();
+          const nav = page.getByRole('navigation', { name: 'PDF tools' });
           await nav.getByRole('button', { name: label, exact: true }).click();
-          await expect(page.locator('.panel-frame')).toHaveCount(1);
-          await expect(page.locator('.panel-frame .context-panel')).toBeVisible();
+          await expect(page.locator('.contextual-rail .context-panel')).toHaveCount(1);
+          await expect(page.locator('.contextual-rail .context-panel')).toBeVisible();
           if (browserName === 'chromium') {
             await page.screenshot({
               path: join(

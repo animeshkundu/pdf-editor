@@ -74,7 +74,7 @@ export default function AccessibilityTools({
   };
 
   return (
-    <section className="tool-panel" aria-label="Accessibility tools">
+    <section className="tool-panel tool-panel-accessibility" aria-label="Accessibility tools">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">Inclusive documents</span>

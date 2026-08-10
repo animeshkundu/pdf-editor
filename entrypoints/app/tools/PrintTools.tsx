@@ -94,7 +94,7 @@ export default function PrintTools({
   };
 
   return (
-    <section className="tool-panel" aria-label="Print document">
+    <section className="tool-panel tool-panel-print" aria-label="Print document">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">Local output</span>

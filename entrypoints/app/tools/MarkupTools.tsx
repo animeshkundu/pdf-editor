@@ -37,6 +37,7 @@ import {
 } from '../DesignedControls';
 import FeatureBadge from '../FeatureBadge';
 import { describeRedactionOutcome, snapshotRedactionText } from '../redactionOutcome';
+import { semanticColorValue } from '@/lib/ui/semanticTokens';
 import type { ToolPanelProps } from './types';
 
 type AnnotationType = EngineTypes['AnnotationType'];
@@ -280,19 +281,21 @@ interface ToolProperties {
   readonly units: 'pt' | 'in' | 'mm' | 'cm';
 }
 
-const DEFAULT_PROPERTIES: ToolProperties = {
-  color: '#4a6bf7',
-  fill: '#eef1ff',
-  opacity: 1,
-  weight: 2,
-  style: 'Solid',
-  author: '',
-  subject: '',
-  locked: false,
-  readOnly: false,
-  scale: 1,
-  units: 'pt',
-};
+function defaultProperties(): ToolProperties {
+  return {
+    color: semanticColorValue('annotation-stroke'),
+    fill: semanticColorValue('annotation-fill'),
+    opacity: 1,
+    weight: 2,
+    style: 'Solid',
+    author: '',
+    subject: '',
+    locked: false,
+    readOnly: false,
+    scale: 1,
+    units: 'pt',
+  };
+}
 
 function colorComponents(value: string): readonly [number, number, number] {
   const match = /^#([0-9a-f]{6})$/i.exec(value);
@@ -373,7 +376,7 @@ export default function MarkupTools({
   const [redactionOutcome, setRedactionOutcome] = useState<string | null>(null);
   const [activeTextTool, setActiveTextTool] = useState<ToolDefinition | null>(null);
   const [selectedAnnotation, setSelectedAnnotation] = useState<AnnotationInfo | null>(null);
-  const [properties, setProperties] = useState<ToolProperties>(DEFAULT_PROPERTIES);
+  const [properties, setProperties] = useState<ToolProperties>(defaultProperties);
   const [presetName, setPresetName] = useState('');
   const [presets, setPresets] = useState<
     readonly { readonly name: string; readonly properties: ToolProperties }[]
@@ -594,11 +597,11 @@ export default function MarkupTools({
   };
 
   return (
-    <section className="tool-panel" aria-label="Markup tools">
+    <section className="tool-panel tool-panel-comment" aria-label="Comment and Redact tools">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">Review</span>
-          <h2>Comment & markup</h2>
+          <h2>Comment and Redact</h2>
         </div>
         <FeatureBadge status="LOCAL" />
       </div>

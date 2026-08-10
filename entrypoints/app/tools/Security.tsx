@@ -45,11 +45,11 @@ export default function Security({
   }, [engine, onError]);
 
   return (
-    <section className="tool-panel" aria-label="Security and redaction">
+    <section className="tool-panel tool-panel-protect" aria-label="Protect and Redact">
       <div className="panel-heading">
         <div>
           <span className="eyebrow">Protect output</span>
-          <h2>Security</h2>
+          <h2>Protect</h2>
         </div>
         <FeatureBadge status="LOCAL" />
       </div>

@@ -21,7 +21,7 @@ test('MARK-001/PAGE-020 adds and undoes one interoperable annotation action', as
   await page.getByLabel('Open PDF').setInputFiles(fixture);
   await expect(page.locator('canvas.pdf-tile').first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('1 page · LOCAL')).toBeVisible();
-  await page.getByRole('button', { name: 'Markup' }).click();
+  await page.getByRole('button', { name: 'Comment', exact: true }).click();
   await page.getByRole('button', { name: 'Sticky note LOCAL' }).click();
   await expect(page.getByText('1 annotation in this document')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Undo document change' })).toBeEnabled();
@@ -42,7 +42,7 @@ test('SIGN-028 redaction marks block ordinary output and never claim removal', a
   await page.getByLabel('Open PDF').setInputFiles(redactionFixture);
   await expect(page.locator('canvas.pdf-tile').first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('28 pages · LOCAL')).toBeVisible();
-  await page.getByRole('button', { name: 'Markup' }).click();
+  await page.getByRole('button', { name: 'Comment', exact: true }).click();
   await page.getByRole('button', { name: 'Redaction mark' }).click();
 
   const pdfPage = page.locator('.pdf-page').first();
@@ -98,7 +98,7 @@ test('FORM-021/AUTO-006/AUTO-007 authors and observes worker-local JavaScript', 
   await page.goto('/pdf/app/');
   await page.getByLabel('Open PDF').setInputFiles(fixture);
   await expect(page.locator('canvas.pdf-tile').first()).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: 'Forms' }).click();
+  await page.getByRole('button', { name: 'Fill and Sign' }).click();
   await page.getByLabel('Unique name').fill('amount');
   await page.getByRole('button', { name: 'Create field' }).click();
   await expect(page.getByRole('button', { name: 'amount', exact: true })).toBeVisible();
@@ -126,7 +126,7 @@ test('FORM-021/AUTO-006/AUTO-007 authors and observes worker-local JavaScript', 
     .getByRole('button', { name: 'Cancel' })
     .click();
 
-  await page.getByRole('button', { name: 'Automate' }).click();
+  await page.getByRole('button', { name: 'Automation' }).click();
   const console = page
     .getByRole('group')
     .filter({ hasText: 'Document JavaScript console LOCAL' });
@@ -143,6 +143,7 @@ test('FORM-021/AUTO-006/AUTO-007 authors and observes worker-local JavaScript', 
   await console.getByRole('button', { name: 'Run JavaScript' }).click();
   await expect(console.getByText('42', { exact: true })).toBeVisible();
   await expect(console.getByText(/launch-url: .*blocked\.example.*Blocked\./)).toBeVisible();
+  await page.getByRole('button', { name: 'Fill and Sign', exact: true }).click();
   await page.getByRole('button', { name: 'amount', exact: true }).click();
   await page.getByRole('button', { name: 'Edit field value' }).click();
   await expect(page.getByLabel('Value for amount')).toHaveValue('');

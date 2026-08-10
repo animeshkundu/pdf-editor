@@ -1072,7 +1072,7 @@ const DocumentViewport = forwardRef<DocumentViewportHandle, DocumentViewportProp
     return (
       <section
         ref={scrollerRef}
-        className="document-viewport"
+        className="document-viewport product-viewport"
         aria-label="Document pages"
         aria-keyshortcuts="Shift+ArrowRight Shift+ArrowLeft"
         aria-describedby="document-keyboard-help"

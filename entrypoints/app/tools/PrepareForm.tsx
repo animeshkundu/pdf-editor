@@ -366,14 +366,14 @@ export default function PrepareForm({
 
   return (
     <section
-      className="tool-panel"
-      aria-label="Prepare form"
+      className="tool-panel tool-panel-sign"
+      aria-label="Fill and Sign"
       data-form-widget-highlights={JSON.stringify(widgetHighlights)}
     >
       <div className="panel-heading">
         <div>
           <span className="eyebrow">AcroForm</span>
-          <h2>Forms</h2>
+          <h2>Fill and Sign</h2>
         </div>
         <FeatureBadge status="DEGRADED" />
       </div>

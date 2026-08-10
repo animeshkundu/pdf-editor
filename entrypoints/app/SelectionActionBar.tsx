@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import {
   Copy,
   Highlighter,
@@ -44,13 +37,6 @@ export default function SelectionActionBar({
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const originRef = useRef<HTMLElement | null>(null);
-  const toolbarRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<{
-    readonly left: number;
-    readonly top: number;
-    readonly side: 'above' | 'below';
-  }>({ left: 0, top: 0, side: 'below' });
-  const [left, top, right, bottom] = action.viewportBounds;
   const canCopy = engine.info.permissions.copy;
   const canAnnotate = engine.info.permissions.annotate && !action.crossPage;
   const canEdit = engine.info.permissions.edit !== false && !action.crossPage;
@@ -62,45 +48,6 @@ export default function SelectionActionBar({
     onClose();
     requestAnimationFrame(() => originRef.current?.focus());
   }, [onClose]);
-
-  useLayoutEffect(() => {
-    const toolbar = toolbarRef.current;
-    if (!toolbar) return;
-    const place = () => {
-      const bounds = toolbar.getBoundingClientRect();
-      const styles = getComputedStyle(document.documentElement);
-      const gap =
-        Number.parseFloat(styles.getPropertyValue('--space-100')) ||
-        Number.parseFloat(styles.getPropertyValue('--focus-ring-offset')) ||
-        4;
-      const availableAbove = top - gap;
-      const availableBelow = window.innerHeight - bottom - gap;
-      const side =
-        availableAbove >= bounds.height || availableAbove >= availableBelow ? 'above' : 'below';
-      setPosition({
-        left: Math.max(
-          gap,
-          Math.min(window.innerWidth - bounds.width - gap, (left + right - bounds.width) / 2),
-        ),
-        top: Math.max(
-          gap,
-          Math.min(
-            window.innerHeight - bounds.height - gap,
-            side === 'below' ? bottom + gap : top - bounds.height - gap,
-          ),
-        ),
-        side,
-      });
-    };
-    place();
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
-    observer?.observe(toolbar);
-    window.addEventListener('resize', place);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener('resize', place);
-    };
-  }, [bottom, busy, editing, left, refusal, right, top]);
 
   const moveToolbarFocus = (event: KeyboardEvent<HTMLDivElement>) => {
     if (editing || isTextEntryTarget(event.target)) return;
@@ -168,14 +115,26 @@ export default function SelectionActionBar({
 
   return (
     <div
-      ref={toolbarRef}
-      className="selection-action-bar"
+      className="selection-properties"
       role="toolbar"
       aria-label={editing ? 'Edit selected text' : 'Selection actions'}
-      data-side={position.side}
-      style={{ left: `${position.left}px`, top: `${position.top}px` }}
       onKeyDown={moveToolbarFocus}
     >
+      <div className="panel-heading">
+        <div>
+          <span className="eyebrow">Current selection</span>
+          <h2>{editing ? 'Edit Text and Images' : 'Text properties'}</h2>
+        </div>
+        <button
+          type="button"
+          className="icon-control"
+          aria-label="Clear selection"
+          onClick={close}
+        >
+          Close
+        </button>
+      </div>
+      {!editing ? <p className="selection-summary">“{action.selection.text}”</p> : null}
       {editing ? (
         <ActiveTextEntry
           kind="existing-text"
