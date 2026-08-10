@@ -3,6 +3,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import App from '@/entrypoints/app/App';
+import commandRegistry from '@/lib/commands/registry';
 import type { EngineTypes } from '@/lib/engine/port';
 import engineErrors from '@/lib/engine/port';
 import { useDocumentStore } from '@/lib/store/document';
@@ -783,6 +784,49 @@ describe('Phase 3 viewer acceptance', () => {
       reopened?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     });
     expect(document.querySelector('.command-palette')).toBeNull();
+  });
+
+  it('AUTO-001 shows registry-resolved shortcuts only for bound palette commands', async () => {
+    await act(async () => root.render(createElement(App, { engineFactory })));
+
+    const metadata = commandRegistry.resolveCommandMetadata({
+      hasDocument: false,
+      canUndo: false,
+      canRedo: false,
+      outputActionLabel: 'Download',
+      saveAsActionLabel: 'Download copy',
+      theme: 'light',
+    });
+    const boundCommand = metadata.find((command) => command.id === 'commands');
+    const unboundCommand = metadata.find((command) => command.id === 'capabilities');
+    if (!boundCommand?.shortcut || !unboundCommand) {
+      throw new Error('Expected command metadata is unavailable.');
+    }
+
+    const commandsButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Commands"]',
+    );
+    if (!commandsButton) throw new Error('Missing Commands button.');
+    await act(async () => commandsButton.click());
+
+    const filter = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Filter commands"]',
+    );
+    if (!filter) throw new Error('Missing command filter.');
+
+    await act(async () => setInputValue(filter, boundCommand.label));
+    const boundOption = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (option) => option.textContent?.includes(boundCommand.label),
+    );
+    if (!boundOption) throw new Error('Missing bound command option.');
+    expect(boundOption.querySelector('kbd')?.textContent).toBe(boundCommand.shortcut);
+
+    await act(async () => setInputValue(filter, unboundCommand.label));
+    const unboundOption = [
+      ...document.querySelectorAll<HTMLButtonElement>('[role="option"]'),
+    ].find((option) => option.textContent?.includes(unboundCommand.label));
+    if (!unboundOption) throw new Error('Missing unbound command option.');
+    expect(unboundOption.querySelector('kbd')).toBeNull();
   });
 
   it('EDIT-001 captures active overlay input before the React event target clears', async () => {
